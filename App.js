@@ -9,6 +9,7 @@ import SasiScreen from './SasiScreen';
 import CaseScreen from './CaseScreen';
 import StatsScreen from './StatsScreen';
 import CustomersScreen from './CustomersScreen';
+import CoatingsScreen from './CoatingsScreen';
 
 export const FIREBASE_URL = "https://vaiconcloud-default-rtdb.europe-west1.firebasedatabase.app";
 
@@ -17,7 +18,7 @@ if (Platform.OS === 'android' && UIManager.setLayoutAnimationEnabledExperimental
 }
 
 const TABS = ['custom', 'sasi', 'cases', 'stats'];
-const TAB_LABELS = { custom: 'ΠΑΡΑΓΓΕΛΙΕΣ', sasi: 'ΣΑΣΙ', cases: 'ΚΑΣΕΣ', stats: 'ΣΤΑΤΙΣΤΙΚΑ' };
+const TAB_LABELS = { custom: 'ΠΑΡΑΓΓΕΛΙΕΣ', sasi: 'ΣΑΣΙ ΣΤΟΚ', cases: 'ΚΑΣΕΣ ΣΤΟΚ', stats: 'ΣΤΑΤΙΣΤΙΚΑ' };
 const { width: SCREEN_WIDTH } = Dimensions.get('window');
 
 export default function App() {
@@ -25,6 +26,7 @@ export default function App() {
   const [loading, setLoading] = useState(true);
   const [menuOpen, setMenuOpen] = useState(false);
   const [showCustomers, setShowCustomers] = useState(false);
+  const [showCoatings, setShowCoatings] = useState(false);
   const [pendingCustomer, setPendingCustomer] = useState(null); // όνομα πελάτη από CustomScreen
   const [pendingCustomerCallback, setPendingCustomerCallback] = useState(null);
 
@@ -35,6 +37,7 @@ export default function App() {
   const [caseOrders, setCaseOrders] = useState([]);
   const [soldCaseOrders, setSoldCaseOrders] = useState([]);
   const [customers, setCustomers] = useState([]);
+  const [coatings, setCoatings] = useState([]);
 
   useEffect(() => { fetchData(); }, []);
 
@@ -66,6 +69,12 @@ export default function App() {
       if (data4) {
         const loaded4 = Object.keys(data4).map(key => ({ id: key, ...data4[key] }));
         setCustomers(loaded4);
+      }
+      const res5 = await fetch(`${FIREBASE_URL}/coatings.json`);
+      const data5 = await res5.json();
+      if (data5) {
+        const loaded5 = Object.keys(data5).map(key => ({ id: key, ...data5[key] }));
+        setCoatings(loaded5);
       }
     } catch (error) {
       console.error(error);
@@ -117,7 +126,7 @@ export default function App() {
 
         {/* SCREENS με swipe */}
         <View style={{ flex: 1 }} {...panResponder.panHandlers}>
-          {view === 'custom' && <CustomScreen customOrders={customOrders} setCustomOrders={setCustomOrders} soldOrders={soldOrders} setSoldOrders={setSoldOrders} customers={customers} onRequestAddCustomer={(name, cb)=>{ setPendingCustomer(name); setPendingCustomerCallback(()=>cb); setShowCustomers(true); }} sasiOrders={sasiOrders} caseOrders={caseOrders} />}
+          {view === 'custom' && <CustomScreen customOrders={customOrders} setCustomOrders={setCustomOrders} soldOrders={soldOrders} setSoldOrders={setSoldOrders} customers={customers} onRequestAddCustomer={(name, cb)=>{ setPendingCustomer(name); setPendingCustomerCallback(()=>cb); setShowCustomers(true); }} sasiOrders={sasiOrders} setSasiOrders={setSasiOrders} caseOrders={caseOrders} setCaseOrders={setCaseOrders} coatings={coatings} />}
           {view === 'sasi'   && <SasiScreen sasiOrders={sasiOrders} setSasiOrders={setSasiOrders} soldSasiOrders={soldSasiOrders} setSoldSasiOrders={setSoldSasiOrders} />}
           {view === 'cases'  && <CaseScreen caseOrders={caseOrders} setCaseOrders={setCaseOrders} soldCaseOrders={soldCaseOrders} setSoldCaseOrders={setSoldCaseOrders} />}
           {view === 'stats'  && <StatsScreen customOrders={customOrders} soldOrders={soldOrders} sasiOrders={sasiOrders} soldSasiOrders={soldSasiOrders} caseOrders={caseOrders} soldCaseOrders={soldCaseOrders} />}
@@ -131,11 +140,23 @@ export default function App() {
               <TouchableOpacity style={styles.menuItem} onPress={() => { setMenuOpen(false); setShowCustomers(true); }}>
                 <Text style={styles.menuItemText}>👥 ΠΕΛΑΤΕΣ</Text>
               </TouchableOpacity>
+              <TouchableOpacity style={styles.menuItem} onPress={() => { setMenuOpen(false); setShowCoatings(true); }}>
+                <Text style={styles.menuItemText}>🎨 ΕΠΕΝΔΥΣΕΙΣ</Text>
+              </TouchableOpacity>
               <TouchableOpacity style={styles.menuItem} onPress={() => { setMenuOpen(false); fetchData(); Alert.alert("VAICON", "Ανανέωση δεδομένων..."); }}>
                 <Text style={styles.menuItemText}>🔄 ΑΝΑΝΕΩΣΗ</Text>
               </TouchableOpacity>
             </View>
           </TouchableOpacity>
+        </Modal>
+
+        {/* ΕΠΕΝΔΥΣΕΙΣ SCREEN */}
+        <Modal visible={showCoatings} animationType="slide" onRequestClose={() => setShowCoatings(false)}>
+          <CoatingsScreen
+            coatings={coatings}
+            setCoatings={setCoatings}
+            onClose={() => setShowCoatings(false)}
+          />
         </Modal>
 
         {/* ΠΕΛΑΤΕΣ SCREEN */}

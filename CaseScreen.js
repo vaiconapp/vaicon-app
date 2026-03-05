@@ -119,11 +119,23 @@ export default function CaseScreen({ caseOrders, setCaseOrders, soldCaseOrders, 
     const btn = isArchive?'ΔΙΑΓΡΑΦΗ':(order.status==='PENDING'?'ΕΝΑΡΞΗ':order.status==='PROD'?'ΕΤΟΙΜΗ':'ΠΩΛΗΣΗ');
     const btnC = isArchive?'#000':(order.status==='PENDING'?'#ffbb33':order.status==='PROD'?'#00C851':'#222');
     return (
-      <TouchableOpacity key={order.id} onLongPress={() => !isArchive && editOrder(order)} delayLongPress={1000} activeOpacity={0.7} style={[styles.orderCard, { borderLeftColor: bc }]}>
+      <TouchableOpacity key={order.id} onLongPress={() => !isArchive && editOrder(order)} delayLongPress={1000} activeOpacity={0.7} style={[styles.orderCard, { borderLeftColor: bc }, order.isAuto && {backgroundColor:'#fffde7', borderLeftColor:'#FFC107'}]}>
         <View style={styles.cardContent}>
-          <Text style={styles.cardModel}>{order.model}</Text>
+          <Text style={styles.cardModel}>{order.model}{order.isAuto ? ' ⚡' : ''}</Text>
           <Text style={styles.cardDetails}>{order.size} | {order.side}</Text>
           <Text style={styles.cardSub}>Τεμ: <Text style={{ fontWeight:'bold', color:'#007AFF' }}>{order.qty}</Text>{order.remainingNote ? <Text style={{ color:'#ff6600' }}> ({order.remainingNote})</Text> : null}</Text>
+          {order.autoNote ? (()=>{
+            const totalQtyNum = parseInt(order.qty)||1;
+            const reserved = order.autoNote.split(',').reduce((sum, entry) => {
+              const match = entry.trim().match(/^(.+)\s+\((\d+)τεμ\)$/);
+              return sum + (match ? parseInt(match[2]) : 0);
+            }, 0);
+            const free = totalQtyNum - reserved;
+            return (<>
+              <Text style={{fontSize:11, color:'#E65100', fontWeight:'bold', marginTop:2}}>📌 {order.autoNote}</Text>
+              <Text style={{fontSize:11, color:'#555', marginTop:1}}>Δεσμευμένα: <Text style={{fontWeight:'bold', color:'#E65100'}}>{reserved}</Text> | Υπόλοιπο αποθήκης: <Text style={{fontWeight:'bold', fontSize:16, color:'#00796B'}}>{free}</Text></Text>
+            </>);
+          })() : null}
           {order.notes ? <Text style={styles.cardNotes}>Σημ: {order.notes}</Text> : null}
           <View style={styles.datesRow}>
             {fmtDate(order.createdAt) && <Text style={styles.dateChip}>📅 {fmtDate(order.createdAt)}</Text>}
@@ -144,7 +156,7 @@ export default function CaseScreen({ caseOrders, setCaseOrders, soldCaseOrders, 
       <SellModal visible={sellModal.visible} totalQty={sellModal.totalQty} onConfirm={handleSellConfirm} onCancel={() => setSellModal({ visible: false, orderId: null, totalQty: 1 })} />
     <ScrollView style={{ padding: 10 }}>
       <View style={{ paddingBottom: 120 }}>
-        <View style={styles.bigHeader}><Text style={styles.bigHeaderTxt}>🔲 ΤΥΠΟΠΟΙΗΜΕΝΕΣ ΚΑΣΕΣ</Text></View>
+        <View style={styles.bigHeader}><Text style={styles.bigHeaderTxt}>🔲 ΤΥΠΟΠΟΙΗΜΕΝΕΣ ΚΑΣΕΣ ΣΤΟΚ</Text></View>
         <Text style={styles.sectionTitle}>ΚΑΤΑΧΩΡΗΣΗ ΤΥΠΟΠΟΙΗΜΕΝΗΣ ΚΑΣΑΣ</Text>
 
         <Text style={styles.label}>Τύπος Κάσας:</Text>
