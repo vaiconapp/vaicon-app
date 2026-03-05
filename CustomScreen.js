@@ -1,9 +1,24 @@
 import React, { useState, useRef, useCallback, useEffect } from 'react';
-import { StyleSheet, Text, View, ScrollView, TouchableOpacity, TextInput, Alert, LayoutAnimation, Modal, Share, PanResponder, Dimensions } from 'react-native';
+import { StyleSheet, Text, View, ScrollView, TouchableOpacity, TextInput, Alert, LayoutAnimation, Modal, Share, PanResponder, Dimensions, Platform } from 'react-native';
 const SCREEN_WIDTH = Dimensions.get('window').width;
 import { FIREBASE_URL } from './App';
 import * as Print from 'expo-print';
 import * as Sharing from 'expo-sharing';
+
+// Helper εκτύπωσης — web: window.print(), mobile: expo-print + sharing
+const printHTML = async (html, title) => {
+  if (Platform.OS === 'web') {
+    const win = window.open('', '_blank');
+    if (!win) { Alert.alert("Σφάλμα", "Ο browser μπλόκαρε το παράθυρο εκτύπωσης. Επιτρέψτε τα pop-ups."); return; }
+    win.document.write(html);
+    win.document.close();
+    win.focus();
+    setTimeout(() => { win.print(); }, 500);
+  } else {
+    const { uri } = await Print.printToFileAsync({ html, base64: false });
+    await Sharing.shareAsync(uri, { mimeType: 'application/pdf', dialogTitle: title || 'VAICON', UTI: 'com.adobe.pdf' });
+  }
+};
 
 const fmtDate = (ts) => { if (!ts) return null; const d = new Date(ts); return `${String(d.getDate()).padStart(2,'0')}/${String(d.getMonth()+1).padStart(2,'0')}/${d.getFullYear()}`; };
 const fmtDateTime = (ts) => { if (!ts) return null; const d = new Date(ts); return `${String(d.getDate()).padStart(2,'0')}/${String(d.getMonth()+1).padStart(2,'0')}/${d.getFullYear()} ${String(d.getHours()).padStart(2,'0')}:${String(d.getMinutes()).padStart(2,'0')}`; };
@@ -469,12 +484,7 @@ export default function CustomScreen({ customOrders, setCustomOrders, soldOrders
       const allCopies = getCopies(orders, phaseLabel, dateStr);
       const selectedCopies = copies===4 ? allCopies : [allCopies[0]];
       const html = buildPrintHTML(selectedCopies, phaseKey);
-      const { uri } = await Print.printToFileAsync({ html, base64: false });
-      await Sharing.shareAsync(uri, {
-        mimeType: 'application/pdf',
-        dialogTitle: `VAICON — ${phaseLabel}`,
-        UTI: 'com.adobe.pdf'
-      });
+      await printHTML(html, `VAICON — ${phaseLabel}`);
       // Μαρκάρει ως printed
       const selectedIds = orders.map(o=>o.id);
       const updated = customOrders.map(o => {
@@ -777,8 +787,7 @@ export default function CustomScreen({ customOrders, setCustomOrders, soldOrders
     const copies = [{ title:`VAICON — ${dateStr} — ${title}`, orders:sorted }];
     const html = buildPrintHTML(copies);
     try {
-      const { uri } = await Print.printToFileAsync({ html, base64:false });
-      await Sharing.shareAsync(uri, { mimeType:'application/pdf', dialogTitle:`VAICON — ${title}`, UTI:'com.adobe.pdf' });
+      await printHTML(html, `VAICON — ${title}`);
     } catch(e) {
       Alert.alert("Σφάλμα","Δεν δημιουργήθηκε το PDF.");
     }
@@ -841,8 +850,7 @@ export default function CustomScreen({ customOrders, setCustomOrders, soldOrders
       </tr></thead><tbody>${rows}</tbody></table>
     </body></html>`;
     try {
-      const { uri } = await Print.printToFileAsync({ html, base64:false });
-      await Sharing.shareAsync(uri, { mimeType:'application/pdf', dialogTitle:`VAICON — ${title}`, UTI:'com.adobe.pdf' });
+      await printHTML(html, `VAICON — ${title}`);
     } catch(e) {
       Alert.alert("Σφάλμα","Δεν δημιουργήθηκε το PDF.");
     }
@@ -898,8 +906,7 @@ export default function CustomScreen({ customOrders, setCustomOrders, soldOrders
     </body></html>`;
 
     try {
-      const { uri } = await Print.printToFileAsync({ html, base64:false });
-      await Sharing.shareAsync(uri, { mimeType:'application/pdf', dialogTitle:'VAICON — Κατάσταση Παραγωγής', UTI:'com.adobe.pdf' });
+      await printHTML(html, 'VAICON — Κατάσταση Παραγωγής');
     } catch(e) {
       Alert.alert("Σφάλμα","Δεν δημιουργήθηκε το PDF.");
     }

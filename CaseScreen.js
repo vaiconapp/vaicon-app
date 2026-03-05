@@ -1,20 +1,37 @@
 import React, { useState, useCallback } from 'react';
-import { StyleSheet, Text, View, ScrollView, TouchableOpacity, TextInput, Alert, LayoutAnimation, Modal } from 'react-native';
+import { StyleSheet, Text, View, ScrollView, TouchableOpacity, TextInput, Alert, LayoutAnimation, Modal, Platform } from 'react-native';
 import { FIREBASE_URL } from './App';
 
-function SellModal({ visible, totalQty, onConfirm, onCancel }) {
+const printHTML = async (html, title) => {
+  if (Platform.OS === 'web') {
+    const win = window.open('', '_blank');
+    if (!win) { Alert.alert("Σφάλμα", "Επιτρέψτε τα pop-ups."); return; }
+    win.document.write(html);
+    win.document.close();
+    win.focus();
+    setTimeout(() => { win.print(); }, 500);
+  } else {
+    const Print = await import('expo-print');
+    const Sharing = await import('expo-sharing');
+    const { uri } = await Print.printToFileAsync({ html, base64: false });
+    await Sharing.shareAsync(uri, { mimeType: 'application/pdf', dialogTitle: title, UTI: 'com.adobe.pdf' });
+  }
+};
+
+function SellModal({ visible, totalQty, mode, onConfirm, onCancel }) {
   const [qty, setQty] = React.useState('');
+  const isRestore = mode === 'restore';
   return (
     <Modal visible={visible} transparent animationType="fade">
       <View style={styles.modalOverlay}>
         <View style={styles.modalBox}>
-          <Text style={styles.modalTitle}>ΜΕΡΙΚΗ ΠΩΛΗΣΗ</Text>
-          <Text style={styles.modalSub}>Πόσα τεμάχια θα πουληθούν;</Text>
+          <Text style={styles.modalTitle}>{isRestore ? '↩ ΕΠΙΣΤΡΟΦΗ ΣΤΗΝ ΑΠΟΘΗΚΗ' : 'ΕΚΤΟΣ ΠΡΟΔΙΑΓΡΑΦΩΝ'}</Text>
+          <Text style={styles.modalSub}>{isRestore ? 'Πόσα τεμάχια επιστρέφουν;' : 'Πόσα τεμάχια εκτός προδιαγραφών;'}</Text>
           <Text style={styles.modalTotal}>Σύνολο: {totalQty} τεμ.</Text>
           <TextInput style={styles.modalInput} keyboardType="numeric" value={qty} onChangeText={setQty} placeholder="π.χ. 2" autoFocus />
           <View style={{ flexDirection: 'row', gap: 10 }}>
             <TouchableOpacity style={[styles.modalBtn, { backgroundColor: '#ccc' }]} onPress={() => { setQty(''); onCancel(); }}><Text style={{ fontWeight: 'bold' }}>ΑΚΥΡΟ</Text></TouchableOpacity>
-            <TouchableOpacity style={[styles.modalBtn, { backgroundColor: '#8B0000' }]} onPress={() => { const n = parseInt(qty); if (!n || n < 1 || n > totalQty) return Alert.alert('Σφάλμα', 'Βάλτε έγκυρο αριθμό'); setQty(''); onConfirm(n); }}><Text style={{ fontWeight: 'bold', color: 'white' }}>ΠΩΛΗΣΗ</Text></TouchableOpacity>
+            <TouchableOpacity style={[styles.modalBtn, { backgroundColor: isRestore?'#00796B':'#8B0000' }]} onPress={() => { const n = parseInt(qty); if (!n || n < 1 || n > totalQty) return Alert.alert('Σφάλμα', 'Βάλτε έγκυρο αριθμό'); setQty(''); onConfirm(n); }}><Text style={{ fontWeight: 'bold', color: 'white' }}>ΕΠΙΒΕΒΑΙΩΣΗ</Text></TouchableOpacity>
           </View>
         </View>
       </View>
@@ -63,16 +80,9 @@ export default function CaseScreen({ caseOrders, setCaseOrders, soldCaseOrders, 
     const now = Date.now();
     const order = caseOrders.find(o => o.id === id);
     if (!order) return;
-    if (newStatus === 'SOLD') {
+    if (newStatus === 'REJECTED') {
       const totalQty = parseInt(order.qty) || 1;
-      if (totalQty <= 1) {
-        const upd = { ...order, status: 'SOLD', soldAt: now };
-        setSoldCaseOrders([upd, ...soldCaseOrders]);
-        setCaseOrders(caseOrders.filter(o => o.id !== id));
-        await syncToCloud(upd);
-      } else {
-        setSellModal({ visible: true, orderId: id, totalQty });
-      }
+      setSellModal({ visible: true, orderId: id, totalQty, mode: 'reject' });
     } else {
       let upd;
       setCaseOrders(caseOrders.map(o => { if (o.id === id) { upd = { ...o, status: newStatus, [`${newStatus.toLowerCase()}At`]: now }; return upd; } return o; }));
@@ -80,23 +90,43 @@ export default function CaseScreen({ caseOrders, setCaseOrders, soldCaseOrders, 
     }
   };
 
-  const handleSellConfirm = async (sellQty) => {
+  const handleSellConfirm = async (qty) => {
     const now = Date.now();
-    const { orderId, totalQty } = sellModal;
-    setSellModal({ visible: false, orderId: null, totalQty: 1 });
+    const { orderId, totalQty, mode } = sellModal;
+    setSellModal({ visible: false, orderId: null, totalQty: 1, mode: 'reject' });
+
+    if (mode === 'restore') {
+      const restoreOrder = soldCaseOrders.find(o => o.id === orderId);
+      if (!restoreOrder) return;
+      if (qty === totalQty) {
+        const upd = { ...restoreOrder, status: 'READY', readyAt: now, rejectedAt: null };
+        setCaseOrders([upd, ...caseOrders]);
+        setSoldCaseOrders(soldCaseOrders.filter(o => o.id !== orderId));
+        await syncToCloud(upd);
+      } else {
+        const restored = { ...restoreOrder, id: Date.now().toString(), qty: String(qty), status: 'READY', readyAt: now };
+        const remaining = { ...restoreOrder, qty: String(totalQty - qty) };
+        setCaseOrders([restored, ...caseOrders]);
+        setSoldCaseOrders(soldCaseOrders.map(o => o.id === orderId ? remaining : o));
+        await syncToCloud(restored);
+        await syncToCloud(remaining);
+      }
+      return;
+    }
+
     const order = caseOrders.find(o => o.id === orderId);
     if (!order) return;
-    if (sellQty === totalQty) {
-      const upd = { ...order, status: 'SOLD', soldAt: now };
+    if (qty === totalQty) {
+      const upd = { ...order, status: 'REJECTED', rejectedAt: now };
       setSoldCaseOrders([upd, ...soldCaseOrders]);
       setCaseOrders(caseOrders.filter(o => o.id !== orderId));
       await syncToCloud(upd);
     } else {
-      const soldEntry = { ...order, id: Date.now().toString(), qty: String(sellQty), status: 'SOLD', soldAt: now, partialNote: `${sellQty} από ${totalQty}` };
-      const remaining = { ...order, qty: String(totalQty - sellQty), remainingNote: `Υπόλοιπο: ${totalQty - sellQty} από ${totalQty}` };
-      setSoldCaseOrders([soldEntry, ...soldCaseOrders]);
+      const rejected = { ...order, id: Date.now().toString(), qty: String(qty), status: 'REJECTED', rejectedAt: now };
+      const remaining = { ...order, qty: String(totalQty - qty) };
+      setSoldCaseOrders([rejected, ...soldCaseOrders]);
       setCaseOrders(caseOrders.map(o => o.id === orderId ? remaining : o));
-      await syncToCloud(soldEntry);
+      await syncToCloud(rejected);
       await syncToCloud(remaining);
     }
   };
@@ -114,10 +144,10 @@ export default function CaseScreen({ caseOrders, setCaseOrders, soldCaseOrders, 
   const toggle = (s) => { LayoutAnimation.configureNext(LayoutAnimation.Presets.easeInEaseOut); setExpanded({ ...expanded, [s]: !expanded[s] }); };
 
   const renderCard = (order, isArchive = false) => {
-    const bc = isArchive ? '#333' : (order.status==='PENDING'?'#ff4444':order.status==='PROD'?'#ffbb33':'#00C851');
-    const next = order.status==='PENDING'?'PROD':order.status==='PROD'?'READY':'SOLD';
-    const btn = isArchive?'ΔΙΑΓΡΑΦΗ':(order.status==='PENDING'?'ΕΝΑΡΞΗ':order.status==='PROD'?'ΕΤΟΙΜΗ':'ΠΩΛΗΣΗ');
-    const btnC = isArchive?'#000':(order.status==='PENDING'?'#ffbb33':order.status==='PROD'?'#00C851':'#222');
+    const bc = isArchive ? '#8B0000' : (order.status==='PENDING'?'#ff4444':order.status==='PROD'?'#ffbb33':'#00C851');
+    const next = order.status==='PENDING'?'PROD':order.status==='PROD'?'READY':'REJECTED';
+    const btn = isArchive?'ΔΙΑΓΡΑΦΗ':(order.status==='PENDING'?'ΕΝΑΡΞΗ':order.status==='PROD'?'ΕΤΟΙΜΗ':'ΕΚΤΟΣ ΠΡΟΔ.');
+    const btnC = isArchive?'#000':(order.status==='PENDING'?'#ffbb33':order.status==='PROD'?'#00C851':'#8B0000');
     return (
       <TouchableOpacity key={order.id} onLongPress={() => !isArchive && editOrder(order)} delayLongPress={1000} activeOpacity={0.7} style={[styles.orderCard, { borderLeftColor: bc }, order.isAuto && {backgroundColor:'#fffde7', borderLeftColor:'#FFC107'}]}>
         <View style={styles.cardContent}>
@@ -146,14 +176,52 @@ export default function CaseScreen({ caseOrders, setCaseOrders, soldCaseOrders, 
         </View>
         <View style={styles.sideBtns}>
           {!isArchive && <TouchableOpacity style={[styles.upperBtn, { backgroundColor: order.status==='PENDING'?'#000':'#666' }]} onPress={() => order.status==='PENDING'?cancelOrder(order.id):moveBack(order.id,order.status)}><Text style={[styles.upperTxt, { color: order.status==='PENDING'?'#ff4444':'white' }]}>{order.status==='PENDING'?'ΑΚΥΡΩΣΗ':'⟲'}</Text></TouchableOpacity>}
-          <TouchableOpacity style={[styles.lowerBtn, { backgroundColor: btnC }]} onPress={() => isArchive?deleteFromArchive(order.id):updateStatus(order.id,next)}><Text style={styles.lowerTxt}>{btn}</Text></TouchableOpacity>        </View>
+          {isArchive && <TouchableOpacity style={[styles.upperBtn, {backgroundColor:'#00796B'}]} onPress={()=>setSellModal({visible:true, orderId:order.id, totalQty:parseInt(order.qty)||1, mode:'restore'})}><Text style={[styles.upperTxt,{color:'white'}]}>↩ ΕΠΙΣΤ.</Text></TouchableOpacity>}
+          <TouchableOpacity style={[styles.lowerBtn, { backgroundColor: btnC }]} onPress={() => isArchive?deleteFromArchive(order.id):updateStatus(order.id,next)}><Text style={styles.lowerTxt}>{btn}</Text></TouchableOpacity>
+        </View>
       </TouchableOpacity>
     );
   };
 
+  const handlePrint = async (orders, title) => {
+    if (!orders.length) return Alert.alert("Προσοχή", "Δεν υπάρχουν εγγραφές.");
+    const today = new Date();
+    const dateStr = `${String(today.getDate()).padStart(2,'0')}/${String(today.getMonth()+1).padStart(2,'0')}/${today.getFullYear()}`;
+    const sorted = [...orders].sort((a,b) => {
+      const hDiff = (parseInt(b.selectedHeight)||0) - (parseInt(a.selectedHeight)||0);
+      if (hDiff !== 0) return hDiff;
+      return (parseInt(b.selectedWidth)||0) - (parseInt(a.selectedWidth)||0);
+    });
+    const rows = sorted.map(o => `<tr>
+      <td style="font-weight:bold;font-size:13px">${o.model||'—'}</td>
+      <td style="font-weight:bold;font-size:13px">${o.selectedHeight||'—'}x${o.selectedWidth||'—'}</td>
+      <td style="font-weight:bold;font-size:13px">${o.side||'—'}</td>
+      <td style="font-weight:bold;font-size:13px;color:#007AFF">${o.qty||'1'}</td>
+      ${o.autoNote?`<td style="color:#E65100;font-size:11px">📌 ${o.autoNote}</td>`:'<td>—</td>'}
+      <td>${o.notes||''}</td>
+    </tr>`).join('');
+    const html = `<html><head><meta charset="utf-8"><style>
+      body{font-family:Arial,sans-serif;margin:8mm;}
+      h1{font-size:14px;font-weight:bold;margin-bottom:2px;}
+      h2{font-size:11px;margin-top:0;margin-bottom:10px;color:#555;}
+      table{width:100%;border-collapse:collapse;font-size:11px;}
+      th{padding:5px 4px;text-align:left;border-top:2px solid #000;border-bottom:1px solid #000;font-weight:bold;}
+      td{padding:5px 4px;border-bottom:1px solid #ddd;vertical-align:top;}
+      @media print{@page{size:A4 landscape;margin:8mm;}}
+    </style></head><body>
+      <h1>VAICON — ΚΑΣΕΣ ΣΤΟΚ — ${title}</h1>
+      <h2>📅 ${dateStr} | Σύνολο: ${sorted.length} εγγραφές</h2>
+      <table><thead><tr>
+        <th>Μοντέλο</th><th>Διάσταση</th><th>Φορά</th><th>Τεμ.</th><th>Δεσμεύσεις</th><th>Παρατηρήσεις</th>
+      </tr></thead><tbody>${rows}</tbody></table>
+    </body></html>`;
+    try { await printHTML(html, `VAICON — ΚΑΣΕΣ — ${title}`); }
+    catch(e) { Alert.alert("Σφάλμα", "Δεν δημιουργήθηκε το PDF."); }
+  };
+
   return (
     <View style={{ flex: 1 }}>
-      <SellModal visible={sellModal.visible} totalQty={sellModal.totalQty} onConfirm={handleSellConfirm} onCancel={() => setSellModal({ visible: false, orderId: null, totalQty: 1 })} />
+      <SellModal visible={sellModal.visible} totalQty={sellModal.totalQty} mode={sellModal.mode} onConfirm={handleSellConfirm} onCancel={() => setSellModal({ visible: false, orderId: null, totalQty: 1, mode:'reject' })} />
     <ScrollView style={{ padding: 10 }}>
       <View style={{ paddingBottom: 120 }}>
         <View style={styles.bigHeader}><Text style={styles.bigHeaderTxt}>🔲 ΤΥΠΟΠΟΙΗΜΕΝΕΣ ΚΑΣΕΣ ΣΤΟΚ</Text></View>
@@ -191,11 +259,22 @@ export default function CaseScreen({ caseOrders, setCaseOrders, soldCaseOrders, 
         <Text style={styles.mainTitle}>ΡΟΗ ΠΑΡΑΓΩΓΗΣ</Text>
         {[['pending','ΠΡΟΣ ΠΑΡΑΓΩΓΗ','#ff4444'],['prod','ΣΤΗΝ ΠΑΡΑΓΩΓΗ','#ffbb33'],['ready','ΕΤΟΙΜΑ ΑΠΟΘΗΚΗΣ','#00C851']].map(([key,label,color]) => (
           <View key={key}>
-            <TouchableOpacity style={[styles.listHeader, { backgroundColor:color }]} onPress={() => toggle(key)}><Text style={styles.listHeaderTxt}>● {label} ({caseOrders.filter(o=>o.status===key.toUpperCase()).length})</Text></TouchableOpacity>
+            <TouchableOpacity style={[styles.listHeader, { backgroundColor:color, flexDirection:'row', alignItems:'center', justifyContent:'space-between' }]} onPress={() => toggle(key)}>
+              <Text style={styles.listHeaderTxt}>● {label} ({caseOrders.filter(o=>o.status===key.toUpperCase()).length})</Text>
+              <View style={{flexDirection:'row', alignItems:'center', gap:6}}>
+                {expanded[key] && caseOrders.filter(o=>o.status===key.toUpperCase()).length>0 &&
+                  <TouchableOpacity style={{backgroundColor:'white', paddingHorizontal:10, paddingVertical:4, borderRadius:20}}
+                    onPress={()=>handlePrint(caseOrders.filter(o=>o.status===key.toUpperCase()), label)}>
+                    <Text style={{color:'#333', fontSize:11, fontWeight:'bold'}}>🖨️</Text>
+                  </TouchableOpacity>
+                }
+                <Text style={{color:'white'}}>{expanded[key]?'▲':'▼'}</Text>
+              </View>
+            </TouchableOpacity>
             {expanded[key] && caseOrders.filter(o=>o.status===key.toUpperCase()).map(o=>renderCard(o))}
           </View>
         ))}
-        <TouchableOpacity style={[styles.listHeader, { backgroundColor:'#333', marginTop:20 }]} onPress={() => toggle('archive')}><Text style={styles.listHeaderTxt}>📂 ΑΡΧΕΙΟ ΠΩΛΗΣΕΩΝ ({soldCaseOrders.length})</Text></TouchableOpacity>
+        <TouchableOpacity style={[styles.listHeader, { backgroundColor:'#8B0000', marginTop:20 }]} onPress={() => toggle('archive')}><Text style={styles.listHeaderTxt}>🗑 ΑΠΟΡΡΙΦΘΕΝΤΑ ({soldCaseOrders.length})</Text></TouchableOpacity>
         {expanded.archive && soldCaseOrders.map(o => renderCard(o, true))}
       </View>
     </ScrollView>
