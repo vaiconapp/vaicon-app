@@ -10,10 +10,59 @@ const printHTML = async (html, title) => {
   if (Platform.OS === 'web') {
     const win = window.open('', '_blank');
     if (!win) { Alert.alert("Σφάλμα", "Ο browser μπλόκαρε το παράθυρο εκτύπωσης. Επιτρέψτε τα pop-ups."); return; }
-    win.document.write(html);
+    const previewHTML = `
+      <!DOCTYPE html>
+      <html>
+      <head>
+        <meta charset="utf-8">
+        <meta name="viewport" content="width=device-width, initial-scale=1.0">
+        <title>${title || 'VAICON'}</title>
+        <style>
+          * { box-sizing: border-box; margin: 0; padding: 0; }
+          body { font-family: Arial, sans-serif; background: #f5f5f5; }
+          #toolbar {
+            position: fixed; top: 0; left: 0; right: 0;
+            background: #1a1a1a; padding: 10px 16px;
+            display: flex; align-items: center; justify-content: space-between;
+            z-index: 999; box-shadow: 0 2px 8px rgba(0,0,0,0.3);
+          }
+          #toolbar h2 { color: white; font-size: 14px; }
+          #printBtn {
+            background: #007AFF; color: white; border: none;
+            padding: 10px 24px; border-radius: 8px; font-size: 15px;
+            font-weight: bold; cursor: pointer; letter-spacing: 1px;
+          }
+          #printBtn:hover { background: #0056b3; }
+          #closeBtn {
+            background: #555; color: white; border: none;
+            padding: 10px 16px; border-radius: 8px; font-size: 14px;
+            cursor: pointer; margin-left: 8px;
+          }
+          #content { margin-top: 56px; padding: 16px; background: white; min-height: calc(100vh - 56px); }
+          @media print {
+            #toolbar { display: none; }
+            #content { margin-top: 0; padding: 0; }
+            @page { size: A4 landscape; margin: 5mm; }
+          }
+        </style>
+      </head>
+      <body>
+        <div id="toolbar">
+          <h2>🖨️ ${title || 'VAICON'}</h2>
+          <div>
+            <button id="printBtn" onclick="window.print()">🖨️ ΕΚΤΥΠΩΣΗ</button>
+            <button id="closeBtn" onclick="window.close()">✕ ΚΛΕΙΣΙΜΟ</button>
+          </div>
+        </div>
+        <div id="content">
+          ${html.replace(/<html>.*?<body>/s,'').replace(/<\/body>.*?<\/html>/s,'')}
+        </div>
+      </body>
+      </html>
+    `;
+    win.document.write(previewHTML);
     win.document.close();
     win.focus();
-    setTimeout(() => { win.print(); }, 500);
   } else {
     const { uri } = await Print.printToFileAsync({ html, base64: false });
     await Sharing.shareAsync(uri, { mimeType: 'application/pdf', dialogTitle: title || 'VAICON', UTI: 'com.adobe.pdf' });

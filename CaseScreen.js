@@ -6,10 +6,11 @@ const printHTML = async (html, title) => {
   if (Platform.OS === 'web') {
     const win = window.open('', '_blank');
     if (!win) { Alert.alert("Σφάλμα", "Επιτρέψτε τα pop-ups."); return; }
-    win.document.write(html);
+    const inner = html.replace(/<html[\s\S]*?<body[^>]*>/i,'').replace(/<\/body[\s\S]*?<\/html>/i,'');
+    const previewHTML = `<!DOCTYPE html><html><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1.0"><title>${title||'VAICON'}</title><style>*{box-sizing:border-box;margin:0;padding:0;}body{font-family:Arial,sans-serif;background:#f5f5f5;}#toolbar{position:fixed;top:0;left:0;right:0;background:#1a1a1a;padding:10px 16px;display:flex;align-items:center;justify-content:space-between;z-index:999;}#toolbar h2{color:white;font-size:14px;}#printBtn{background:#007AFF;color:white;border:none;padding:10px 24px;border-radius:8px;font-size:15px;font-weight:bold;cursor:pointer;}#closeBtn{background:#555;color:white;border:none;padding:10px 16px;border-radius:8px;font-size:14px;cursor:pointer;margin-left:8px;}#content{margin-top:56px;padding:16px;background:white;}@media print{#toolbar{display:none;}#content{margin-top:0;padding:0;}@page{size:A4 landscape;margin:5mm;}}</style></head><body><div id="toolbar"><h2>🖨️ ${title||'VAICON'}</h2><div><button id="printBtn" onclick="window.print()">🖨️ ΕΚΤΥΠΩΣΗ</button><button id="closeBtn" onclick="window.close()">✕ ΚΛΕΙΣΙΜΟ</button></div></div><div id="content">${inner}</div></body></html>`;
+    win.document.write(previewHTML);
     win.document.close();
     win.focus();
-    setTimeout(() => { win.print(); }, 500);
   } else {
     const Print = await import('expo-print');
     const Sharing = await import('expo-sharing');
