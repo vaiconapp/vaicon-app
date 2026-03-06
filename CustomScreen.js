@@ -73,8 +73,8 @@ const printHTML = async (html, title) => {
 const fmtDate = (ts) => { if (!ts) return null; const d = new Date(ts); return `${String(d.getDate()).padStart(2,'0')}/${String(d.getMonth()+1).padStart(2,'0')}/${d.getFullYear()}`; };
 const fmtDateTime = (ts) => { if (!ts) return null; const d = new Date(ts); return `${String(d.getDate()).padStart(2,'0')}/${String(d.getMonth()+1).padStart(2,'0')}/${d.getFullYear()} ${String(d.getHours()).padStart(2,'0')}:${String(d.getMinutes()).padStart(2,'0')}`; };
 
-const STD_HEIGHTS = ['203','208','213','218','223'];
-const STD_WIDTHS  = ['83','88','93','98','103'];
+const STD_HEIGHTS = ['208','213','218','223'];
+const STD_WIDTHS  = ['83','88','93','98'];
 const INIT_FORM   = { customer:'', orderNo:'', h:'', w:'', hinges:'2', qty:'1', glassDim:'', armor:'ΜΟΝΗ', side:'ΔΕΞΙΑ', lock:'', notes:'', status:'PENDING', hardware:'', installation:'ΟΧΙ', caseType:'ΚΛΕΙΣΤΟΥ ΤΥΠΟΥ', caseMaterial:'DKP', deliveryDate:'', sasiType:'ΜΟΝΗ ΘΩΡΑΚΙΣΗ', coatings:[] };
 
 const PHASES = [
@@ -126,8 +126,9 @@ function SellModal({ visible, totalQty, onConfirm, onCancel }) {
 }
 
 export default function CustomScreen({ customOrders, setCustomOrders, soldOrders, setSoldOrders, customers, onRequestAddCustomer, sasiOrders=[], setSasiOrders, caseOrders=[], setCaseOrders, coatings=[], dipliSasiStock=[], setDipliSasiStock }) {
-  const [expanded, setExpanded] = useState({ pending:false, prod:false, ready:false, archive:false, stdList:true, stdMoni:true, stdDipli:true, stdReady:true, stdSold:false, stdReadyD:true, stdSoldD:false, stdMoniOpen:false, stdDipliOpen:false, dipliProd:true, dipliSasiStock:false });
+  const [expanded, setExpanded] = useState({ pending:false, prod:false, ready:false, archive:false, stdList:true, stdMoni:true, stdDipli:true, stdReady:true, stdSold:false, stdReadyD:true, stdSoldD:false, stdMoniOpen:false, stdDipliOpen:false, dipliProd:true, dipliSasiStock:false, moniProd:true, moniSasiStock:false });
   const [dipliProdTab, setDipliProdTab] = useState('laser');
+  const [moniProdTab, setMoniProdTab] = useState('laser');
   const [showHardwarePicker, setShowHardwarePicker] = useState(false);
   const [showCoatingsPicker, setShowCoatingsPicker] = useState(false);
   const [showDatePicker, setShowDatePicker] = useState(false);
@@ -157,15 +158,17 @@ export default function CustomScreen({ customOrders, setCustomOrders, soldOrders
 
   // Αυτόματο πέρασμα ΔΙΠΛΗΣ στα ΕΤΟΙΜΑ όταν τελειώσουν οι φάσεις ΚΑΙ υπάρχει κάσα
   useEffect(() => {
-    const dipliProdOrders = customOrders.filter(o=>o.orderType==='ΤΥΠΟΠΟΙΗΜΕΝΗ'&&o.sasiType==='ΔΙΠΛΗ ΘΩΡΑΚΙΣΗ'&&o.status==='DIPLI_PROD');
-    if(dipliProdOrders.length===0) return;
+    const prodOrders = customOrders.filter(o=>o.orderType==='ΤΥΠΟΠΟΙΗΜΕΝΗ'&&(o.status==='DIPLI_PROD'||o.status==='MONI_PROD'));
+    if(prodOrders.length===0) return;
     const caseReady = caseOrders.filter(o=>o.status==='READY');
     const caseUsed = {};
     let updated = false;
     const newOrders = customOrders.map(o=>{
-      if(o.orderType!=='ΤΥΠΟΠΟΙΗΜΕΝΗ'||o.sasiType!=='ΔΙΠΛΗ ΘΩΡΑΚΙΣΗ'||o.status!=='DIPLI_PROD') return o;
+      if(o.orderType!=='ΤΥΠΟΠΟΙΗΜΕΝΗ'||(o.status!=='DIPLI_PROD'&&o.status!=='MONI_PROD')) return o;
+      const isDipli = o.status==='DIPLI_PROD';
+      const phases = isDipli ? o.dipliPhases : o.moniPhases;
       // Έλεγχος αν όλες οι φάσεις είναι done
-      const allDone = o.dipliPhases && Object.keys(o.dipliPhases).every(k=>!o.dipliPhases[k].active||o.dipliPhases[k].done);
+      const allDone = phases && Object.keys(phases).every(k=>!phases[k].active||phases[k].done);
       if(!allDone) return o;
       // Έλεγχος αποθήκης κάσας (FIFO)
       const key=`${o.h}_${o.w}_${o.side}`;
@@ -230,7 +233,16 @@ export default function CustomScreen({ customOrders, setCustomOrders, soldOrders
         return;
       }
     }
-    const newOrder = {...customForm, orderType, id:Date.now().toString(), createdAt:Date.now(), status: orderType==='ΤΥΠΟΠΟΙΗΜΕΝΗ' ? 'STD_PENDING' : 'PENDING'};
+    const isMoniWithLock = orderType==='ΤΥΠΟΠΟΙΗΜΕΝΗ' && (customForm.sasiType==='ΜΟΝΗ ΘΩΡΑΚΙΣΗ'||!customForm.sasiType) && customForm.lock;
+    const moniPhases = isMoniWithLock ? {
+      laser:   {active:true, done:false, printHistory:[]},
+      montSasi:{active:true, done:false, printHistory:[]},
+      montDoor:{active:false,done:false, printHistory:[]}
+    } : null;
+    const newOrder = {...customForm, orderType, id:Date.now().toString(), createdAt:Date.now(),
+      status: orderType==='ΤΥΠΟΠΟΙΗΜΕΝΗ' ? (isMoniWithLock ? 'MONI_PROD' : 'STD_PENDING') : 'PENDING',
+      ...(isMoniWithLock ? {moniPhases} : {})
+    };
     setCustomOrders([newOrder,...customOrders]);
     await syncToCloud(newOrder);
     await logActivity(orderType, 'Νέα παραγγελία', { orderNo: newOrder.orderNo, customer: newOrder.customer, size: `${newOrder.h}x${newOrder.w}`, qty: newOrder.qty });
@@ -244,8 +256,9 @@ export default function CustomScreen({ customOrders, setCustomOrders, soldOrders
       const allStdOrders = [...customOrders, newOrder].filter(o=>o.orderType==='ΤΥΠΟΠΟΙΗΜΕΝΗ' && (o.status==='STD_PENDING'||o.status==='DIPLI_PROD'||!o.status));
       const sameSize = o => String(o.h)===String(h) && String(o.w)===String(w) && o.side===side;
 
-      // Έλεγχος ΑΠΟΘΕΜΑ ΣΑΣΙ για ΔΙΠΛΗ ΘΩΡΑΚΙΣΗ
-      if (newOrder.sasiType==='ΔΙΠΛΗ ΘΩΡΑΚΙΣΗ' && dipliSasiStock && dipliSasiStock.length > 0) {
+      // Έλεγχος ΑΠΟΘΕΜΑ ΣΑΣΙ για ΔΙΠΛΗ ή ΜΟΝΗ με κλειδαριά
+      const isMoniWithLockNew = (newOrder.sasiType==='ΜΟΝΗ ΘΩΡΑΚΙΣΗ'||!newOrder.sasiType) && newOrder.lock;
+      if ((newOrder.sasiType==='ΔΙΠΛΗ ΘΩΡΑΚΙΣΗ' || isMoniWithLockNew) && dipliSasiStock && dipliSasiStock.length > 0) {
         const availSasi = dipliSasiStock.filter(s =>
           String(s.h)===String(h) && String(s.w)===String(w) && s.side===side && !s.reservedBy
         );
@@ -272,8 +285,8 @@ export default function CustomScreen({ customOrders, setCustomOrders, soldOrders
       const neededDipli = allStdOrders.filter(o=>sameSize(o)&&o.sasiType==='ΔΙΠΛΗ ΘΩΡΑΚΙΣΗ').reduce((s,o)=>s+(parseInt(o.qty)||1),0);
       const neededTotal = neededMoni + neededDipli;
 
-      // --- ΣΑΣΙ (μόνο ΜΟΝΗ) ---
-      if (newOrder.sasiType==='ΜΟΝΗ ΘΩΡΑΚΙΣΗ' || !newOrder.sasiType) {
+      // --- ΣΑΣΙ (μόνο ΜΟΝΗ χωρίς κλειδαριά) ---
+      if ((newOrder.sasiType==='ΜΟΝΗ ΘΩΡΑΚΙΣΗ' || !newOrder.sasiType) && !newOrder.lock) {
         const sasiReady = sasiOrders.filter(o=>o.status==='READY'&&sameSize({h:o.selectedHeight,w:o.selectedWidth,side:o.side})).reduce((s,o)=>s+(parseInt(o.qty)||1),0);
         const sasiProd = sasiOrders.filter(o=>o.status!=='SOLD'&&o.status!=='READY'&&String(o.selectedHeight)===String(h)&&String(o.selectedWidth)===String(w)&&o.side===side);
 
@@ -835,7 +848,7 @@ export default function CustomScreen({ customOrders, setCustomOrders, soldOrders
           <Text style={styles.cardDetails}>#{order.orderNo} | {order.h}x{order.w} | {order.side}{!isStd?` | ${order.armor} ΘΩΡ.`:''}</Text>
           {!isStd&&<Text style={styles.cardSubDetails}>Μεντ: {order.hinges}{order.glassDim?` | Τζ: ${order.glassDim}`:''}</Text>}
           {!isStd&&<Text style={styles.cardSubDetails}>Κλειδ: {order.lock||'—'} | {order.hardware}{order.installation==='ΝΑΙ'?' | 🔧':''}</Text>}
-          {isStd&&<Text style={styles.cardSubDetails}>{order.hardware}{order.installation==='ΝΑΙ'?' | 🔧 ΜΟΝΤΑΡΙΣΜΑ':''}</Text>}
+          {isStd&&<Text style={styles.cardSubDetails}>{order.lock?`Κλειδ: ${order.lock} | `:''}  {order.hardware}{order.installation==='ΝΑΙ'?' | 🔧 ΜΟΝΤΑΡΙΣΜΑ':''}</Text>}
           {order.coatings&&order.coatings.length>0&&<Text style={[styles.cardSubDetails,{color:'#007AFF'}]}>🎨 {order.coatings.join(', ')}</Text>}
           {order.qty&&parseInt(order.qty)>1?<Text style={[styles.cardSubDetails,{color:'#007AFF',fontWeight:'bold'}]}>Τεμ: {order.qty}</Text>:null}
           {order.notes?<Text style={styles.cardSubDetails}>Σημ: {order.notes}</Text>:null}
@@ -1440,6 +1453,10 @@ export default function CustomScreen({ customOrders, setCustomOrders, soldOrders
           <Text style={styles.smallLabel}>Τεμάχια:</Text>
           <TextInput style={styles.qtyInput} keyboardType="numeric" value={customForm.qty} onChangeText={v=>setCustomForm({...customForm,qty:v})} selectTextOnFocus/>
 
+          {orderType==='ΤΥΠΟΠΟΙΗΜΕΝΗ'&&(
+            <TextInput style={[styles.input,{marginTop:8}]} placeholder="Κλειδαριά" value={customForm.lock} onChangeText={v=>setCustomForm({...customForm,lock:v})} selectTextOnFocus/>
+          )}
+
           <TextInput style={[styles.input,{height:80,textAlignVertical:'top',marginTop:8}]} placeholder="Παρατηρήσεις" value={customForm.notes} multiline onChangeText={v=>setCustomForm({...customForm,notes:v})}/>
 
           {/* ΠΡΟΤΕΙΝΟΜΕΝΗ ΗΜΕΡΟΜΗΝΙΑ ΠΑΡΑΔΟΣΗΣ */}
@@ -1728,8 +1745,8 @@ export default function CustomScreen({ customOrders, setCustomOrders, soldOrders
                         <Text style={{color:'white', fontSize:10, fontWeight:'bold'}}>📦 ΑΡΧΕΙΟ</Text>
                       </TouchableOpacity>
 
-                      {/* ΑΚΥΡΩΣΗ — μόνο για ΔΙΠΛΗ ΘΩΡΑΚΙΣΗ */}
-                      {o.sasiType==='ΔΙΠΛΗ ΘΩΡΑΚΙΣΗ' && (
+                      {/* ΑΚΥΡΩΣΗ — για ΔΙΠΛΗ ή ΜΟΝΗ με κλειδαριά */}
+                      {(o.sasiType==='ΔΙΠΛΗ ΘΩΡΑΚΙΣΗ' || ((o.sasiType==='ΜΟΝΗ ΘΩΡΑΚΙΣΗ'||!o.sasiType) && o.lock)) && (
                         <TouchableOpacity
                           style={{backgroundColor:'#c62828', paddingHorizontal:8, paddingVertical:5, borderRadius:5, alignItems:'center'}}
                           onPress={()=>Alert.alert("❌ ΑΚΥΡΩΣΗ","Ακύρωση παραγγελίας;\n\n• Η κάσα ξεδεσμεύεται\n• Το σασί πηγαίνει στο ΑΠΟΘΕΜΑ ΣΑΣΙ",[
@@ -1769,7 +1786,9 @@ export default function CustomScreen({ customOrders, setCustomOrders, soldOrders
                                 const sasiEntry = {
                                   id: `dsasi_${Date.now()}`,
                                   h: o.h, w: o.w, side: o.side,
+                                  sasiType: o.sasiType||'ΜΟΝΗ ΘΩΡΑΚΙΣΗ',
                                   hardware: o.hardware||'', hardwareColor: o.hardwareColor||'',
+                                  lock: o.lock||'',
                                   coating: o.coating||'', notes: o.notes||'',
                                   orderNo: o.orderNo, customer: o.customer||'',
                                   createdAt: Date.now(),
@@ -1845,6 +1864,7 @@ export default function CustomScreen({ customOrders, setCustomOrders, soldOrders
 
               // Φιλτράρω ανά status
               const moniOrders = customOrders.filter(o=>o.orderType==='ΤΥΠΟΠΟΙΗΜΕΝΗ'&&(o.sasiType==='ΜΟΝΗ ΘΩΡΑΚΙΣΗ'||!o.sasiType)&&(o.status==='STD_PENDING'||!o.status)).sort((a,b)=>(parseInt(a.orderNo)||0)-(parseInt(b.orderNo)||0));
+              const moniProdOrders = customOrders.filter(o=>o.orderType==='ΤΥΠΟΠΟΙΗΜΕΝΗ'&&(o.sasiType==='ΜΟΝΗ ΘΩΡΑΚΙΣΗ'||!o.sasiType)&&o.status==='MONI_PROD').sort((a,b)=>(parseInt(a.orderNo)||0)-(parseInt(b.orderNo)||0));
               const dipliOrders = customOrders.filter(o=>o.orderType==='ΤΥΠΟΠΟΙΗΜΕΝΗ'&&o.sasiType==='ΔΙΠΛΗ ΘΩΡΑΚΙΣΗ'&&(o.status==='STD_PENDING'||!o.status||o.status==='PENDING')).sort((a,b)=>(parseInt(a.orderNo)||0)-(parseInt(b.orderNo)||0));
               const readyOrders = customOrders.filter(o=>o.orderType==='ΤΥΠΟΠΟΙΗΜΕΝΗ'&&(o.sasiType==='ΜΟΝΗ ΘΩΡΑΚΙΣΗ'||!o.sasiType)&&o.status==='STD_READY').sort((a,b)=>(parseInt(a.orderNo)||0)-(parseInt(b.orderNo)||0));
               const soldOrders = customOrders.filter(o=>o.orderType==='ΤΥΠΟΠΟΙΗΜΕΝΗ'&&(o.sasiType==='ΜΟΝΗ ΘΩΡΑΚΙΣΗ'||!o.sasiType)&&o.status==='STD_SOLD').sort((a,b)=>(b.soldAt||0)-(a.soldAt||0));
@@ -1907,7 +1927,62 @@ export default function CustomScreen({ customOrders, setCustomOrders, soldOrders
                     <Text style={{textAlign:'center',color:'#999',padding:12}}>Δεν υπάρχουν παραγγελίες μονής θωράκισης</Text>
                   }
 
-                  {/* ΕΤΟΙΜΑ ΑΠΟΘΗΚΗΣ */}
+                  {/* ΠΑΡΑΓΓΕΛΙΕΣ ΣΤΗΝ ΠΑΡΑΓΩΓΗ — ΜΟΝΗ */}
+                  {moniProdOrders.length>0&&(<>
+                    <TouchableOpacity style={[styles.listHeader,{backgroundColor:'#1565C0', flexDirection:'row', alignItems:'center', justifyContent:'space-between', marginTop:8}]} onPress={()=>toggleSection('moniProd')}>
+                      <Text style={styles.listHeaderText}>🔵 ΠΑΡΑΓΓΕΛΙΕΣ ΣΤΗΝ ΠΑΡΑΓΩΓΗ ({moniProdOrders.length})</Text>
+                      <Text style={{color:'white'}}>{expanded.moniProd?'▲':'▼'}</Text>
+                    </TouchableOpacity>
+                    {expanded.moniProd&&(
+                      <View style={{flexDirection:'row', marginBottom:6, marginTop:4}}>
+                        {['laser','montSasi','montDoor'].map(key=>{
+                          const label = key==='laser'?'🔴 LASER':key==='montSasi'?'🔵 ΚΑΤ.ΣΑΣΙ':'🟢 ΜΟΝΤ.';
+                          const tabOrders = moniProdOrders.filter(o=>o.moniPhases?.[key]?.active);
+                          if(key==='montDoor' && tabOrders.length===0) return null;
+                          return (
+                            <TouchableOpacity key={key}
+                              style={{flex:1, padding:8, alignItems:'center', borderRadius:6, marginHorizontal:2, backgroundColor: moniProdTab===key?'#1565C0':'#e0e0e0'}}
+                              onPress={()=>setMoniProdTab(key)}>
+                              <Text style={{fontSize:11, fontWeight:'bold', color: moniProdTab===key?'white':'#555'}}>{label}</Text>
+                            </TouchableOpacity>
+                          );
+                        })}
+                      </View>
+                    )}
+                    {expanded.moniProd&&moniProdOrders.filter(o=>o.moniPhases?.[moniProdTab]?.active).map(o=>{
+                      const phase = o.moniPhases?.[moniProdTab];
+                      if(!phase) return null;
+                      const caseStk=caseReady.filter(s=>String(s.selectedHeight)===String(o.h)&&String(s.selectedWidth)===String(o.w)&&s.side===o.side).reduce((sum,s)=>sum+(parseInt(s.qty)||1),0);
+                      const caseOk = caseStk > 0;
+                      return (
+                        <View key={o.id} style={{backgroundColor: phase.done?'#e8f5e9':'#fff3e0', borderRadius:8, padding:10, marginBottom:6, borderLeftWidth:4, borderLeftColor: phase.done?'#00C851':'#1565C0', elevation:1}}>
+                          <View style={{flexDirection:'row', justifyContent:'space-between', alignItems:'flex-start'}}>
+                            <View style={{flex:1}}>
+                              <Text style={{fontWeight:'bold', fontSize:13}}>#{o.orderNo} {o.customer?`— ${o.customer}`:''}</Text>
+                              <Text style={{fontSize:12, color:'#555'}}>{o.h}x{o.w} | {o.side}</Text>
+                              {o.lock?<Text style={{fontSize:11, color:'#555'}}>🔑 {o.lock}</Text>:null}
+                              {o.hardware?<Text style={{fontSize:11, color:'#555'}}>🔩 {o.hardware}</Text>:null}
+                              <Text style={{fontSize:11, marginTop:2, color: caseOk?'#00796B':'#c62828', fontWeight:'bold'}}>{caseOk?'✅ ΚΑΣΑ OK':'⚠️ ΔΕΝ ΥΠΑΡΧΕΙ ΚΑΣΑ'}</Text>
+                              {phase.done&&<Text style={{fontSize:11, color:'#00796B', fontWeight:'bold'}}>✅ Ολοκληρώθηκε</Text>}
+                            </View>
+                            <TouchableOpacity
+                              style={{backgroundColor: phase.done?'#888':'#1565C0', paddingHorizontal:10, paddingVertical:6, borderRadius:6, marginLeft:8}}
+                              onPress={async()=>{
+                                const newPhases = {...o.moniPhases, [moniProdTab]:{...phase, done:!phase.done}};
+                                const upd = {...o, moniPhases:newPhases};
+                                setCustomOrders(customOrders.map(x=>x.id===o.id?upd:x));
+                                await syncToCloud(upd);
+                              }}>
+                              <Text style={{color:'white', fontSize:11, fontWeight:'bold'}}>{phase.done?'↩ ΑΝΑΙΡΕΣΗ':'✓ ΤΕΛΟΣ'}</Text>
+                            </TouchableOpacity>
+                          </View>
+                        </View>
+                      );
+                    })}
+                    {expanded.moniProd&&moniProdOrders.filter(o=>o.moniPhases?.[moniProdTab]?.active).length===0&&(
+                      <Text style={{textAlign:'center',color:'#999',padding:12}}>Δεν υπάρχουν παραγγελίες σε αυτή τη φάση</Text>
+                    )}
+                  </>)}
                   <TouchableOpacity style={[styles.listHeader,{backgroundColor:'#00796B', flexDirection:'row', alignItems:'center', justifyContent:'space-between', marginTop:8}]} onPress={()=>toggleSection('stdReady')}>
                     <Text style={styles.listHeaderText}>📦 ΕΤΟΙΜΑ ΑΠΟΘΗΚΗΣ ({readyOrders.length})</Text>
                     <View style={{flexDirection:'row', alignItems:'center', gap:6}}>
@@ -1936,6 +2011,41 @@ export default function CustomScreen({ customOrders, setCustomOrders, soldOrders
                   {expanded.stdSold&&(soldOrders.length>0?soldOrders.map(o=>renderSoldCard(o)):
                     <Text style={{textAlign:'center',color:'#999',padding:12}}>Δεν υπάρχουν πωλήσεις</Text>
                   )}
+
+                  {/* ΑΠΟΘΕΜΑ ΣΑΣΙ — ΜΟΝΗ */}
+                  <TouchableOpacity style={[styles.listHeader,{backgroundColor:'#4a148c', flexDirection:'row', alignItems:'center', justifyContent:'space-between', marginTop:8}]} onPress={()=>toggleSection('moniSasiStock')}>
+                    <Text style={styles.listHeaderText}>🗄️ ΑΠΟΘΕΜΑ ΣΑΣΙ ({dipliSasiStock.filter(s=>!s.sasiType||s.sasiType==='ΜΟΝΗ ΘΩΡΑΚΙΣΗ').length})</Text>
+                    <Text style={{color:'white'}}>{expanded.moniSasiStock?'▲':'▼'}</Text>
+                  </TouchableOpacity>
+                  {expanded.moniSasiStock&&dipliSasiStock.filter(s=>!s.sasiType||s.sasiType==='ΜΟΝΗ ΘΩΡΑΚΙΣΗ').length===0&&(
+                    <Text style={{textAlign:'center',color:'#999',padding:12}}>Δεν υπάρχουν αποθέματα σασί</Text>
+                  )}
+                  {expanded.moniSasiStock&&dipliSasiStock.filter(s=>!s.sasiType||s.sasiType==='ΜΟΝΗ ΘΩΡΑΚΙΣΗ').map(s=>(
+                    <View key={s.id} style={{backgroundColor: s.reservedBy?'#fffde7':'white', borderRadius:8, padding:10, marginBottom:6, borderLeftWidth:5, borderLeftColor: s.reservedBy?'#FFC107':'#9c27b0', elevation:1}}>
+                      <View style={{flexDirection:'row', justifyContent:'space-between', alignItems:'flex-start'}}>
+                        <View style={{flex:1}}>
+                          <Text style={{fontWeight:'bold', fontSize:14}}>📐 {s.h}x{s.w} | {s.side}</Text>
+                          {s.hardware?<Text style={{fontSize:12, color:'#555'}}>🔩 {s.hardware} {s.hardwareColor?`— ${s.hardwareColor}`:''}</Text>:null}
+                          {s.lock?<Text style={{fontSize:12, color:'#555'}}>🔑 {s.lock}</Text>:null}
+                          {s.coating?<Text style={{fontSize:12, color:'#555'}}>🎨 {s.coating}</Text>:null}
+                          {s.notes?<Text style={{fontSize:11, color:'#888'}}>📝 {s.notes}</Text>:null}
+                          <Text style={{fontSize:10, color:'#aaa'}}>Από παραγγελία #{s.orderNo} {s.customer?`— ${s.customer}`:''}</Text>
+                          {s.reservedBy?<Text style={{fontSize:11, color:'#E65100', fontWeight:'bold', marginTop:2}}>📌 Δεσμευμένο: {s.reservedBy} #{s.reservedOrderNo}</Text>:null}
+                        </View>
+                        <TouchableOpacity
+                          style={{backgroundColor:'#c62828', paddingHorizontal:8, paddingVertical:5, borderRadius:5, marginLeft:8}}
+                          onPress={()=>Alert.alert("Διαγραφή","Διαγραφή από αποθέματα;",[
+                            {text:"Όχι"},
+                            {text:"Ναι", style:"destructive", onPress:async()=>{
+                              setDipliSasiStock(prev=>prev.filter(x=>x.id!==s.id));
+                              await fetch(`${FIREBASE_URL}/dipli_sasi_stock/${s.id}.json`,{method:'DELETE'});
+                            }}
+                          ])}>
+                          <Text style={{color:'white', fontSize:10, fontWeight:'bold'}}>🗑️</Text>
+                        </TouchableOpacity>
+                      </View>
+                    </View>
+                  ))}
                 </>)}
 
                 {/* ΔΙΠΛΗ ΘΩΡΑΚΙΣΗ */}
@@ -2099,10 +2209,13 @@ export default function CustomScreen({ customOrders, setCustomOrders, soldOrders
 
                   {/* ΑΠΟΘΕΜΑ ΣΑΣΙ */}
                   <TouchableOpacity style={[styles.listHeader,{backgroundColor:'#4a148c', flexDirection:'row', alignItems:'center', justifyContent:'space-between', marginTop:8}]} onPress={()=>toggleSection('dipliSasiStock')}>
-                    <Text style={styles.listHeaderText}>🗄️ ΑΠΟΘΕΜΑ ΣΑΣΙ ({dipliSasiStock.length})</Text>
+                    <Text style={styles.listHeaderText}>🗄️ ΑΠΟΘΕΜΑ ΣΑΣΙ ({dipliSasiStock.filter(s=>s.sasiType==='ΔΙΠΛΗ ΘΩΡΑΚΙΣΗ'||(!s.sasiType&&false)).length})</Text>
                     <Text style={{color:'white'}}>{expanded.dipliSasiStock?'▲':'▼'}</Text>
                   </TouchableOpacity>
-                  {expanded.dipliSasiStock&&(dipliSasiStock.length>0?dipliSasiStock.map(s=>(
+                  {expanded.dipliSasiStock&&dipliSasiStock.filter(s=>s.sasiType==='ΔΙΠΛΗ ΘΩΡΑΚΙΣΗ').length===0&&(
+                    <Text style={{textAlign:'center',color:'#999',padding:12}}>Δεν υπάρχουν αποθέματα σασί</Text>
+                  )}
+                  {expanded.dipliSasiStock&&dipliSasiStock.filter(s=>s.sasiType==='ΔΙΠΛΗ ΘΩΡΑΚΙΣΗ').map(s=>(
                     <View key={s.id} style={{backgroundColor: s.reservedBy?'#fffde7':'white', borderRadius:8, padding:10, marginBottom:6, borderLeftWidth:5, borderLeftColor: s.reservedBy?'#FFC107':'#9c27b0', elevation:1}}>
                       <View style={{flexDirection:'row', justifyContent:'space-between', alignItems:'flex-start'}}>
                         <View style={{flex:1}}>
@@ -2126,8 +2239,7 @@ export default function CustomScreen({ customOrders, setCustomOrders, soldOrders
                         </TouchableOpacity>
                       </View>
                     </View>
-                  )):<Text style={{textAlign:'center',color:'#999',padding:12}}>Δεν υπάρχουν αποθέματα σασί</Text>
-                  )}
+                  ))}
                 </>)}
               </>);
             })()}

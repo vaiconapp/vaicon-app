@@ -43,8 +43,8 @@ function SellModal({ visible, totalQty, mode, onConfirm, onCancel }) {
 
 const fmtDate = (ts) => { if (!ts) return null; const d = new Date(ts); return `${String(d.getDate()).padStart(2,'0')}/${String(d.getMonth()+1).padStart(2,'0')}/${d.getFullYear()}`; };
 
-const HEIGHTS = ['203', '208', '213', '218', '223'];
-const WIDTHS  = ['83', '88', '93', '98', '103'];
+const HEIGHTS = ['208', '213', '218', '223'];
+const WIDTHS  = ['83', '88', '93', '98'];
 const MODELS  = ['ΚΑΣΑ ΚΛΕΙΣΤΗ', 'ΚΑΣΑ ΑΝΟΙΧΤΗ'];
 
 const INIT = { model: MODELS[0], selectedHeight: '', selectedWidth: '', qty: '1', side: 'ΔΕΞΙΑ', notes: '', status: 'PENDING' };

@@ -14,6 +14,109 @@ import ActivityScreen from './ActivityScreen';
 
 export const FIREBASE_URL = "https://vaiconcloud-default-rtdb.europe-west1.firebasedatabase.app";
 
+// ============================================================
+//  🔐 ΚΩΔΙΚΟΣ ΠΡΟΣΒΑΣΗΣ — αλλάξτε εδώ τον κωδικό σας
+// ============================================================
+const VAICON_PASSWORD = "vaicon2024";
+const STORAGE_KEY = "vaicon_auth_v1";
+
+// Έλεγχος αν ο browser θυμάται τη σύνδεση
+const isRemembered = () => {
+  if (Platform.OS !== 'web') return false;
+  try { return localStorage.getItem(STORAGE_KEY) === 'true'; } catch { return false; }
+};
+
+// Αποθήκευση στον browser
+const rememberLogin = () => {
+  if (Platform.OS !== 'web') return;
+  try { localStorage.setItem(STORAGE_KEY, 'true'); } catch {}
+};
+
+// Αποσύνδεση (διαγράφει την αποθήκευση)
+const forgetLogin = () => {
+  if (Platform.OS !== 'web') return;
+  try { localStorage.removeItem(STORAGE_KEY); } catch {}
+};
+
+// ============================================================
+//  Οθόνη Login
+// ============================================================
+function LoginScreen({ onSuccess }) {
+  const [pwd, setPwd] = useState('');
+  const [error, setError] = useState(false);
+  const [showPwd, setShowPwd] = useState(false);
+
+  const handleLogin = () => {
+    if (pwd === VAICON_PASSWORD) {
+      rememberLogin();
+      onSuccess();
+    } else {
+      setError(true);
+      setPwd('');
+      setTimeout(() => setError(false), 2000);
+    }
+  };
+
+  return (
+    <View style={loginStyles.bg}>
+      <View style={loginStyles.card}>
+        {/* LOGO */}
+        <View style={loginStyles.logoBox}>
+          <Text style={loginStyles.logoText}>VAICON</Text>
+          <Text style={loginStyles.logoSub}>Σύστημα Διαχείρισης Παραγγελιών</Text>
+        </View>
+
+        {/* ΚΩΔΙΚΟΣ */}
+        <Text style={loginStyles.label}>Κωδικός Πρόσβασης</Text>
+        <View style={loginStyles.inputRow}>
+          <TextInput
+            style={[loginStyles.input, error && loginStyles.inputError]}
+            placeholder="Εισάγετε κωδικό..."
+            placeholderTextColor="#aaa"
+            secureTextEntry={!showPwd}
+            value={pwd}
+            onChangeText={v => { setPwd(v); setError(false); }}
+            onSubmitEditing={handleLogin}
+            autoFocus
+          />
+          <TouchableOpacity style={loginStyles.eyeBtn} onPress={() => setShowPwd(v => !v)}>
+            <Text style={{ fontSize: 20 }}>{showPwd ? '🙈' : '👁️'}</Text>
+          </TouchableOpacity>
+        </View>
+
+        {error && (
+          <Text style={loginStyles.errorTxt}>❌ Λάθος κωδικός. Δοκιμάστε ξανά.</Text>
+        )}
+
+        <TouchableOpacity style={loginStyles.btn} onPress={handleLogin}>
+          <Text style={loginStyles.btnTxt}>🔓 ΕΙΣΟΔΟΣ</Text>
+        </TouchableOpacity>
+
+        <Text style={loginStyles.hint}>
+          Μετά την πρώτη σύνδεση, αυτός ο υπολογιστής δεν θα ξαναρωτηθεί.
+        </Text>
+      </View>
+    </View>
+  );
+}
+
+const loginStyles = StyleSheet.create({
+  bg: { flex: 1, backgroundColor: '#1a1a1a', justifyContent: 'center', alignItems: 'center' },
+  card: { backgroundColor: '#fff', borderRadius: 16, padding: 32, width: '90%', maxWidth: 400, alignItems: 'center', elevation: 10 },
+  logoBox: { alignItems: 'center', marginBottom: 32 },
+  logoText: { fontSize: 42, fontWeight: '300', letterSpacing: 16, color: '#8B0000' },
+  logoSub: { fontSize: 12, color: '#888', marginTop: 4, textAlign: 'center' },
+  label: { alignSelf: 'flex-start', fontSize: 13, fontWeight: 'bold', color: '#555', marginBottom: 6 },
+  inputRow: { flexDirection: 'row', alignItems: 'center', width: '100%', marginBottom: 8 },
+  input: { flex: 1, backgroundColor: '#f5f5f5', padding: 14, borderRadius: 8, borderWidth: 2, borderColor: '#ddd', fontSize: 18, color: '#1a1a1a', letterSpacing: 4 },
+  inputError: { borderColor: '#ff4444', backgroundColor: '#fff0f0' },
+  eyeBtn: { position: 'absolute', right: 12 },
+  errorTxt: { color: '#ff4444', fontSize: 13, marginBottom: 12, alignSelf: 'flex-start' },
+  btn: { backgroundColor: '#8B0000', padding: 16, borderRadius: 10, alignItems: 'center', width: '100%', marginTop: 8 },
+  btnTxt: { color: 'white', fontWeight: 'bold', fontSize: 16, letterSpacing: 1 },
+  hint: { fontSize: 11, color: '#aaa', marginTop: 20, textAlign: 'center', lineHeight: 16 },
+});
+
 if (Platform.OS === 'android' && UIManager.setLayoutAnimationEnabledExperimental) {
   UIManager.setLayoutAnimationEnabledExperimental(true);
 }
@@ -23,6 +126,7 @@ const TAB_LABELS = { custom: 'ΠΑΡΑΓΓΕΛΙΕΣ', sasi: 'ΣΑΣΙ ΣΤΟΚ'
 const { width: SCREEN_WIDTH } = Dimensions.get('window');
 
 export default function App() {
+  const [isLoggedIn, setIsLoggedIn] = useState(isRemembered());
   const [tabIndex, setTabIndex] = useState(0);
   const [loading, setLoading] = useState(true);
   const [menuOpen, setMenuOpen] = useState(false);
@@ -102,6 +206,8 @@ export default function App() {
     },
   })).current;
 
+  if (Platform.OS === 'web' && !isLoggedIn) return <LoginScreen onSuccess={() => setIsLoggedIn(true)} />;
+
   if (loading) return (
     <View style={styles.loading}>
       <ActivityIndicator size="large" color="#8B0000" />
@@ -157,6 +263,14 @@ export default function App() {
               </TouchableOpacity>
               <TouchableOpacity style={styles.menuItem} onPress={() => { setMenuOpen(false); fetchData(); Alert.alert("VAICON", "Ανανέωση δεδομένων..."); }}>
                 <Text style={styles.menuItemText}>🔄 ΑΝΑΝΕΩΣΗ</Text>
+              </TouchableOpacity>
+              <TouchableOpacity style={[styles.menuItem, { backgroundColor: '#fff0f0', marginTop: 12 }]} onPress={() => {
+                Alert.alert("🔐 Αποσύνδεση", "Θέλεις να αποσυνδεθείς;\n\nΤην επόμενη φορά θα ζητηθεί ξανά κωδικός σε αυτόν τον υπολογιστή.", [
+                  { text: "ΑΚΥΡΟ", style: "cancel" },
+                  { text: "ΑΠΟΣΥΝΔΕΣΗ", style: "destructive", onPress: () => { forgetLogin(); setIsLoggedIn(false); setMenuOpen(false); } }
+                ]);
+              }}>
+                <Text style={[styles.menuItemText, { color: '#8B0000' }]}>🔐 ΑΠΟΣΥΝΔΕΣΗ</Text>
               </TouchableOpacity>
             </View>
           </TouchableOpacity>
