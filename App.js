@@ -10,6 +10,7 @@ import CaseScreen from './CaseScreen';
 import StatsScreen from './StatsScreen';
 import CustomersScreen from './CustomersScreen';
 import CoatingsScreen from './CoatingsScreen';
+import ActivityScreen from './ActivityScreen';
 
 export const FIREBASE_URL = "https://vaiconcloud-default-rtdb.europe-west1.firebasedatabase.app";
 
@@ -27,6 +28,7 @@ export default function App() {
   const [menuOpen, setMenuOpen] = useState(false);
   const [showCustomers, setShowCustomers] = useState(false);
   const [showCoatings, setShowCoatings] = useState(false);
+  const [showActivity, setShowActivity] = useState(false);
   const [pendingCustomer, setPendingCustomer] = useState(null); // όνομα πελάτη από CustomScreen
   const [pendingCustomerCallback, setPendingCustomerCallback] = useState(null);
 
@@ -38,6 +40,7 @@ export default function App() {
   const [soldCaseOrders, setSoldCaseOrders] = useState([]);
   const [customers, setCustomers] = useState([]);
   const [coatings, setCoatings] = useState([]);
+  const [dipliSasiStock, setDipliSasiStock] = useState([]);
 
   useEffect(() => { fetchData(); }, []);
 
@@ -75,6 +78,12 @@ export default function App() {
       if (data5) {
         const loaded5 = Object.keys(data5).map(key => ({ id: key, ...data5[key] }));
         setCoatings(loaded5);
+      }
+      const res6 = await fetch(`${FIREBASE_URL}/dipli_sasi_stock.json`);
+      const data6 = await res6.json();
+      if (data6) {
+        const loaded6 = Object.keys(data6).map(key => ({ id: key, ...data6[key] }));
+        setDipliSasiStock(loaded6);
       }
     } catch (error) {
       console.error(error);
@@ -126,7 +135,7 @@ export default function App() {
 
         {/* SCREENS με swipe */}
         <View style={{ flex: 1 }} {...panResponder.panHandlers}>
-          {view === 'custom' && <CustomScreen customOrders={customOrders} setCustomOrders={setCustomOrders} soldOrders={soldOrders} setSoldOrders={setSoldOrders} customers={customers} onRequestAddCustomer={(name, cb)=>{ setPendingCustomer(name); setPendingCustomerCallback(()=>cb); setShowCustomers(true); }} sasiOrders={sasiOrders} setSasiOrders={setSasiOrders} caseOrders={caseOrders} setCaseOrders={setCaseOrders} coatings={coatings} />}
+          {view === 'custom' && <CustomScreen customOrders={customOrders} setCustomOrders={setCustomOrders} soldOrders={soldOrders} setSoldOrders={setSoldOrders} customers={customers} onRequestAddCustomer={(name, cb)=>{ setPendingCustomer(name); setPendingCustomerCallback(()=>cb); setShowCustomers(true); }} sasiOrders={sasiOrders} setSasiOrders={setSasiOrders} caseOrders={caseOrders} setCaseOrders={setCaseOrders} coatings={coatings} dipliSasiStock={dipliSasiStock} setDipliSasiStock={setDipliSasiStock} />}
           {view === 'sasi'   && <SasiScreen sasiOrders={sasiOrders} setSasiOrders={setSasiOrders} soldSasiOrders={soldSasiOrders} setSoldSasiOrders={setSoldSasiOrders} />}
           {view === 'cases'  && <CaseScreen caseOrders={caseOrders} setCaseOrders={setCaseOrders} soldCaseOrders={soldCaseOrders} setSoldCaseOrders={setSoldCaseOrders} />}
           {view === 'stats'  && <StatsScreen customOrders={customOrders} soldOrders={soldOrders} sasiOrders={sasiOrders} soldSasiOrders={soldSasiOrders} caseOrders={caseOrders} soldCaseOrders={soldCaseOrders} />}
@@ -143,11 +152,19 @@ export default function App() {
               <TouchableOpacity style={styles.menuItem} onPress={() => { setMenuOpen(false); setShowCoatings(true); }}>
                 <Text style={styles.menuItemText}>🎨 ΕΠΕΝΔΥΣΕΙΣ</Text>
               </TouchableOpacity>
+              <TouchableOpacity style={styles.menuItem} onPress={() => { setMenuOpen(false); setShowActivity(true); }}>
+                <Text style={styles.menuItemText}>📜 ΙΣΤΟΡΙΚΟ ΚΙΝΗΣΕΩΝ</Text>
+              </TouchableOpacity>
               <TouchableOpacity style={styles.menuItem} onPress={() => { setMenuOpen(false); fetchData(); Alert.alert("VAICON", "Ανανέωση δεδομένων..."); }}>
                 <Text style={styles.menuItemText}>🔄 ΑΝΑΝΕΩΣΗ</Text>
               </TouchableOpacity>
             </View>
           </TouchableOpacity>
+        </Modal>
+
+        {/* ΙΣΤΟΡΙΚΟ ΚΙΝΗΣΕΩΝ */}
+        <Modal visible={showActivity} animationType="slide" onRequestClose={() => setShowActivity(false)}>
+          <ActivityScreen onClose={() => setShowActivity(false)} />
         </Modal>
 
         {/* ΕΠΕΝΔΥΣΕΙΣ SCREEN */}

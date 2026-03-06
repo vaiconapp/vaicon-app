@@ -1,6 +1,7 @@
 import React, { useState, useCallback } from 'react';
 import { StyleSheet, Text, View, ScrollView, TouchableOpacity, TextInput, Alert, LayoutAnimation, Modal, Platform } from 'react-native';
 import { FIREBASE_URL } from './App';
+import { logActivity } from './activityLog';
 
 const printHTML = async (html, title) => {
   if (Platform.OS === 'web') {
@@ -66,6 +67,7 @@ export default function CaseScreen({ caseOrders, setCaseOrders, soldCaseOrders, 
     const newOrder = { ...form, id: Date.now().toString(), size: `${form.selectedHeight}x${form.selectedWidth}`, createdAt: Date.now() };
     setCaseOrders([newOrder, ...caseOrders]);
     await syncToCloud(newOrder);
+    await logActivity('ΚΑΣΕΣ ΣΤΟΚ', 'Νέα παραγγελία', { model: newOrder.model, size: newOrder.size, qty: newOrder.qty, extra: newOrder.side });
     setForm(INIT);
     Alert.alert("VAICON", `Αποθηκεύτηκε!\n${form.model}\n${newOrder.size} | ${form.side}`);
   };
@@ -87,7 +89,11 @@ export default function CaseScreen({ caseOrders, setCaseOrders, soldCaseOrders, 
     } else {
       let upd;
       setCaseOrders(caseOrders.map(o => { if (o.id === id) { upd = { ...o, status: newStatus, [`${newStatus.toLowerCase()}At`]: now }; return upd; } return o; }));
-      if (upd) await syncToCloud(upd);
+      if (upd) {
+        await syncToCloud(upd);
+        const actionMap = { PROD: 'Φάση → ΠΑΡΑΓΩΓΗ', READY: 'Φάση → ΕΤΟΙΜΟ' };
+        if (actionMap[newStatus]) await logActivity('ΚΑΣΕΣ ΣΤΟΚ', actionMap[newStatus], { model: order.model, size: order.size, qty: order.qty });
+      }
     }
   };
 
@@ -104,6 +110,7 @@ export default function CaseScreen({ caseOrders, setCaseOrders, soldCaseOrders, 
         setCaseOrders([upd, ...caseOrders]);
         setSoldCaseOrders(soldCaseOrders.filter(o => o.id !== orderId));
         await syncToCloud(upd);
+        await logActivity('ΚΑΣΕΣ ΣΤΟΚ', 'Επιστροφή στην αποθήκη', { model: restoreOrder.model, size: restoreOrder.size, qty: String(qty) });
       } else {
         const restored = { ...restoreOrder, id: Date.now().toString(), qty: String(qty), status: 'READY', readyAt: now };
         const remaining = { ...restoreOrder, qty: String(totalQty - qty) };
@@ -111,6 +118,7 @@ export default function CaseScreen({ caseOrders, setCaseOrders, soldCaseOrders, 
         setSoldCaseOrders(soldCaseOrders.map(o => o.id === orderId ? remaining : o));
         await syncToCloud(restored);
         await syncToCloud(remaining);
+        await logActivity('ΚΑΣΕΣ ΣΤΟΚ', 'Επιστροφή (μερική)', { model: restoreOrder.model, size: restoreOrder.size, qty: `${qty}/${totalQty}` });
       }
       return;
     }
@@ -122,6 +130,7 @@ export default function CaseScreen({ caseOrders, setCaseOrders, soldCaseOrders, 
       setSoldCaseOrders([upd, ...soldCaseOrders]);
       setCaseOrders(caseOrders.filter(o => o.id !== orderId));
       await syncToCloud(upd);
+      await logActivity('ΚΑΣΕΣ ΣΤΟΚ', 'Απόρριψη', { model: order.model, size: order.size, qty: String(qty) });
     } else {
       const rejected = { ...order, id: Date.now().toString(), qty: String(qty), status: 'REJECTED', rejectedAt: now };
       const remaining = { ...order, qty: String(totalQty - qty) };
@@ -129,6 +138,7 @@ export default function CaseScreen({ caseOrders, setCaseOrders, soldCaseOrders, 
       setCaseOrders(caseOrders.map(o => o.id === orderId ? remaining : o));
       await syncToCloud(rejected);
       await syncToCloud(remaining);
+      await logActivity('ΚΑΣΕΣ ΣΤΟΚ', 'Απόρριψη (μερική)', { model: order.model, size: order.size, qty: `${qty}/${totalQty}` });
     }
   };
 
@@ -140,7 +150,7 @@ export default function CaseScreen({ caseOrders, setCaseOrders, soldCaseOrders, 
     await syncToCloud(upd);
   };
 
-  const cancelOrder = (id) => Alert.alert("Ακύρωση", "Οριστική διαγραφή;", [{ text: "Όχι" }, { text: "Ναι", style: "destructive", onPress: async () => { setCaseOrders(caseOrders.filter(o => o.id !== id)); await deleteFromCloud(id); } }]);
+  const cancelOrder = (id) => Alert.alert("Ακύρωση", "Οριστική διαγραφή;", [{ text: "Όχι" }, { text: "Ναι", style: "destructive", onPress: async () => { const o = caseOrders.find(x=>x.id===id); setCaseOrders(caseOrders.filter(o => o.id !== id)); await deleteFromCloud(id); if(o) await logActivity('ΚΑΣΕΣ ΣΤΟΚ', 'Ακύρωση', { model: o.model, size: o.size, qty: o.qty }); } }]);
   const deleteFromArchive = (id) => Alert.alert("Διαγραφή", "Διαγραφή από αρχείο;", [{ text: "Όχι" }, { text: "Ναι", style: "destructive", onPress: async () => { setSoldCaseOrders(soldCaseOrders.filter(o => o.id !== id)); await deleteFromCloud(id); } }]);
   const toggle = (s) => { LayoutAnimation.configureNext(LayoutAnimation.Presets.easeInEaseOut); setExpanded({ ...expanded, [s]: !expanded[s] }); };
 
@@ -188,33 +198,65 @@ export default function CaseScreen({ caseOrders, setCaseOrders, soldCaseOrders, 
     if (!orders.length) return Alert.alert("Προσοχή", "Δεν υπάρχουν εγγραφές.");
     const today = new Date();
     const dateStr = `${String(today.getDate()).padStart(2,'0')}/${String(today.getMonth()+1).padStart(2,'0')}/${today.getFullYear()}`;
-    const sorted = [...orders].sort((a,b) => {
+
+    const getReserved = (o) => {
+      if (!o.autoNote) return 0;
+      return o.autoNote.split(',').reduce((sum, entry) => {
+        const m = entry.match(/x(\d+)/i);
+        return sum + (m ? parseInt(m[1]) : 1);
+      }, 0);
+    };
+
+    const sortFn = (a, b) => {
+      if (a.side === 'ΔΕΞΙΑ' && b.side !== 'ΔΕΞΙΑ') return -1;
+      if (a.side !== 'ΔΕΞΙΑ' && b.side === 'ΔΕΞΙΑ') return 1;
       const hDiff = (parseInt(b.selectedHeight)||0) - (parseInt(a.selectedHeight)||0);
       if (hDiff !== 0) return hDiff;
-      return (parseInt(b.selectedWidth)||0) - (parseInt(a.selectedWidth)||0);
-    });
-    const rows = sorted.map(o => `<tr>
-      <td style="font-weight:bold;font-size:13px">${o.model||'—'}</td>
-      <td style="font-weight:bold;font-size:13px">${o.selectedHeight||'—'}x${o.selectedWidth||'—'}</td>
-      <td style="font-weight:bold;font-size:13px">${o.side||'—'}</td>
-      <td style="font-weight:bold;font-size:13px;color:#007AFF">${o.qty||'1'}</td>
-      ${o.autoNote?`<td style="color:#E65100;font-size:11px">📌 ${o.autoNote}</td>`:'<td>—</td>'}
-      <td>${o.notes||''}</td>
-    </tr>`).join('');
+      const wDiff = (parseInt(b.selectedWidth)||0) - (parseInt(a.selectedWidth)||0);
+      if (wDiff !== 0) return wDiff;
+      return (a.model||'').localeCompare(b.model||'');
+    };
+
+    const left  = [...orders].filter(o => o.side !== 'ΔΕΞΙΑ').sort(sortFn);
+    const right = [...orders].filter(o => o.side === 'ΔΕΞΙΑ').sort(sortFn);
+
     const html = `<html><head><meta charset="utf-8"><style>
-      body{font-family:Arial,sans-serif;margin:8mm;}
-      h1{font-size:14px;font-weight:bold;margin-bottom:2px;}
-      h2{font-size:11px;margin-top:0;margin-bottom:10px;color:#555;}
-      table{width:100%;border-collapse:collapse;font-size:11px;}
-      th{padding:5px 4px;text-align:left;border-top:2px solid #000;border-bottom:1px solid #000;font-weight:bold;}
-      td{padding:5px 4px;border-bottom:1px solid #ddd;vertical-align:top;}
-      @media print{@page{size:A4 landscape;margin:8mm;}}
+      *{box-sizing:border-box;margin:0;padding:0;}
+      body{font-family:Arial,sans-serif;margin:6mm;}
+      h1{font-size:15px;font-weight:bold;margin-bottom:2px;}
+      h2{font-size:12px;margin-bottom:8px;color:#555;}
+      .wrapper{display:flex;gap:0;}
+      table{width:100%;border-collapse:collapse;}
+      .box-left{border:2px solid #1565C0;border-radius:4px;overflow:hidden;width:49%;margin-right:2%;}
+      .box-right{border:2px solid #8B0000;border-radius:4px;overflow:hidden;width:49%;}
+      .box-header-left{background:#1565C0;color:white;text-align:center;padding:5px;font-size:14px;font-weight:bold;}
+      .box-header-right{background:#8B0000;color:white;text-align:center;padding:5px;font-size:14px;font-weight:bold;}
+      th{padding:3px 5px;text-align:left;border-bottom:2px solid #000;font-weight:bold;background:#f0f0f0;font-size:13px;}
+      td{padding:2px 5px;vertical-align:middle;}
+      @media print{@page{size:A4 landscape;margin:5mm;}}
     </style></head><body>
       <h1>VAICON — ΚΑΣΕΣ ΣΤΟΚ — ${title}</h1>
-      <h2>📅 ${dateStr} | Σύνολο: ${sorted.length} εγγραφές</h2>
-      <table><thead><tr>
-        <th>Μοντέλο</th><th>Διάσταση</th><th>Φορά</th><th>Τεμ.</th><th>Δεσμεύσεις</th><th>Παρατηρήσεις</th>
-      </tr></thead><tbody>${rows}</tbody></table>
+      <h2>📅 ${dateStr} &nbsp;|&nbsp; ΑΡΙΣΤΕΡΕΣ: ${left.length} &nbsp;|&nbsp; ΔΕΞΙΕΣ: ${right.length}</h2>
+      <div class="wrapper">
+        <div class="box-left">
+          <div class="box-header-left">⬅️ ΑΡΙΣΤΕΡΕΣ (${left.length})</div>
+          <table>
+            <thead><tr><th>Μοντέλο</th><th>Διάσταση</th><th>Διαθ.</th><th>Δεσμ.</th></tr></thead>
+            <tbody>
+              ${left.map(o => { const r=getReserved(o); const av=Math.max(0,(parseInt(o.qty)||1)-r); return `<tr style="border-bottom:1px solid #eee"><td style="font-size:16px;font-weight:bold">${o.model||'—'}</td><td style="font-size:18px;font-weight:bold;letter-spacing:2px">${o.selectedHeight||'—'}x${o.selectedWidth||'—'}</td><td style="font-size:18px;font-weight:bold;color:#00796B;text-align:center">${av}</td><td style="font-size:18px;color:#E65100;text-align:center">${r>0?r:'—'}</td></tr>`; }).join('')}
+            </tbody>
+          </table>
+        </div>
+        <div class="box-right">
+          <div class="box-header-right">➡️ ΔΕΞΙΕΣ (${right.length})</div>
+          <table>
+            <thead><tr><th>Μοντέλο</th><th>Διάσταση</th><th>Διαθ.</th><th>Δεσμ.</th></tr></thead>
+            <tbody>
+              ${right.map(o => { const r=getReserved(o); const av=Math.max(0,(parseInt(o.qty)||1)-r); return `<tr style="border-bottom:1px solid #eee"><td style="font-size:16px;font-weight:bold">${o.model||'—'}</td><td style="font-size:18px;font-weight:bold;letter-spacing:2px">${o.selectedHeight||'—'}x${o.selectedWidth||'—'}</td><td style="font-size:18px;font-weight:bold;color:#00796B;text-align:center">${av}</td><td style="font-size:18px;color:#E65100;text-align:center">${r>0?r:'—'}</td></tr>`; }).join('')}
+            </tbody>
+          </table>
+        </div>
+      </div>
     </body></html>`;
     try { await printHTML(html, `VAICON — ΚΑΣΕΣ — ${title}`); }
     catch(e) { Alert.alert("Σφάλμα", "Δεν δημιουργήθηκε το PDF."); }
