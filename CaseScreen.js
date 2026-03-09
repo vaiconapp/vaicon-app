@@ -49,7 +49,7 @@ const MODELS  = ['ΚΑΣΑ ΚΛΕΙΣΤΗ', 'ΚΑΣΑ ΑΝΟΙΧΤΗ'];
 
 const INIT = { model: MODELS[0], selectedHeight: '', selectedWidth: '', qty: '1', side: 'ΔΕΞΙΑ', notes: '', status: 'PENDING' };
 
-export default function CaseScreen({ caseOrders, setCaseOrders, soldCaseOrders, setSoldCaseOrders }) {
+export default function CaseScreen({ caseOrders=[], setCaseOrders, soldCaseOrders=[], setSoldCaseOrders }) {
   const [expanded, setExpanded] = useState({ pending: false, prod: false, ready: false, archive: false });
   const [form, setForm] = useState(INIT);
   const [sellModal, setSellModal] = useState({ visible: false, orderId: null, totalQty: 1 });
@@ -270,30 +270,55 @@ export default function CaseScreen({ caseOrders, setCaseOrders, soldCaseOrders, 
         <View style={styles.bigHeader}><Text style={styles.bigHeaderTxt}>🔲 ΤΥΠΟΠΟΙΗΜΕΝΕΣ ΚΑΣΕΣ ΣΤΟΚ</Text></View>
         <Text style={styles.sectionTitle}>ΚΑΤΑΧΩΡΗΣΗ ΤΥΠΟΠΟΙΗΜΕΝΗΣ ΚΑΣΑΣ</Text>
 
-        <Text style={styles.label}>Τύπος Κάσας:</Text>
-        <View style={[styles.row, { marginBottom: 12 }]}>
-          {MODELS.map(m => <TouchableOpacity key={m} style={[styles.tab, form.model===m && styles.activeTab]} onPress={() => setForm({...form, model:m})}><Text style={{ color: form.model===m?'white':'black', fontWeight:'bold', fontSize:12 }}>{m}</Text></TouchableOpacity>)}
+        <View style={{flexDirection:'row', gap:10, marginBottom:8}}>
+
+          {/* ΑΡΙΣΤΕΡΑ: Ύψος + Πλάτος chips + ΑΡ/ΔΕΞ κάτω */}
+          <View style={{flex:3}}>
+            <View style={{alignSelf:'flex-start'}}>
+              <Text style={styles.label}>Ύψος</Text>
+              <View style={{flexDirection:'row', gap:4, marginBottom:8}}>
+                {HEIGHTS.map(h => (
+                  <TouchableOpacity key={h} style={[styles.dimBtn, form.selectedHeight===h && styles.dimActive]} onPress={() => setForm({...form, selectedHeight:h})}>
+                    <Text style={[styles.dimTxt, form.selectedHeight===h && styles.dimActiveTxt]}>{h}</Text>
+                  </TouchableOpacity>
+                ))}
+              </View>
+              <Text style={styles.label}>Πλάτος</Text>
+              <View style={{flexDirection:'row', gap:4, marginBottom:8}}>
+                {WIDTHS.map(w => (
+                  <TouchableOpacity key={w} style={[styles.dimBtn, form.selectedWidth===w && styles.dimActive]} onPress={() => setForm({...form, selectedWidth:w})}>
+                    <Text style={[styles.dimTxt, form.selectedWidth===w && styles.dimActiveTxt]}>{w}</Text>
+                  </TouchableOpacity>
+                ))}
+              </View>
+              <View style={{flexDirection:'row', gap:4}}>
+                <TouchableOpacity style={[styles.dimBtn, {flex:1, alignItems:'center'}, form.side==='ΑΡΙΣΤΕΡΗ' && styles.dimActive]} onPress={() => setForm({...form, side:'ΑΡΙΣΤΕΡΗ'})}>
+                  <Text style={[styles.dimTxt, form.side==='ΑΡΙΣΤΕΡΗ' && styles.dimActiveTxt]}>◄ ΑΡ.</Text>
+                </TouchableOpacity>
+                <TouchableOpacity style={[styles.dimBtn, {flex:1, alignItems:'center'}, form.side==='ΔΕΞΙΑ' && styles.dimActive]} onPress={() => setForm({...form, side:'ΔΕΞΙΑ'})}>
+                  <Text style={[styles.dimTxt, form.side==='ΔΕΞΙΑ' && styles.dimActiveTxt]}>ΔΕΞ. ►</Text>
+                </TouchableOpacity>
+              </View>
+            </View>
+          </View>
+
+          {/* ΔΕΞΙΑ: ΤΥΠΟΣ ΚΑΣΑΣ + Τεμάχια */}
+          <View style={{flex:2}}>
+            <Text style={[styles.label,{textAlign:'center'}]}>ΤΥΠΟΣ ΚΑΣΑΣ</Text>
+            <View style={{flexDirection:'row', gap:4, marginBottom:8}}>
+              {MODELS.map(m => (
+                <TouchableOpacity key={m} style={[styles.tab, form.model===m && styles.activeTab]} onPress={() => setForm({...form, model:m})}>
+                  <Text style={{color:form.model===m?'white':'black', fontWeight:'bold', fontSize:11}}>{m==='ΚΑΣΑ ΚΛΕΙΣΤΗ'?'ΚΛΕΙΣΤΗ':'ΑΝΟΙΧΤΗ'}</Text>
+                </TouchableOpacity>
+              ))}
+            </View>
+            <View style={{flexDirection:'row', alignItems:'center', gap:8}}>
+              <Text style={[styles.label,{marginBottom:0}]}>Τεμάχια</Text>
+              <TextInput style={[styles.qtyInput,{width:70, marginBottom:0}]} keyboardType="numeric" value={form.qty} onChangeText={v => setForm({...form, qty:v})} selectTextOnFocus />
+            </View>
+          </View>
+
         </View>
-
-        <Text style={styles.label}>Ύψος (cm):</Text>
-        <View style={[styles.row, { flexWrap:'wrap', marginBottom:4 }]}>
-          {HEIGHTS.map(h => <TouchableOpacity key={h} style={[styles.dimBtn, form.selectedHeight===h && styles.dimActive]} onPress={() => setForm({...form, selectedHeight:h})}><Text style={[styles.dimTxt, form.selectedHeight===h && styles.dimActiveTxt]}>{h}</Text></TouchableOpacity>)}
-        </View>
-
-        <Text style={styles.label}>Πλάτος (cm):</Text>
-        <View style={[styles.row, { flexWrap:'wrap', marginBottom:4 }]}>
-          {WIDTHS.map(w => <TouchableOpacity key={w} style={[styles.dimBtn, form.selectedWidth===w && styles.dimActive]} onPress={() => setForm({...form, selectedWidth:w})}><Text style={[styles.dimTxt, form.selectedWidth===w && styles.dimActiveTxt]}>{w}</Text></TouchableOpacity>)}
-        </View>
-
-        {(form.selectedHeight && form.selectedWidth) ? <View style={styles.preview}><Text>📐 <Text style={{ color:'#007AFF', fontWeight:'bold', fontSize:20 }}>{form.selectedHeight}x{form.selectedWidth}</Text></Text></View> : null}
-
-        <Text style={styles.label}>Φορά Πόρτας:</Text>
-        <View style={[styles.row, { marginBottom:12 }]}>
-          {['ΔΕΞΙΑ','ΑΡΙΣΤΕΡΗ'].map(s => <TouchableOpacity key={s} style={[styles.tab, form.side===s && styles.activeTab]} onPress={() => setForm({...form, side:s})}><Text style={{ color:form.side===s?'white':'black', fontWeight:'bold' }}>{s}</Text></TouchableOpacity>)}
-        </View>
-
-        <Text style={styles.label}>Τεμάχια:</Text>
-        <TextInput style={styles.qtyInput} keyboardType="numeric" value={form.qty} onChangeText={v => setForm({...form, qty:v})} selectTextOnFocus />
 
         <TextInput style={[styles.input, { height:120, textAlignVertical:'top', marginTop:8 }]} placeholder="Παρατηρήσεις" value={form.notes} multiline onChangeText={v => setForm({...form, notes:v})} />
 

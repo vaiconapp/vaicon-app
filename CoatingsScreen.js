@@ -17,6 +17,17 @@ export default function CoatingsScreen({ coatings, setCoatings, onClose }) {
     try { await fetch(`${FIREBASE_URL}/coatings/${id}.json`, { method: 'DELETE' }); } catch(e) {}
   };
 
+  const moveCoating = async (index, direction) => {
+    const newList = [...coatings];
+    const swapIndex = index + direction;
+    if (swapIndex < 0 || swapIndex >= newList.length) return;
+    [newList[index], newList[swapIndex]] = [newList[swapIndex], newList[index]];
+    // Αποθήκευση νέας σειράς με order field
+    const withOrder = newList.map((c, i) => ({ ...c, order: i }));
+    setCoatings(withOrder);
+    await Promise.all(withOrder.map(c => fetch(`${FIREBASE_URL}/coatings/${c.id}.json`, { method: 'PATCH', body: JSON.stringify({ order: c.order }) })));
+  };
+
   const saveCoating = async () => {
     if (!form.trim()) return Alert.alert("Προσοχή", "Βάλτε όνομα επένδυσης.");
     if (editingId) {
@@ -27,8 +38,8 @@ export default function CoatingsScreen({ coatings, setCoatings, onClose }) {
     } else {
       const exists = coatings.some(c => c.name.toLowerCase() === form.trim().toLowerCase());
       if (exists) return Alert.alert("Προσοχή", "Αυτή η επένδυση υπάρχει ήδη.");
-      const newCoating = { id: Date.now().toString(), name: form.trim(), createdAt: Date.now() };
-      setCoatings([newCoating, ...coatings]);
+      const newCoating = { id: Date.now().toString(), name: form.trim(), createdAt: Date.now(), order: coatings.length };
+      setCoatings([...coatings, newCoating]);
       await syncToCloud(newCoating);
       Alert.alert("VAICON", `Επένδυση αποθηκεύτηκε!\n${form.trim()}`);
     }
@@ -50,7 +61,22 @@ export default function CoatingsScreen({ coatings, setCoatings, onClose }) {
     ]);
   };
 
-  const filtered = coatings.filter(c => c.name.toLowerCase().includes(search.toLowerCase()));
+  // Αυτόματο χρώμα βάσει ονόματος
+  const getCoatingBg = (name) => {
+    const n = name?.toLowerCase() || '';
+    if (n.includes('μέσα') || n.includes('μεσα')) return '#E8F4FD'; // ανοιχτό μπλε = ΜΕΣΑ
+    if (n.includes('έξω') || n.includes('εξω')) return '#FFF3E0';   // ανοιχτό πορτοκαλί = ΕΞΩ
+    return '#ffffff';
+  };
+
+  const getCoatingBorder = (name) => {
+    const n = name?.toLowerCase() || '';
+    if (n.includes('μέσα') || n.includes('μεσα')) return '#90CAF9';
+    if (n.includes('έξω') || n.includes('εξω')) return '#FFCC80';
+    return '#007AFF';
+  };
+  const sorted = [...coatings].sort((a, b) => (a.order ?? a.createdAt) - (b.order ?? b.createdAt));
+  const filtered = sorted.filter(c => c.name.toLowerCase().includes(search.toLowerCase()));
 
   return (
     <View style={styles.container}>
@@ -86,8 +112,16 @@ export default function CoatingsScreen({ coatings, setCoatings, onClose }) {
         <Text style={styles.count}>Σύνολο: {coatings.length} επενδύσεις</Text>
 
         <ScrollView>
-          {filtered.map(c => (
-            <View key={c.id} style={styles.card}>
+          {filtered.map((c, index) => (
+            <View key={c.id} style={[styles.card, {backgroundColor: getCoatingBg(c.name), borderLeftColor: getCoatingBorder(c.name)}]}>
+              <View style={styles.orderBtns}>
+                <TouchableOpacity onPress={() => moveCoating(sorted.indexOf(c), -1)} disabled={sorted.indexOf(c) === 0}>
+                  <Text style={[styles.orderBtn, sorted.indexOf(c) === 0 && {opacity:0.2}]}>▲</Text>
+                </TouchableOpacity>
+                <TouchableOpacity onPress={() => moveCoating(sorted.indexOf(c), 1)} disabled={sorted.indexOf(c) === sorted.length - 1}>
+                  <Text style={[styles.orderBtn, sorted.indexOf(c) === sorted.length - 1 && {opacity:0.2}]}>▼</Text>
+                </TouchableOpacity>
+              </View>
               <Text style={styles.cardName}>{c.name}</Text>
               <View style={styles.cardBtns}>
                 <TouchableOpacity style={styles.editBtn} onPress={() => editCoating(c)}>
@@ -123,6 +157,8 @@ const styles = StyleSheet.create({
   search: { backgroundColor: 'white', borderRadius: 8, padding: 10, borderWidth: 1, borderColor: '#ddd', marginBottom: 8 },
   count: { fontSize: 11, color: '#999', marginBottom: 8 },
   card: { backgroundColor: 'white', borderRadius: 8, padding: 14, marginBottom: 6, flexDirection: 'row', alignItems: 'center', elevation: 1, borderLeftWidth: 4, borderLeftColor: '#007AFF' },
+  orderBtns: { flexDirection: 'column', marginRight: 8, gap: 2 },
+  orderBtn: { fontSize: 14, color: '#8B0000', fontWeight: 'bold', paddingHorizontal: 2 },
   cardName: { flex: 1, fontSize: 14, fontWeight: 'bold', color: '#1a1a1a' },
   cardBtns: { flexDirection: 'row', gap: 8 },
   editBtn: { padding: 6 },

@@ -10,7 +10,7 @@ const fmtDate = (ts) => {
 
 const INIT = { name: '', phone: '', identifier: '' };
 
-export default function CustomersScreen({ customers, setCustomers, onClose, prefillName, onCustomerAdded, customOrders=[] }) {
+export default function CustomersScreen({ customers, setCustomers, onClose, prefillName, onCustomerAdded, customOrders=[], allOrders=[], setCustomOrders, setSoldOrders }) {
   const [form, setForm] = useState(prefillName ? { name: prefillName, phone: '', identifier: '' } : INIT);
   const [editingId, setEditingId] = useState(null);
   const [search, setSearch] = useState('');
@@ -47,6 +47,23 @@ export default function CustomersScreen({ customers, setCustomers, onClose, pref
       const updated = { ...customers.find(c => c.id === editingId), ...form };
       setCustomers(customers.map(c => c.id === editingId ? updated : c));
       await syncToCloud(updated);
+
+      // Ενημέρωση παραγγελιών που έχουν αυτόν τον πελάτη
+      if (setCustomOrders && setSoldOrders) {
+        const updateOrder = async (order) => {
+          if (order.customerId !== editingId) return order;
+          const updatedOrder = { ...order, customer: updated.name };
+          // Ενημέρωση Firebase — όλες οι παραγγελίες στο /orders/
+          await fetch(`${FIREBASE_URL}/orders/${order.id}.json`, { method: 'PATCH', body: JSON.stringify({ customer: updated.name }) });
+          return updatedOrder;
+        };
+        // Ενημέρωση ΚΑΙ active ΚΑΙ sold ΚΑΙ όλα τα orderType (ΕΙΔΙΚΗ/ΤΥΠΟΠΟΙΗΜΕΝΗ)
+        const updatedActive = await Promise.all(allOrders.filter(o=>o.status!=='SOLD').map(updateOrder));
+        const updatedSold = await Promise.all(allOrders.filter(o=>o.status==='SOLD').map(updateOrder));
+        setCustomOrders(updatedActive);
+        setSoldOrders(updatedSold);
+      }
+
       Alert.alert("VAICON", `Ο πελάτης ενημερώθηκε!\n${form.name}`);
     } else {
       const newCustomer = { ...form, id: Date.now().toString(), createdAt: Date.now() };
@@ -67,7 +84,22 @@ export default function CustomersScreen({ customers, setCustomers, onClose, pref
   };
 
   const deleteCustomer = (id) => {
-    Alert.alert("⚠️ Διαγραφή Πελάτη", "Είσαι σίγουρος; Η ενέργεια δεν αναιρείται!", [
+    const activeOrders = allOrders.filter(o => o.customerId === id && o.status !== 'SOLD');
+    const soldOrders = allOrders.filter(o => o.customerId === id && o.status === 'SOLD');
+
+    if (activeOrders.length > 0) {
+      return Alert.alert(
+        "⛔ Αδύνατη Διαγραφή",
+        `Ο πελάτης έχει ${activeOrders.length} ενεργή/ές παραγγελία/ές στην παραγωγή.\n\nΔεν επιτρέπεται διαγραφή.`,
+        [{ text: "ΟΚ" }]
+      );
+    }
+
+    const msg = soldOrders.length > 0
+      ? `Ο πελάτης έχει ${soldOrders.length} παραγγελία/ές στο αρχείο πωλήσεων.\n\nΑν τον διαγράψεις, αυτές οι κινήσεις θα εμφανίζονται χωρίς πελάτη. Συνέχεια;`
+      : "Είσαι σίγουρος; Η ενέργεια δεν αναιρείται!";
+
+    Alert.alert("⚠️ Διαγραφή Πελάτη", msg, [
       { text: "ΑΚΥΡΟ", style: "cancel" },
       { text: "ΔΙΑΓΡΑΦΗ", style: "destructive", onPress: async () => {
         setCustomers(customers.filter(c => c.id !== id));

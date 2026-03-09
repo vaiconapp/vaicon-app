@@ -2,7 +2,7 @@ import React, { useState, useEffect, useRef } from 'react';
 import {
   StyleSheet, Text, View, ActivityIndicator, Platform, UIManager,
   StatusBar, TouchableOpacity, ScrollView, Modal, TextInput,
-  Animated, PanResponder, Dimensions, Alert
+  Animated, PanResponder, Dimensions, Alert, BackHandler
 } from 'react-native';
 import CustomScreen from './CustomScreen';
 import SasiScreen from './SasiScreen';
@@ -10,6 +10,7 @@ import CaseScreen from './CaseScreen';
 import StatsScreen from './StatsScreen';
 import CustomersScreen from './CustomersScreen';
 import CoatingsScreen from './CoatingsScreen';
+import LocksScreen from './LocksScreen';
 import ActivityScreen from './ActivityScreen';
 
 export const FIREBASE_URL = "https://vaiconcloud-default-rtdb.europe-west1.firebasedatabase.app";
@@ -123,7 +124,7 @@ if (Platform.OS === 'android' && UIManager.setLayoutAnimationEnabledExperimental
 
 const TABS = ['custom', 'sasi', 'cases', 'stats'];
 const TAB_LABELS = { custom: 'ΠΑΡΑΓΓΕΛΙΕΣ', sasi: 'ΣΑΣΙ ΣΤΟΚ', cases: 'ΚΑΣΕΣ ΣΤΟΚ', stats: 'ΣΤΑΤΙΣΤΙΚΑ' };
-const { width: SCREEN_WIDTH } = Dimensions.get('window');
+const NAV_TABS = ['custom', 'sasi', 'cases']; // ΣΤΑΤΙΣΤΙΚΑ → μενού
 
 export default function App() {
   const [isLoggedIn, setIsLoggedIn] = useState(isRemembered());
@@ -132,6 +133,7 @@ export default function App() {
   const [menuOpen, setMenuOpen] = useState(false);
   const [showCustomers, setShowCustomers] = useState(false);
   const [showCoatings, setShowCoatings] = useState(false);
+  const [showLocks, setShowLocks] = useState(false);
   const [showActivity, setShowActivity] = useState(false);
   const [pendingCustomer, setPendingCustomer] = useState(null); // όνομα πελάτη από CustomScreen
   const [pendingCustomerCallback, setPendingCustomerCallback] = useState(null);
@@ -144,9 +146,25 @@ export default function App() {
   const [soldCaseOrders, setSoldCaseOrders] = useState([]);
   const [customers, setCustomers] = useState([]);
   const [coatings, setCoatings] = useState([]);
+  const [locks, setLocks] = useState([]);
   const [dipliSasiStock, setDipliSasiStock] = useState([]);
 
   useEffect(() => { fetchData(); }, []);
+
+  // Back button handler
+  useEffect(() => {
+    if (Platform.OS === 'web') return;
+    const sub = BackHandler.addEventListener('hardwareBackPress', () => {
+      if (menuOpen) { setMenuOpen(false); return true; }
+      if (showActivity) { setShowActivity(false); return true; }
+      if (showCoatings) { setShowCoatings(false); return true; }
+      if (showLocks) { setShowLocks(false); return true; }
+      if (showCustomers) { setShowCustomers(false); return true; }
+      if (tabIndex !== 0) { setTabIndex(0); return true; }
+      return false; // έξοδος από app αν ήδη στην 1η καρτέλα
+    });
+    return () => sub.remove();
+  }, [menuOpen, showActivity, showCoatings, showLocks, showCustomers, tabIndex]);
 
   const fetchData = async () => {
     try {
@@ -189,6 +207,12 @@ export default function App() {
         const loaded6 = Object.keys(data6).map(key => ({ id: key, ...data6[key] }));
         setDipliSasiStock(loaded6);
       }
+      const res7 = await fetch(`${FIREBASE_URL}/locks.json`);
+      const data7 = await res7.json();
+      if (data7) {
+        const loaded7 = Object.keys(data7).map(key => ({ id: key, ...data7[key] }));
+        setLocks(loaded7);
+      }
     } catch (error) {
       console.error(error);
     } finally {
@@ -222,26 +246,24 @@ export default function App() {
       <StatusBar barStyle="dark-content" backgroundColor="#f5f5f5" translucent={false} />
       <View style={styles.container}>
 
-        {/* HEADER */}
+        {/* ═══ HEADER — 1 γραμμή ═══ */}
         <View style={styles.header}>
           <Text style={styles.headerTitle}>VAICON</Text>
+          <View style={styles.headerTabs}>
+            {NAV_TABS.map((tab) => (
+              <TouchableOpacity key={tab} style={[styles.headerTabBtn, TABS[tabIndex]===tab && styles.headerTabActive]} onPress={() => setTabIndex(TABS.indexOf(tab))}>
+                <Text style={[styles.headerTabTxt, TABS[tabIndex]===tab && styles.headerTabTxtActive]}>{TAB_LABELS[tab]}</Text>
+              </TouchableOpacity>
+            ))}
+          </View>
           <TouchableOpacity style={styles.menuBtn} onPress={() => setMenuOpen(true)}>
             <Text style={styles.menuIcon}>☰</Text>
           </TouchableOpacity>
         </View>
 
-        {/* NAV */}
-        <View style={styles.nav}>
-          {TABS.map((tab, i) => (
-            <TouchableOpacity key={tab} style={[styles.navBtn, tabIndex === i && styles.activeNav]} onPress={() => setTabIndex(i)}>
-              <Text style={[styles.navText, tabIndex === i && styles.activeNavText]}>{TAB_LABELS[tab]}</Text>
-            </TouchableOpacity>
-          ))}
-        </View>
-
         {/* SCREENS με swipe */}
         <View style={{ flex: 1 }} {...panResponder.panHandlers}>
-          {view === 'custom' && <CustomScreen customOrders={customOrders} setCustomOrders={setCustomOrders} soldOrders={soldOrders} setSoldOrders={setSoldOrders} customers={customers} onRequestAddCustomer={(name, cb)=>{ setPendingCustomer(name); setPendingCustomerCallback(()=>cb); setShowCustomers(true); }} sasiOrders={sasiOrders} setSasiOrders={setSasiOrders} caseOrders={caseOrders} setCaseOrders={setCaseOrders} coatings={coatings} dipliSasiStock={dipliSasiStock} setDipliSasiStock={setDipliSasiStock} />}
+          {view === 'custom' && <CustomScreen customOrders={customOrders} setCustomOrders={setCustomOrders} soldOrders={soldOrders} setSoldOrders={setSoldOrders} customers={customers} onRequestAddCustomer={(name, cb)=>{ setPendingCustomer(name); setPendingCustomerCallback(()=>cb); setShowCustomers(true); }} sasiOrders={sasiOrders} setSasiOrders={setSasiOrders} caseOrders={caseOrders} setCaseOrders={setCaseOrders} coatings={coatings} dipliSasiStock={dipliSasiStock} setDipliSasiStock={setDipliSasiStock} locks={locks} />}
           {view === 'sasi'   && <SasiScreen sasiOrders={sasiOrders} setSasiOrders={setSasiOrders} soldSasiOrders={soldSasiOrders} setSoldSasiOrders={setSoldSasiOrders} />}
           {view === 'cases'  && <CaseScreen caseOrders={caseOrders} setCaseOrders={setCaseOrders} soldCaseOrders={soldCaseOrders} setSoldCaseOrders={setSoldCaseOrders} />}
           {view === 'stats'  && <StatsScreen customOrders={customOrders} soldOrders={soldOrders} sasiOrders={sasiOrders} soldSasiOrders={soldSasiOrders} caseOrders={caseOrders} soldCaseOrders={soldCaseOrders} />}
@@ -252,11 +274,17 @@ export default function App() {
           <TouchableOpacity style={styles.menuOverlay} onPress={() => setMenuOpen(false)}>
             <View style={styles.menuPanel}>
               <Text style={styles.menuTitle}>ΜΕΝΟΥ</Text>
+              <TouchableOpacity style={styles.menuItem} onPress={() => { setMenuOpen(false); setTabIndex(TABS.indexOf('stats')); }}>
+                <Text style={styles.menuItemText}>📊 ΣΤΑΤΙΣΤΙΚΑ</Text>
+              </TouchableOpacity>
               <TouchableOpacity style={styles.menuItem} onPress={() => { setMenuOpen(false); setShowCustomers(true); }}>
                 <Text style={styles.menuItemText}>👥 ΠΕΛΑΤΕΣ</Text>
               </TouchableOpacity>
               <TouchableOpacity style={styles.menuItem} onPress={() => { setMenuOpen(false); setShowCoatings(true); }}>
                 <Text style={styles.menuItemText}>🎨 ΕΠΕΝΔΥΣΕΙΣ</Text>
+              </TouchableOpacity>
+              <TouchableOpacity style={styles.menuItem} onPress={() => { setMenuOpen(false); setShowLocks(true); }}>
+                <Text style={styles.menuItemText}>🔒 ΚΛΕΙΔΑΡΙΕΣ</Text>
               </TouchableOpacity>
               <TouchableOpacity style={styles.menuItem} onPress={() => { setMenuOpen(false); setShowActivity(true); }}>
                 <Text style={styles.menuItemText}>📜 ΙΣΤΟΡΙΚΟ ΚΙΝΗΣΕΩΝ</Text>
@@ -290,12 +318,19 @@ export default function App() {
           />
         </Modal>
 
+        <Modal visible={showLocks} animationType="slide" onRequestClose={() => setShowLocks(false)}>
+          <LocksScreen locks={locks} setLocks={setLocks} onClose={() => setShowLocks(false)} />
+        </Modal>
+
         {/* ΠΕΛΑΤΕΣ SCREEN */}
         <Modal visible={showCustomers} animationType="slide" onRequestClose={() => setShowCustomers(false)}>
           <CustomersScreen
             customers={customers}
             setCustomers={setCustomers}
             customOrders={[...customOrders, ...soldOrders]}
+            allOrders={[...customOrders, ...soldOrders]}
+            setCustomOrders={setCustomOrders}
+            setSoldOrders={setSoldOrders}
             onClose={() => { setShowCustomers(false); setPendingCustomer(null); setPendingCustomerCallback(null); }}
             prefillName={pendingCustomer}
             onCustomerAdded={(newCustomer) => {
@@ -315,10 +350,15 @@ const styles = StyleSheet.create({
   container: { flex: 1, backgroundColor: '#f5f5f5' },
   loading: { flex: 1, justifyContent: 'center', alignItems: 'center', gap: 12 },
   loadingText: { color: '#555', fontSize: 14 },
-  header: { backgroundColor: '#8B0000', paddingVertical: 14, alignItems: 'center', borderRadius: 18, marginHorizontal: 8, marginTop: (StatusBar.currentHeight || 0) + 6, flexDirection: 'row', justifyContent: 'center' },
-  headerTitle: { color: 'white', fontSize: 32, fontWeight: '300', letterSpacing: 18 },
-  menuBtn: { position: 'absolute', right: 16, padding: 8 },
-  menuIcon: { color: 'white', fontSize: 24 },
+  header: { backgroundColor: '#8B0000', paddingVertical: 8, paddingHorizontal: 10, borderRadius: 18, marginHorizontal: 8, marginTop: (StatusBar.currentHeight || 0) + 6, flexDirection: 'row', alignItems: 'center', gap: 6 },
+  headerTitle: { color: 'white', fontSize: 13, fontWeight: '800', fontStyle: 'italic', letterSpacing: 2 },
+  headerTabs: { flex: 1, flexDirection: 'row', gap: 4 },
+  headerTabBtn: { flex: 1, paddingVertical: 6, paddingHorizontal: 2, borderRadius: 6, backgroundColor: 'rgba(255,255,255,0.15)', alignItems: 'center' },
+  headerTabActive: { backgroundColor: 'white' },
+  headerTabTxt: { color: 'rgba(255,255,255,0.8)', fontSize: 9, fontWeight: '700' },
+  headerTabTxtActive: { color: '#8B0000' },
+  menuBtn: { padding: 4 },
+  menuIcon: { color: 'white', fontSize: 22 },
   nav: { flexDirection: 'row', backgroundColor: '#fff', borderBottomWidth: 1, borderColor: '#ddd' },
   navBtn: { flex: 1, paddingVertical: 14, alignItems: 'center' },
   activeNav: { borderBottomWidth: 3, borderBottomColor: '#8B0000' },

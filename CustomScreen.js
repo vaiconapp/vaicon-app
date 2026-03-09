@@ -1,5 +1,5 @@
 import React, { useState, useRef, useCallback, useEffect } from 'react';
-import { StyleSheet, Text, View, ScrollView, TouchableOpacity, TextInput, Alert, LayoutAnimation, Modal, Share, PanResponder, Dimensions, Platform } from 'react-native';
+import { StyleSheet, Text, View, ScrollView, TouchableOpacity, TextInput, Alert, LayoutAnimation, Modal, Share, PanResponder, Dimensions, Platform, Keyboard } from 'react-native';
 const SCREEN_WIDTH = Dimensions.get('window').width;
 import { FIREBASE_URL } from './App';
 import { logActivity } from './activityLog';
@@ -75,7 +75,7 @@ const fmtDateTime = (ts) => { if (!ts) return null; const d = new Date(ts); retu
 
 const STD_HEIGHTS = ['208','213','218','223'];
 const STD_WIDTHS  = ['83','88','93','98'];
-const INIT_FORM   = { customer:'', orderNo:'', h:'', w:'', hinges:'2', qty:'1', glassDim:'', armor:'ΜΟΝΗ', side:'ΔΕΞΙΑ', lock:'', notes:'', status:'PENDING', hardware:'', installation:'ΟΧΙ', caseType:'ΚΛΕΙΣΤΟΥ ΤΥΠΟΥ', caseMaterial:'DKP', deliveryDate:'', sasiType:'ΜΟΝΗ ΘΩΡΑΚΙΣΗ', coatings:[], stavera:[], heightReduction:'' };
+const INIT_FORM   = { customer:'', orderNo:'', h:'', w:'', hinges:'2', qty:'1', glassDim:'', glassNotes:'', armor:'ΜΟΝΗ', side:'ΔΕΞΙΑ', lock:'', notes:'', status:'PENDING', hardware:'', installation:'ΟΧΙ', caseType:'ΚΛΕΙΣΤΟΥ ΤΥΠΟΥ', caseMaterial:'DKP', deliveryDate:'', sasiType:'ΜΟΝΗ ΘΩΡΑΚΙΣΗ', coatings:[], stavera:[], heightReduction:'' };
 
 const PHASES = [
   { key:'laser',    label:'🔴 LASER ΚΟΠΕΣ' },
@@ -125,11 +125,12 @@ function SellModal({ visible, totalQty, onConfirm, onCancel }) {
   );
 }
 
-export default function CustomScreen({ customOrders, setCustomOrders, soldOrders, setSoldOrders, customers, onRequestAddCustomer, sasiOrders=[], setSasiOrders, caseOrders=[], setCaseOrders, coatings=[], dipliSasiStock=[], setDipliSasiStock }) {
+export default function CustomScreen({ customOrders, setCustomOrders, soldOrders, setSoldOrders, customers, onRequestAddCustomer, sasiOrders=[], setSasiOrders, caseOrders=[], setCaseOrders, coatings=[], dipliSasiStock=[], setDipliSasiStock, locks=[] }) {
   const [expanded, setExpanded] = useState({ pending:false, prod:false, ready:false, archive:false, stdList:true, stdMoni:true, stdDipli:true, stdReady:true, stdSold:false, stdReadyD:true, stdSoldD:false, stdMoniOpen:false, stdDipliOpen:false, dipliProd:true, dipliSasiStock:false, moniProd:true, moniSasiStock:false });
   const [dipliProdTab, setDipliProdTab] = useState('laser');
   const [moniProdTab, setMoniProdTab] = useState('laser');
   const [showHardwarePicker, setShowHardwarePicker] = useState(false);
+  const [showLockPicker, setShowLockPicker] = useState(false);
   const [showCoatingsPicker, setShowCoatingsPicker] = useState(false);
   const [showDatePicker, setShowDatePicker] = useState(false);
   const [customHardwareText, setCustomHardwareText] = useState('');
@@ -147,8 +148,8 @@ export default function CustomScreen({ customOrders, setCustomOrders, soldOrders
   const [printSelected, setPrintSelected] = useState({});
   const [printPreview, setPrintPreview] = useState({ visible:false, phaseKey:null, orders:[], copies:1 });
 
-  const orderNoRef=useRef(); const hRef=useRef(); const wRef=useRef();
-  const hingeRef=useRef(); const glassRef=useRef(); const lockRef=useRef(); const notesRef=useRef();
+  const customerRef=useRef(); const orderNoRef=useRef(); const hRef=useRef(); const wRef=useRef(); const qtyEidikiRef=useRef();
+  const hingeRef=useRef(); const glassRef=useRef(); const glassNotesRef=useRef(); const lockRef=useRef(); const notesRef=useRef();
   const customerSelectedRef = useRef(false);
   const prodScrollRef = useRef(null);
   const staveraWidthRefs = useRef({});
@@ -238,20 +239,33 @@ export default function CustomScreen({ customOrders, setCustomOrders, soldOrders
   const handleTabSwitch = (newType) => {
     if (newType === orderType) return;
     if (editingOrder) {
-      // Επαναφέρει την πόρτα στη λίστα
       setCustomOrders(prev => [editingOrder, ...prev]);
       syncToCloud(editingOrder);
       setEditingOrder(null);
     }
     resetForm();
     setOrderType(newType);
+    setTimeout(()=>customerRef.current?.focus(), 150);
+  };
+
+  // Auto-focus πελάτη στο mount
+  useEffect(()=>{ setTimeout(()=>customerRef.current?.focus(), 300); }, []);
+
+  const blurAll = () => {
+    glassRef.current?.blur();
+    glassNotesRef.current?.blur();
+    Object.values(staveraHRefs.current).forEach(r=>r?.blur());
+    Object.values(staveraGridNoteRefs.current).forEach(r=>r?.blur());
   };
 
   const handleGlassEnter = () => {
-    if (customForm.glassDim.length>0 && !customForm.glassDim.includes('X')) {
-      setCustomForm({...customForm, glassDim:customForm.glassDim+'X'});
+    if (customForm.glassDim.length>0 && !customForm.glassDim.includes('×')) {
+      setCustomForm({...customForm, glassDim:customForm.glassDim+' × '});
       setTimeout(()=>glassRef.current?.focus(),10);
-    } else { lockRef.current?.focus(); }
+    } else {
+      glassRef.current?.blur();
+      setTimeout(()=>glassNotesRef.current?.focus(),10);
+    }
   };
 
   const saveOrder = async () => {
@@ -272,7 +286,7 @@ export default function CustomScreen({ customOrders, setCustomOrders, soldOrders
                 onRequestAddCustomer(customForm.customer.trim(), (newCustomer)=>{
                   setSelectedCustomer(newCustomer);
                   setCustomerSearch(newCustomer.name);
-                  setCustomForm(f=>({...f, customer:newCustomer.name}));
+                  setCustomForm(f=>({...f, customer:newCustomer.name, customerId:newCustomer.id}));
                 });
               }
             }}
@@ -521,6 +535,7 @@ export default function CustomScreen({ customOrders, setCustomOrders, soldOrders
     const isMounting = phaseKey==='montDoor';
     const isProductionPhase = phaseKey !== null;
     const showCoatings = !isProductionPhase || isMounting;
+    const isLaser = copies.some(c => c.title && c.title.includes('LASER') || c.title.includes('ΚΑΣΣΕΣ') || c.title.includes('ΣΑΣΙ') || c.title.includes('ΠΡΟΦΙΛ') || c.title.includes('ΠΡΟΓΡΑΜΜΑ ΕΙΔΙΚΩΝ'));
     const tableCSS = `
       body{font-family:Arial,sans-serif;margin:5mm;color:#000;background:#fff;}
       h1{font-size:15px;margin-bottom:2px;font-weight:bold;}
@@ -532,17 +547,83 @@ export default function CustomScreen({ customOrders, setCustomOrders, soldOrders
       .page-break{page-break-after:always;}
       @media print{@page{size:A4 landscape;margin:5mm;}*{color:#000!important;background:#fff!important;}}
     `;
-    const buildTable = (orders) => {
+
+    const dimCell = (o) => `<span style="font-size:15px;font-weight:900;letter-spacing:0.5px">${o.h||'—'} × ${o.w||'—'}</span>`;
+    const qtyDisplay = (o) => { const q=parseInt(o.qty)||1; return q>1?`<span style="font-size:15px;font-weight:900;color:#cc0000">${q}</span>`:""; };
+    const totalQty = (orders) => orders.reduce((sum,o)=>sum+(parseInt(o.qty)||1),0);
+
+    const buildLaserTable = (orders, copyTitle) => {
+      const isKasses  = copyTitle && copyTitle.includes('ΚΑΣΣΕΣ');
+      const isSasi    = copyTitle && copyTitle.includes('ΣΑΣΙ');
+      const isProfil  = false; // ΠΡΟΦΙΛ ίδιο με ΠΡΟΓΡΑΜΜΑ
+
+      // ΠΡΟΦΙΛ: μόνο διαστάσεις
+      if (isProfil) {
+        const rows = orders.map(o=>`<tr><td style="font-size:18px;font-weight:900;padding:7px 6px">${dimCell(o)}</td></tr>`).join('');
+        return `<table><thead><tr><th>Διάσταση</th></tr></thead><tbody>${rows}</tbody></table>`;
+      }
+
+      // ΚΑΣΣΕΣ: χοντρή γραμμή όταν αλλάζει caseMaterial
+      if (isKasses) {
+        let prevMat = null;
+        const rows = orders.map(o=>{
+          const mat = o.caseMaterial||'DKP';
+          const fora = o.side==='ΑΡΙΣΤΕΡΗ'?'ΑΡ':'ΔΕ';
+          const borderTop = (prevMat!==null && mat!==prevMat) ? 'border-top:3px solid #000;' : '';
+          prevMat = mat;
+          return `<tr style="${borderTop}">
+            <td style="font-weight:bold;font-size:13px">${o.orderNo||'—'}</td>
+            <td style="text-align:center">${qtyDisplay(o)}</td>
+            <td>${dimCell(o)}</td>
+            <td style="font-weight:bold">${fora}</td>
+            <td>${(o.armor||'ΜΟΝΗ')+' ΘΩΡ.'}</td>
+            <td>${o.caseType||'—'}</td>
+            <td style="font-weight:bold">${mat}</td>
+            <td style="min-width:180px">${o.notes||''}</td>
+          </tr>`;
+        }).join('');
+        const total = totalQty(orders);
+        const totalRow = `<tr style="border-top:2px solid #000;background:#f5f5f5"><td colspan="1" style="font-weight:bold">ΣΥΝΟΛΟ</td><td style="text-align:center;font-weight:900;font-size:14px">${total}</td><td colspan="6"></td></tr>`;
+        return `<table><thead><tr>
+          <th>Νο</th><th>Τεμ.</th><th>Διάσταση</th><th>Φορά</th><th>Θωράκιση</th><th>Τ.Κάσας</th><th>Υλ.Κάσας</th><th>Παρατηρήσεις</th>
+        </tr></thead><tbody>${rows}${totalRow}</tbody></table>`;
+      }
+
+      // ΣΑΣΙ: χοντρή γραμμή όταν αλλάζει θωράκιση
+      if (isSasi) {
+        let prevArmor = null;
+        const rows = orders.map(o=>{
+          const armor = (o.armor||'ΜΟΝΗ').includes('ΔΙΠΛΗ')?'ΔΙΠΛΗ':'ΜΟΝΗ';
+          const fora = o.side==='ΑΡΙΣΤΕΡΗ'?'ΑΡ':'ΔΕ';
+          const borderTop = (prevArmor!==null && armor!==prevArmor) ? 'border-top:3px solid #000;' : '';
+          prevArmor = armor;
+          return `<tr style="${borderTop}">
+            <td style="font-weight:bold;font-size:13px">${o.orderNo||'—'}</td>
+            <td style="text-align:center">${qtyDisplay(o)}</td>
+            <td>${dimCell(o)}</td>
+            <td style="font-weight:bold">${fora}</td>
+            <td style="font-weight:bold">${armor} ΘΩΡ.</td>
+            <td style="min-width:180px">${o.notes||''}</td>
+          </tr>`;
+        }).join('');
+        const total = totalQty(orders);
+        const totalRow = `<tr style="border-top:2px solid #000;background:#f5f5f5"><td colspan="1" style="font-weight:bold">ΣΥΝΟΛΟ</td><td style="text-align:center;font-weight:900;font-size:14px">${total}</td><td colspan="4"></td></tr>`;
+        return `<table><thead><tr>
+          <th>Νο</th><th>Τεμ.</th><th>Διάσταση</th><th>Φορά</th><th>Θωράκιση</th><th>Παρατηρήσεις</th>
+        </tr></thead><tbody>${rows}${totalRow}</tbody></table>`;
+      }
+
+      // ΠΡΟΓΡΑΜΜΑ ΕΙΔΙΚΩΝ + ΠΡΟΦΙΛ: πλήρης πίνακας
       const rows = orders.map(o => {
         const fora = o.side==='ΑΡΙΣΤΕΡΗ'?'ΑΡ':'ΔΕ';
         const mentesedesVal = (!o.hinges||o.hinges==='2')?'':o.hinges;
         const kleidaria = o.orderType==='ΤΥΠΟΠΟΙΗΜΕΝΗ'?'—':(o.lock||'—');
         const thorakisi = (o.armor||'ΜΟΝΗ')+' ΘΩΡ.';
-        const tzami = o.orderType==='ΤΥΠΟΠΟΙΗΜΕΝΗ'?'—':(o.glassDim||'—');
+        const tzami = o.orderType==="ΤΥΠΟΠΟΙΗΜΕΝΗ"?"—":((o.glassDim||"")+(o.glassNotes?` ${o.glassNotes}`:""))||"—";
         return `<tr>
           <td style="font-weight:bold;font-size:13px">${o.orderNo||'—'}</td>
-          <td style="font-weight:bold;font-size:13px">${o.qty&&parseInt(o.qty)>1?o.qty:'1'}</td>
-          <td style="font-weight:bold;font-size:13px">${o.h||'—'}x${o.w||'—'}</td>
+          <td style="text-align:center">${qtyDisplay(o)}</td>
+          <td>${dimCell(o)}</td>
           <td style="font-weight:bold;font-size:13px">${fora}</td>
           <td>${thorakisi}</td>
           <td style="font-weight:bold;font-size:13px">${mentesedesVal}</td>
@@ -550,15 +631,47 @@ export default function CustomScreen({ customOrders, setCustomOrders, soldOrders
           <td>${kleidaria}</td>
           <td>${o.caseType||'—'}</td>
           <td>${o.caseMaterial||'DKP'}</td>
-          <td>${o.hardware||'—'}</td>
-          <td>${o.installation==='ΝΑΙ'?'✓':''}</td>
-          ${showCoatings?`<td>${(o.coatings&&o.coatings.length>0)?o.coatings.join(', '):''}</td>`:''}
           <td style="min-width:180px">${o.notes||''}</td>
         </tr>`;
       }).join('');
+      const total = totalQty(orders);
+      const totalRow = `<tr style="border-top:2px solid #000;background:#f5f5f5"><td colspan="1" style="font-weight:bold">ΣΥΝΟΛΟ</td><td style="text-align:center;font-weight:900;font-size:14px">${total}</td><td colspan="9"></td></tr>`;
       return `<table><thead><tr>
         <th>Νο</th><th>Τεμ.</th><th>Διάσταση</th><th>Φορά</th><th>Θωράκιση</th>
-        <th>Μεντ.</th><th>Τζάμι</th><th>Κλειδαριά</th><th>Τ.Κάσας</th><th>Υλ.Κάσας</th><th>Χρώμα</th><th>Μον.</th>${showCoatings?'<th>Επένδυση</th>':''}<th>Παρατηρήσεις</th>
+        <th>Μεντ.</th><th>Τζάμι</th><th>Κλειδαριά</th><th>Τ.Κάσας</th><th>Υλ.Κάσας</th><th>Παρατηρήσεις</th>
+      </tr></thead><tbody>${rows}${totalRow}</tbody></table>`;
+    };
+    const buildTable = (orders) => {
+      const rows = orders.map(o => {
+        const fora = o.side==='ΑΡΙΣΤΕΡΗ'?'ΑΡ':'ΔΕ';
+        const mentesedesVal = (!o.hinges||o.hinges==='2')?'':o.hinges;
+        const kleidaria = o.orderType==='ΤΥΠΟΠΟΙΗΜΕΝΗ'?'—':(o.lock||'—');
+        const thorakisi = (o.armor||'ΜΟΝΗ')+' ΘΩΡ.';
+        const tzami = o.orderType==="ΤΥΠΟΠΟΙΗΜΕΝΗ"?"—":((o.glassDim||"")+(o.glassNotes?` ${o.glassNotes}`:""))||"—";
+        const qtyVal = o.qty&&parseInt(o.qty)>1?`&nbsp;<span style="font-size:15px;font-weight:900;color:#cc0000">${o.qty}</span>`:'';
+        const createdFmt = o.createdAt ? new Date(o.createdAt).toLocaleDateString('el-GR',{day:'2-digit',month:'2-digit',year:'2-digit'}) : '';
+        const deliveryFmt = o.deliveryDate ? new Date(o.deliveryDate).toLocaleDateString('el-GR',{day:'2-digit',month:'2-digit',year:'2-digit'}) : '';
+        const datesLine = createdFmt ? (createdFmt + (deliveryFmt ? `&nbsp;&nbsp;&nbsp;&nbsp;${deliveryFmt}` : '')) : '';
+        return `<tr>
+          <td style="font-weight:bold;font-size:13px">${o.orderNo||'—'}</td>
+          <td style="font-weight:bold;font-size:13px">${o.h||'—'}x${o.w||'—'}${qtyVal}</td>
+          <td style="font-weight:bold;font-size:13px">${fora}</td>
+          <td>${thorakisi}</td>
+          <td style="font-weight:bold">${o.hardware||'—'}</td>
+          <td style="font-weight:bold;font-size:13px">${mentesedesVal}</td>
+          <td style="font-weight:bold;font-size:13px">${tzami}</td>
+          <td>${kleidaria}</td>
+          <td>${o.caseType||'—'}</td>
+          <td>${o.caseMaterial||'DKP'}</td>
+          <td>${o.installation==='ΝΑΙ'?'✓':''}</td>
+          ${showCoatings?`<td>${(o.coatings&&o.coatings.length>0)?o.coatings.join(', '):''}</td>`:''}
+          <td style="min-width:120px">${o.notes||''}</td>
+          <td style="font-size:10px;color:#444">${datesLine}</td>
+        </tr>`;
+      }).join('');
+      return `<table><thead><tr>
+        <th>Νο</th><th>Διάσταση</th><th>Φορά</th><th>Θωράκιση</th><th>Χρώμα</th>
+        <th>Μεντ.</th><th>Τζάμι</th><th>Κλειδαριά</th><th>Τ.Κάσας</th><th>Υλ.Κάσας</th><th>Μον.</th>${showCoatings?'<th>Επένδυση</th>':''}<th>Παρατηρήσεις</th><th>Ημερομηνίες</th>
       </tr></thead><tbody>${rows}</tbody></table>`;
     };
 
@@ -566,7 +679,7 @@ export default function CustomScreen({ customOrders, setCustomOrders, soldOrders
       <div class="${idx < copies.length-1 ? 'page-break' : ''}">
         <h1>${copy.title}</h1>
         <h2>Σύνολο: ${copy.orders.length} παραγγελίες</h2>
-        ${buildTable(copy.orders)}
+        ${isLaser ? buildLaserTable(copy.orders, copy.title) : buildTable(copy.orders)}
       </div>
     `).join('');
 
@@ -702,7 +815,7 @@ export default function CustomScreen({ customOrders, setCustomOrders, soldOrders
           {sortedOrders.map((o,i)=>{
             const fora = o.side==='ΑΡΙΣΤΕΡΗ'?'ΑΡ':'ΔΕ';
             const mentesedesVal = (!o.hinges||o.hinges==='2')?'':o.hinges;
-            const tzami = o.orderType==='ΤΥΠΟΠΟΙΗΜΕΝΗ'?'—':(o.glassDim||'—');
+            const tzami = o.orderType==="ΤΥΠΟΠΟΙΗΜΕΝΗ"?"—":((o.glassDim||"")+(o.glassNotes?` ${o.glassNotes}`:""))||"—";
             const bold = {fontWeight:'bold',fontSize:13,color:'#000'};
             return (
               <View key={o.id+i} style={[styles.previewTr,i%2===0?styles.previewTrEven:styles.previewTrOdd]}>
@@ -888,22 +1001,29 @@ export default function CustomScreen({ customOrders, setCustomOrders, soldOrders
     return (
       <TouchableOpacity key={order.id} onLongPress={()=>!isArchive&&order.status==='PENDING'&&editOrder(order)} delayLongPress={1000} activeOpacity={0.7} style={[styles.orderCard,{borderLeftColor:bc}]}>
         <View style={styles.cardContent}>
-          <View style={{flexDirection:'row', alignItems:'center', marginBottom:3}}>
-            <View style={[styles.typeBadge, isStd?styles.typeBadgeStd:styles.typeBadgeCustom]}>
-              <Text style={styles.typeBadgeTxt}>{isStd?'📐 ΤΥΠ.':'✏️ ΕΙΔΙΚΗ'}</Text>
-            </View>
-            {order.customer?<Text style={[styles.cardCustomer,{marginLeft:6}]}>👤 {order.customer}</Text>:null}
+          {/* ΓΡΑΜΜΗ 1: Πελάτης | Νο | Διάσταση | Τεμ. | Φορά | Θωράκιση | Χρώμα */}
+          <View style={{flexDirection:'row',alignItems:'center',flexWrap:'wrap',gap:4,marginBottom:3}}>
+            {order.customer?<Text style={[styles.cardCustomer]}>👤 {order.customer}</Text>:null}
+            <Text style={[styles.cardDetails,{fontWeight:'bold'}]}>#{order.orderNo}</Text>
+            <Text style={styles.cardDetails}>{order.h}x{order.w}</Text>
+            {order.qty&&parseInt(order.qty)>1?<Text style={{fontWeight:'900',fontSize:15,color:'#cc0000'}}>{order.qty}τεμ</Text>:null}
+            <Text style={styles.cardDetails}>{order.side==='ΑΡΙΣΤΕΡΗ'?'ΑΡ':'ΔΕ'}</Text>
+            {!isStd?<Text style={styles.cardDetails}>{(order.armor||'ΜΟΝΗ').includes('ΔΙΠΛΗ')?'Δ/Θ':'Μ/Θ'}</Text>:null}
+            {order.hardware?<Text style={[styles.cardDetails,{color:'#555'}]}>{order.hardware}</Text>:null}
           </View>
-          <Text style={styles.cardDetails}>#{order.orderNo} | {order.h}x{order.w} | {order.side}{!isStd?` | ${order.armor} ΘΩΡ.`:''}</Text>
-          {!isStd&&<Text style={styles.cardSubDetails}>Μεντ: {order.hinges}{order.glassDim?` | Τζ: ${order.glassDim}`:''}</Text>}
-          {!isStd&&<Text style={styles.cardSubDetails}>Κλειδ: {order.lock||'—'} | {order.hardware}{order.installation==='ΝΑΙ'?' | 🔧':''}</Text>}
-          {isStd&&<Text style={styles.cardSubDetails}>{order.lock?`Κλειδ: ${order.lock} | `:''}  {order.hardware}{order.installation==='ΝΑΙ'?' | 🔧 ΜΟΝΤΑΡΙΣΜΑ':''}</Text>}
+          {!isStd&&<Text style={styles.cardSubDetails}>Μεντ: {order.hinges}{order.glassDim?` | Τζ: ${order.glassDim}${order.glassNotes?' '+order.glassNotes:''}`:''}</Text>}
+          {!isStd&&<Text style={styles.cardSubDetails}>Κλειδ: {order.lock||'—'}</Text>}
+          {!isStd&&order.installation==='ΝΑΙ'&&<View style={{flexDirection:'row',marginTop:2}}><View style={{backgroundColor:'#E65100',borderRadius:5,paddingHorizontal:8,paddingVertical:2,alignSelf:'flex-start'}}><Text style={{color:'white',fontWeight:'bold',fontSize:13}}>🪛 ΜΟΝΤΑΡΙΣΜΑ</Text></View></View>}
+          {!isStd&&<Text style={styles.cardSubDetails}>Κάσα: {order.caseType==='ΑΝΟΙΧΤΟΥ ΤΥΠΟΥ'?'ΑΝΟΙΧΤΗ':'ΚΛΕΙΣΤΗ'} | {order.caseMaterial||'DKP'}</Text>}
+          {!isStd&&order.stavera&&order.stavera.filter(s=>s.dim).length>0&&<Text style={styles.cardSubDetails}>📐 Σταθ: {order.stavera.filter(s=>s.dim).map(s=>s.dim+(s.note?' '+s.note:'')).join(' | ')}</Text>}
+          {isStd&&<Text style={styles.cardSubDetails}>{order.lock?`Κλειδ: ${order.lock} | `:''}  {order.hardware}</Text>}
+          {isStd&&order.installation==='ΝΑΙ'&&<View style={{flexDirection:'row',marginTop:2}}><View style={{backgroundColor:'#E65100',borderRadius:5,paddingHorizontal:8,paddingVertical:2,alignSelf:'flex-start'}}><Text style={{color:'white',fontWeight:'bold',fontSize:13}}>🪛 ΜΟΝΤΑΡΙΣΜΑ</Text></View></View>}
           {isStd&&order.heightReduction?<Text style={[styles.cardSubDetails,{color:'#b71c1c',fontWeight:'bold'}]}>📏 ΜΕΙΩΣΗ ΥΨΟΥΣ: {order.heightReduction} cm</Text>:null}
           {order.coatings&&order.coatings.length>0&&<Text style={[styles.cardSubDetails,{color:'#007AFF'}]}>🎨 {order.coatings.join(', ')}</Text>}
-          {order.qty&&parseInt(order.qty)>1?<Text style={[styles.cardSubDetails,{color:'#007AFF',fontWeight:'bold'}]}>Τεμ: {order.qty}</Text>:null}
           {order.notes?<Text style={styles.cardSubDetails}>Σημ: {order.notes}</Text>:null}
           <View style={styles.datesRow}>
             {fmtDate(order.createdAt)&&<Text style={styles.dateChip}>📅 {fmtDate(order.createdAt)}</Text>}
+            {order.deliveryDate?<Text style={[styles.dateChip,{backgroundColor:'#fff3e0',color:'#e65100'}]}>🚚 {order.deliveryDate}</Text>:null}
             {fmtDate(order.prodAt)&&<Text style={styles.dateChip}>🔨 {fmtDate(order.prodAt)}</Text>}
             {fmtDate(order.readyAt)&&<Text style={styles.dateChip}>✅ {fmtDate(order.readyAt)}</Text>}
           </View>
@@ -939,15 +1059,16 @@ export default function CustomScreen({ customOrders, setCustomOrders, soldOrders
         {/* ΣΤΟΙΧΕΙΑ ΠΑΡΑΓΓΕΛΙΑΣ */}
         <View style={{flex:1, paddingHorizontal:8}}>
           <View style={{flexDirection:'row', alignItems:'center', flexWrap:'nowrap'}}>
-            <View style={[styles.typeBadge, isStd?styles.typeBadgeStd:styles.typeBadgeCustom]}>
-              <Text style={styles.typeBadgeTxt}>{isStd?'📐 ΤΥΠ.':'✏️ ΕΙΔΙΚΗ'}</Text>
-            </View>
-            <Text style={[styles.cardDetails,{fontWeight:'bold',marginLeft:6}]}>#{order.orderNo}</Text>
+            <Text style={[styles.cardDetails,{fontWeight:'bold'}]}>#{order.orderNo}</Text>
           </View>
           {order.customer?<Text style={[styles.cardSubDetails,{marginTop:2}]}>👤 {order.customer}</Text>:null}
           <Text style={styles.cardDetails}>{order.h}x{order.w} | {order.side}{!isStd?` | ${order.armor} ΘΩΡ.`:''}</Text>
-          {!isStd&&<Text style={styles.cardSubDetails}>Μεντ: {order.hinges}{order.glassDim?` | Τζ: ${order.glassDim}`:''} | Κλειδ: {order.lock||'—'}</Text>}
-          <Text style={styles.cardSubDetails}>{order.hardware}{order.installation==='ΝΑΙ'?' | 🔧 ΜΟΝΤΑΡΙΣΜΑ':''}</Text>
+          {!isStd&&<Text style={styles.cardSubDetails}>Μεντ: {order.hinges}{order.glassDim?` | Τζ: ${order.glassDim}${order.glassNotes?' '+order.glassNotes:''}`:''} | Κλειδ: {order.lock||'—'}</Text>}
+          {!isStd&&<Text style={styles.cardSubDetails}>Κάσα: {order.caseType==='ΑΝΟΙΧΤΟΥ ΤΥΠΟΥ'?'ΑΝΟΙΧΤΗ':'ΚΛΕΙΣΤΗ'} | {order.caseMaterial||'DKP'} | {order.hardware||'—'}</Text>}
+          {!isStd&&order.installation==='ΝΑΙ'&&<View style={{flexDirection:'row',marginTop:2}}><View style={{backgroundColor:'#E65100',borderRadius:5,paddingHorizontal:8,paddingVertical:2,alignSelf:'flex-start'}}><Text style={{color:'white',fontWeight:'bold',fontSize:13}}>🪛 ΜΟΝΤΑΡΙΣΜΑ</Text></View></View>}
+          {!isStd&&order.stavera&&order.stavera.filter(s=>s.dim).length>0&&<Text style={styles.cardSubDetails}>📐 Σταθ: {order.stavera.filter(s=>s.dim).map(s=>s.dim+(s.note?' '+s.note:'')).join(' | ')}</Text>}
+          {isStd&&<Text style={styles.cardSubDetails}>{order.hardware||''}</Text>}
+          {isStd&&order.installation==='ΝΑΙ'&&<View style={{flexDirection:'row',marginTop:2}}><View style={{backgroundColor:'#E65100',borderRadius:5,paddingHorizontal:8,paddingVertical:2,alignSelf:'flex-start'}}><Text style={{color:'white',fontWeight:'bold',fontSize:13}}>🪛 ΜΟΝΤΑΡΙΣΜΑ</Text></View></View>}
           {order.qty&&parseInt(order.qty)>1?<Text style={[styles.cardSubDetails,{color:'#007AFF',fontWeight:'bold'}]}>Τεμ: {order.qty}</Text>:null}
           {phase.printed&&!phase.done&&<Text style={styles.printedTxt}>🖨️ Εκτυπώθηκε</Text>}
           {phase.done&&<Text style={styles.doneTxt}>✅ Ολοκληρώθηκε</Text>}
@@ -1339,7 +1460,7 @@ export default function CustomScreen({ customOrders, setCustomOrders, soldOrders
     <View style={{flex:1}}>
       {renderPrintPreview()}
       <SellModal visible={sellModal.visible} totalQty={sellModal.totalQty} onConfirm={handleSellConfirm} onCancel={()=>setSellModal({visible:false,orderId:null,totalQty:1})} />
-      <ScrollView style={{padding:10}}>
+      <ScrollView style={{padding:10}} keyboardShouldPersistTaps="handled">
         <View style={{paddingBottom:120}}>
           <Text style={styles.sectionTitle}>ΚΑΤΑΧΩΡΗΣΗ ΝΕΑΣ ΠΑΡΑΓΓΕΛΙΑΣ</Text>
 
@@ -1372,8 +1493,10 @@ export default function CustomScreen({ customOrders, setCustomOrders, soldOrders
               </TouchableOpacity>
             ) : (
               <>
-                <TextInput style={styles.input} placeholder="Αναζήτηση Πελάτη" value={customerSearch}
+                <TextInput ref={customerRef} style={styles.input} placeholder="Αναζήτηση Πελάτη" value={customerSearch}
                   onChangeText={v=>{setCustomerSearch(v);setShowCustomerList(true);setCustomForm({...customForm,customer:v});}}
+                  onSubmitEditing={()=>orderNoRef.current?.focus()}
+                  returnKeyType="next" blurOnSubmit={false}
                 />
                 {showCustomerList&&customerSearch.length>0&&(customers||[]).filter(c=>
                   c.name?.toLowerCase().includes(customerSearch.toLowerCase())||
@@ -1386,11 +1509,13 @@ export default function CustomScreen({ customOrders, setCustomOrders, soldOrders
                       c.phone?.includes(customerSearch)||
                       c.identifier?.toLowerCase().includes(customerSearch.toLowerCase())
                     ).slice(0,5).map(c=>(
-                      <TouchableOpacity key={c.id} style={styles.customerOption} onPress={()=>{
-                        customerSelectedRef.current = true;
-                        setCustomForm({...customForm,customer:c.name});
-                        setCustomerSearch(c.name); setSelectedCustomer(c); setShowCustomerList(false);
-                      }}>
+                      <TouchableOpacity key={c.id} style={styles.customerOption}
+                        onPressIn={()=>{
+                          customerSelectedRef.current = true;
+                          setCustomForm({...customForm,customer:c.name,customerId:c.id});
+                          setCustomerSearch(c.name); setSelectedCustomer(c); setShowCustomerList(false);
+                          setTimeout(()=>orderNoRef.current?.focus(), 100);
+                        }}>
                         <Text style={styles.customerOptionName}>{c.name}</Text>
                         {c.phone?<Text style={styles.customerOptionDetail}>📞 {c.phone}</Text>:null}
                         {c.identifier?<Text style={styles.customerOptionDetail}>🏷 {c.identifier}</Text>:null}
@@ -1442,7 +1567,7 @@ export default function CustomScreen({ customOrders, setCustomOrders, soldOrders
                           onRequestAddCustomer(customerSearch.trim(), (newCustomer)=>{
                             setSelectedCustomer(newCustomer);
                             setCustomerSearch(newCustomer.name);
-                            setCustomForm(f=>({...f,customer:newCustomer.name}));
+                            setCustomForm(f=>({...f,customer:newCustomer.name,customerId:newCustomer.id}));
                           });
                         }
                       }}
@@ -1452,6 +1577,7 @@ export default function CustomScreen({ customOrders, setCustomOrders, soldOrders
               }
             }}
             onChangeText={v=>setCustomForm({...customForm,orderNo:v})}
+            onSubmitEditing={()=>hRef.current?.focus()}
             onBlur={()=>{
               if (!customForm.orderNo) return;
               const exists = customOrders.some(o=>o.orderNo===customForm.orderNo && o.id!==editingOrder?.id);
@@ -1497,30 +1623,33 @@ export default function CustomScreen({ customOrders, setCustomOrders, soldOrders
               <View style={vstyles.cardHeader}><Text style={vstyles.cardHeaderTxt}>📐  ΔΙΑΣΤΑΣΕΙΣ & ΣΤΑΘΕΡΑ</Text></View>
               <View style={[vstyles.cardBody,{flexDirection:'row',gap:8}]}>
 
-                {/* ΑΡΙΣΤΕΡΑ: Υψ/Πλτ/Τεμ → Μεντ → Φορά → Θωράκιση */}
+                {/* ΑΡΙΣΤΕΡΑ: Υψ/Πλτ/Τεμ → Μεντ (κάτω από Τεμ) → Φορά → Θωράκιση */}
                 <View style={{flex:4}}>
-                  {/* Γραμμή 1: Υψ | Πλτ | Τεμ. — φαρδύ+μεγάλα */}
-                  <View style={{flexDirection:'row',gap:4,marginBottom:6}}>
+                  {/* Γραμμή 1+2: Ύψος | Πλάτος | [Τεμ. πάνω / Μεντ. κάτω] */}
+                  <View style={{flexDirection:'row',gap:4,marginBottom:6,alignItems:'flex-start'}}>
+                    {/* Ύψος */}
                     <View style={{alignItems:'center',flex:2}}>
                       <Text style={vstyles.fieldLabelDark}>Ύψος</Text>
-                      <TextInput ref={hRef} style={[vstyles.textInput,{marginTop:2,fontWeight:'900',fontSize:20,textAlign:'center',padding:6,width:'100%'}]} placeholder="—" keyboardType="numeric" maxLength={3} value={customForm.h} selectTextOnFocus onChangeText={v=>setCustomForm({...customForm,h:v})} onSubmitEditing={()=>wRef.current?.focus()} blurOnSubmit={false}/>
+                      <TextInput ref={hRef} style={[vstyles.textInput,{marginTop:2,fontWeight:'900',fontSize:20,textAlign:'center',padding:6,width:'100%'}]} placeholder="—" keyboardType="numeric" maxLength={3} value={customForm.h} onChangeText={v=>{setCustomForm({...customForm,h:v}); if(v.length===3) wRef.current?.focus();}} onSubmitEditing={()=>wRef.current?.focus()} blurOnSubmit={false}/>
                     </View>
+                    {/* Πλάτος */}
                     <View style={{alignItems:'center',flex:2}}>
                       <Text style={vstyles.fieldLabelDark}>Πλάτος</Text>
-                      <TextInput ref={wRef} style={[vstyles.textInput,{marginTop:2,fontWeight:'900',fontSize:20,textAlign:'center',padding:6,width:'100%'}]} placeholder="—" keyboardType="numeric" maxLength={3} value={customForm.w} selectTextOnFocus onChangeText={v=>setCustomForm({...customForm,w:v})} onSubmitEditing={()=>hingeRef.current?.focus()} blurOnSubmit={false}/>
+                      <TextInput ref={wRef} style={[vstyles.textInput,{marginTop:2,fontWeight:'900',fontSize:20,textAlign:'center',padding:6,width:'100%'}]} placeholder="—" keyboardType="numeric" maxLength={3} value={customForm.w} onChangeText={v=>setCustomForm({...customForm,w:v})} onSubmitEditing={()=>qtyEidikiRef.current?.focus()} blurOnSubmit={false}/>
                     </View>
-                    <View style={{alignItems:'center',flex:1}}>
-                      <Text style={vstyles.fieldLabelDark}>Τεμ.</Text>
-                      <TextInput style={[vstyles.textInput,{marginTop:2,fontWeight:'900',fontSize:18,textAlign:'center',padding:6,width:'100%'}]} keyboardType="numeric" value={customForm.qty} selectTextOnFocus onChangeText={v=>setCustomForm({...customForm,qty:v})} onSubmitEditing={()=>hingeRef.current?.focus()} blurOnSubmit={false}/>
+                    {/* Τεμ. πάνω / Μεντεσέδες κάτω — στήλη */}
+                    <View style={{flex:1.5,gap:4}}>
+                      <View style={{alignItems:'center'}}>
+                        <Text style={vstyles.fieldLabelDark}>Τεμ.</Text>
+                        <TextInput ref={qtyEidikiRef} style={[vstyles.textInput,{marginTop:2,fontWeight:'900',fontSize:18,textAlign:'center',padding:6,width:'100%'}]} keyboardType="numeric" value={customForm.qty} selectTextOnFocus onChangeText={v=>setCustomForm({...customForm,qty:v})} blurOnSubmit={true} returnKeyType="done"/>
+                      </View>
+                      <View style={{alignItems:'center'}}>
+                        <Text style={vstyles.fieldLabelDark}>Μεντ.</Text>
+                        <TextInput ref={hingeRef} style={[vstyles.textInput,{marginTop:2,fontWeight:'900',fontSize:18,textAlign:'center',padding:6,width:'100%'}]} maxLength={1} keyboardType="numeric" value={customForm.hinges} selectTextOnFocus onChangeText={v=>{if(['2','3','4','5',''].includes(v))setCustomForm({...customForm,hinges:v});}} onSubmitEditing={()=>glassRef.current?.focus()} blurOnSubmit={false}/>
+                      </View>
                     </View>
                   </View>
-                  {/* Γραμμή 2: Μεντεσέδες */}
-                  <View style={{flexDirection:'row',alignItems:'center',gap:6,marginBottom:6}}>
-                    <Text style={vstyles.fieldLabelDark}>Μεντ.</Text>
-                    <TextInput ref={hingeRef} style={[vstyles.textInput,{width:36,fontWeight:'900',fontSize:15,textAlign:'center',padding:4}]} maxLength={1} keyboardType="numeric" value={customForm.hinges} selectTextOnFocus onChangeText={v=>{if(['2','3','4','5',''].includes(v))setCustomForm({...customForm,hinges:v});}} onSubmitEditing={()=>glassRef.current?.focus()} blurOnSubmit={false}/>
-                  </View>
-                  {/* Γραμμή 3: ΑΡΙΣΤΕΡΗ / ΔΕΞΙΑ */}
-                  <Text style={[vstyles.fieldLabel,{marginBottom:2}]}>Φορά</Text>
+                  {/* Γραμμή 3: ΑΡΙΣΤΕΡΗ / ΔΕΞΙΑ — χωρίς label */}
                   <View style={{flexDirection:'row',gap:3,marginBottom:6}}>
                     {['ΑΡΙΣΤΕΡΗ','ΔΕΞΙΑ'].map(s=>(
                       <TouchableOpacity key={s} style={[vstyles.sideChip,customForm.side===s&&vstyles.sideChipOn]} onPress={()=>setCustomForm({...customForm,side:s})}>
@@ -1528,8 +1657,8 @@ export default function CustomScreen({ customOrders, setCustomOrders, soldOrders
                       </TouchableOpacity>
                     ))}
                   </View>
-                  {/* Γραμμή 4: ΜΟΝΗ / ΔΙΠΛΗ */}
-                  <Text style={[vstyles.fieldLabel,{marginBottom:2}]}>Θωράκιση</Text>
+                  {/* Γραμμή 4: ΜΟΝΗ / ΔΙΠΛΗ — label κεντραρισμένο πάνω */}
+                  <Text style={[vstyles.fieldLabelDark,{textAlign:'center',marginBottom:2}]}>ΘΩΡΑΚΙΣΗ</Text>
                   <View style={{flexDirection:'row',gap:3}}>
                     {['ΜΟΝΗ','ΔΙΠΛΗ'].map(a=>(
                       <TouchableOpacity key={a} style={[vstyles.togBtnSm,customForm.armor===a&&vstyles.togBtnOn]} onPress={()=>setCustomForm({...customForm,armor:a})}>
@@ -1557,6 +1686,7 @@ export default function CustomScreen({ customOrders, setCustomOrders, soldOrders
                           ref={el=>{staveraHRefs.current['e'+i]=el;}}
                           style={[vstyles.staveraCell,{width:90,textAlign:'center',fontSize:13,fontWeight:'700'}]}
                           placeholder="Υ × Π"
+                          keyboardType="numeric"
                           returnKeyType="next"
                           value={s.dim||''}
                           onChangeText={v=>{
@@ -1596,6 +1726,17 @@ export default function CustomScreen({ customOrders, setCustomOrders, soldOrders
                       </View>
                     );
                   })}
+                  {/* Μοντάρισμα κάτω από ΣΤΑΘΕΡΑ */}
+                  <View style={{flexDirection:'row',alignItems:'center',marginTop:4,gap:6}}>
+                    <Text style={[vstyles.fieldLabelDark,{minWidth:80}]}>Μοντάρισμα</Text>
+                    <View style={{flexDirection:'row',gap:3,flex:1}}>
+                      {['ΝΑΙ','ΟΧΙ'].map(v=>(
+                        <TouchableOpacity key={v} style={[vstyles.togBtnSm,{flex:1},customForm.installation===v&&(v==='ΝΑΙ'?vstyles.togBtnGreen:vstyles.togBtnOn)]} onPress={()=>setCustomForm({...customForm,installation:v})}>
+                          <Text style={[vstyles.togBtnSmTxt,customForm.installation===v&&vstyles.togBtnTxtOn]}>{v}</Text>
+                        </TouchableOpacity>
+                      ))}
+                    </View>
+                  </View>
                 </View>
               </View>
             </View>
@@ -1626,20 +1767,26 @@ export default function CustomScreen({ customOrders, setCustomOrders, soldOrders
                   </View>
                   <View style={{flex:2}}>
                     <Text style={vstyles.fieldLabelDark}>Κλειδαριά</Text>
-                    <TextInput ref={lockRef} style={[vstyles.textInput,{marginTop:2,marginBottom:6}]} placeholder="—" value={customForm.lock} selectTextOnFocus onChangeText={v=>setCustomForm({...customForm,lock:v})} onSubmitEditing={()=>glassRef.current?.focus()} blurOnSubmit={false}/>
+                    <TouchableOpacity style={[vstyles.selectBtn,{marginTop:2,marginBottom:6}]} onPress={()=>{blurAll();setShowLockPicker(true);}}>
+                      <Text style={{fontSize:13,color:customForm.lock?'#1a1a1a':'#aaa',flex:1}} numberOfLines={1}>{customForm.lock||'Επιλέξτε...'}</Text>
+                      <Text style={{color:'#aaa',fontSize:11}}>▼</Text>
+                    </TouchableOpacity>
                     <Text style={vstyles.fieldLabelDark}>Τζάμι</Text>
-                    <TextInput ref={glassRef} style={[vstyles.textInput,{marginTop:2}]} placeholder="Διάσταση" keyboardType="numeric" value={customForm.glassDim} selectTextOnFocus onChangeText={v=>setCustomForm({...customForm,glassDim:v})} onSubmitEditing={handleGlassEnter} blurOnSubmit={false}/>
+                    <View style={{flexDirection:'row', gap:4, marginTop:2}}>
+                      <TextInput ref={glassRef} style={[vstyles.staveraCell,{width:90,textAlign:'center',fontSize:13,fontWeight:'700',minHeight:36}]} placeholder="Υ × Π" keyboardType="numeric" value={customForm.glassDim} selectTextOnFocus onChangeText={v=>setCustomForm({...customForm,glassDim:v})} onSubmitEditing={handleGlassEnter} blurOnSubmit={false} returnKeyType="next"/>
+                      <TextInput ref={glassNotesRef} style={[vstyles.staveraCell,{flex:4,minHeight:36}]} placeholder="..." keyboardType="default" value={customForm.glassNotes||''} onChangeText={v=>setCustomForm({...customForm,glassNotes:v})} returnKeyType="done" blurOnSubmit={true}/>
+                    </View>
                   </View>
                 </View>
                 {/* Χρώμα Εξαρτημάτων */}
                 <Text style={vstyles.fieldLabelDark}>Χρώμα Εξαρτημάτων</Text>
-                <TouchableOpacity style={[vstyles.selectBtn,{marginTop:2,marginBottom:8}]} onPress={()=>setShowHardwarePicker(true)}>
+                <TouchableOpacity style={[vstyles.selectBtn,{marginTop:2,marginBottom:8}]} onPress={()=>{blurAll();setShowHardwarePicker(true);}}>
                   <Text style={{fontSize:13,color:customForm.hardware?'#1a1a1a':'#aaa',flex:1}} numberOfLines={1}>{customForm.hardware||'Επιλέξτε...'}</Text>
                   <Text style={{color:'#aaa',fontSize:11}}>▼</Text>
                 </TouchableOpacity>
                 {/* Επένδυση */}
                 <Text style={vstyles.fieldLabelDark}>Επένδυση</Text>
-                <TouchableOpacity style={[vstyles.selectBtn,{marginTop:2,marginBottom:8}]} onPress={()=>setShowCoatingsPicker(true)}>
+                <TouchableOpacity style={[vstyles.selectBtn,{marginTop:2,marginBottom:8}]} onPress={()=>{blurAll();setShowCoatingsPicker(true);}}>
                   <Text style={{fontSize:13,color:(customForm.coatings&&customForm.coatings.length>0)?'#1a1a1a':'#aaa',flex:1}} numberOfLines={1}>
                     {(customForm.coatings&&customForm.coatings.length>0)?customForm.coatings.join(', '):'Επιλέξτε...'}
                   </Text>
@@ -1737,6 +1884,7 @@ export default function CustomScreen({ customOrders, setCustomOrders, soldOrders
                           ref={el=>{staveraHRefs.current[i]=el;}}
                           style={[vstyles.staveraCell,{width:90,textAlign:'center',fontSize:13,fontWeight:'700'}]}
                           placeholder="Υ × Π"
+                          keyboardType="numeric"
                           returnKeyType="next"
                           value={s.dim||''}
                           onChangeText={v=>{
@@ -1815,9 +1963,12 @@ export default function CustomScreen({ customOrders, setCustomOrders, soldOrders
                   {/* ΔΕΞΙΑ: Κλειδαριά + Χρώμα Εξαρτημάτων */}
                   <View style={{flex:2}}>
                     <Text style={vstyles.fieldLabelDark}>Κλειδαριά</Text>
-                    <TextInput style={[vstyles.textInput,{marginTop:2,marginBottom:6}]} placeholder="—" value={customForm.lock} onChangeText={v=>setCustomForm({...customForm,lock:v})} selectTextOnFocus/>
+                    <TouchableOpacity style={[vstyles.selectBtn,{marginTop:2,marginBottom:6}]} onPress={()=>{blurAll();setShowLockPicker(true);}}>
+                      <Text style={{fontSize:13,color:customForm.lock?'#1a1a1a':'#aaa',flex:1}} numberOfLines={1}>{customForm.lock||'Επιλέξτε...'}</Text>
+                      <Text style={{color:'#aaa',fontSize:11}}>▼</Text>
+                    </TouchableOpacity>
                     <Text style={vstyles.fieldLabelDark}>Χρώμα Εξαρτημάτων</Text>
-                    <TouchableOpacity style={[vstyles.selectBtn,{marginTop:2}]} onPress={()=>setShowHardwarePicker(true)}>
+                    <TouchableOpacity style={[vstyles.selectBtn,{marginTop:2}]} onPress={()=>{blurAll();setShowHardwarePicker(true);}}>
                       <Text style={{fontSize:13,color:customForm.hardware?'#1a1a1a':'#aaa',flex:1}} numberOfLines={1}>{customForm.hardware||'Επιλέξτε...'}</Text>
                       <Text style={{color:'#aaa',fontSize:11}}>▼</Text>
                     </TouchableOpacity>
@@ -1826,7 +1977,7 @@ export default function CustomScreen({ customOrders, setCustomOrders, soldOrders
 
                 {/* ΓΡΑΜΜΗ 2: Επένδυση — ολόκληρη γραμμή */}
                 <Text style={vstyles.fieldLabelDark}>Επένδυση</Text>
-                <TouchableOpacity style={[vstyles.selectBtn,{marginTop:2,marginBottom:8}]} onPress={()=>setShowCoatingsPicker(true)}>
+                <TouchableOpacity style={[vstyles.selectBtn,{marginTop:2,marginBottom:8}]} onPress={()=>{blurAll();setShowCoatingsPicker(true);}}>
                   <Text style={{fontSize:13,color:(customForm.coatings&&customForm.coatings.length>0)?'#1a1a1a':'#aaa',flex:1}} numberOfLines={1}>
                     {(customForm.coatings&&customForm.coatings.length>0)?customForm.coatings.join(', '):'Επιλέξτε...'}
                   </Text>
@@ -1842,42 +1993,17 @@ export default function CustomScreen({ customOrders, setCustomOrders, soldOrders
 
           </>)}
 
-          {/* ─── ΓΙΑ ΕΙΔΙΚΗ: Κάσα/Υλικό + Παρατηρήσεις + Παράδοση ─── */}
-          {orderType==='ΕΙΔΙΚΗ'&&(<>
-            <View style={styles.hwRow}>
-              <View style={styles.hwBox}>
-                <Text style={styles.smallLabel}>Τύπος Κάσας:</Text>
-                <View style={styles.hwBtns}>
-                  {['ΑΝΟΙΧΤΟΥ ΤΥΠΟΥ','ΚΛΕΙΣΤΟΥ ΤΥΠΟΥ'].map(t=>(
-                    <TouchableOpacity key={t} style={[styles.hwBtn,customForm.caseType===t&&styles.hwBtnActive]} onPress={()=>setCustomForm({...customForm,caseType:t})}>
-                      <Text style={[styles.hwBtnTxt,customForm.caseType===t&&{color:'white'}]}>{t==='ΑΝΟΙΧΤΟΥ ΤΥΠΟΥ'?'ΑΝΟΙΧΤΗ':'ΚΛΕΙΣΤΗ'}</Text>
-                    </TouchableOpacity>
-                  ))}
-                </View>
-              </View>
-              <View style={styles.hwBox}>
-                <Text style={styles.smallLabel}>Υλικό Κάσας:</Text>
-                <View style={styles.hwBtns}>
-                  {['DKP','ΓΑΛΒΑΝΙΖΕ'].map(m=>(
-                    <TouchableOpacity key={m} style={[styles.hwBtn,customForm.caseMaterial===m&&styles.hwBtnActive]} onPress={()=>setCustomForm({...customForm,caseMaterial:m})}>
-                      <Text style={[styles.hwBtnTxt,customForm.caseMaterial===m&&{color:'white'}]}>{m}</Text>
-                    </TouchableOpacity>
-                  ))}
-                </View>
-              </View>
-            </View>
-            <TextInput style={[styles.input,{height:70,textAlignVertical:'top',marginTop:4,marginBottom:8}]} placeholder="Παρατηρήσεις" value={customForm.notes} multiline onChangeText={v=>setCustomForm({...customForm,notes:v})}/>
-            <TouchableOpacity
-              style={{flexDirection:'row',justifyContent:'space-between',alignItems:'center',backgroundColor:'#f5f5f5',borderRadius:8,borderWidth:1,borderColor:'#ddd',paddingHorizontal:12,paddingVertical:8,marginBottom:8,alignSelf:'flex-start',minWidth:220}}
-              onPress={()=>setShowDatePicker(true)}>
-              <Text style={{fontSize:12,fontWeight:'bold',color:'#555'}}>📅 Παράδοση:</Text>
-              <Text style={{fontSize:12,color:customForm.deliveryDate?'#000':'#aaa',marginLeft:8}}>
-                {customForm.deliveryDate||'Επιλέξτε...'}
-              </Text>
-            </TouchableOpacity>
-          </>)}
-
-                    <TouchableOpacity style={[styles.saveBtn,{backgroundColor:orderType==='ΤΥΠΟΠΟΙΗΜΕΝΗ'?'#8B0000':'#007AFF'}]} onPress={saveOrder}>
+          <TouchableOpacity style={[styles.saveBtn,{backgroundColor:orderType==='ΤΥΠΟΠΟΙΗΜΕΝΗ'?'#8B0000':'#007AFF'}]} onPress={()=>{
+            Keyboard.dismiss();
+            if (orderType==='ΕΙΔΙΚΗ') {
+              Alert.alert("Επιβεβαίωση", "Αποθήκευση παραγγελίας προς παραγωγή;", [
+                {text:"ΟΧΙ", style:"cancel"},
+                {text:"ΝΑΙ", onPress:()=>{ saveOrder(); setTimeout(()=>customerRef.current?.focus(), 400); }}
+              ]);
+            } else {
+              saveOrder();
+            }
+          }}>
             <Text style={{color:'white',fontWeight:'bold',fontSize:15}}>
               {orderType==='ΤΥΠΟΠΟΙΗΜΕΝΗ'?'📐 ΑΠΟΘΗΚΕΥΣΗ ΠΑΡΑΓΓΕΛΙΑΣ':'ΑΠΟΘΗΚΕΥΣΗ ΠΡΟΣ ΠΑΡΑΓΩΓΗ'}
             </Text>
@@ -1898,7 +2024,7 @@ export default function CustomScreen({ customOrders, setCustomOrders, soldOrders
                   </TouchableOpacity>
                 )}
               </TouchableOpacity>
-              {expanded.pending&&customOrders.filter(o=>o.status==='PENDING').map(o=>renderOrderCard(o))}
+              {expanded.pending&&[...customOrders.filter(o=>o.status==='PENDING')].sort((a,b)=>(parseInt(a.orderNo)||0)-(parseInt(b.orderNo)||0)).map(o=>renderOrderCard(o))}
             </View>
 
             {renderProdSection()}
@@ -1914,7 +2040,7 @@ export default function CustomScreen({ customOrders, setCustomOrders, soldOrders
                   </TouchableOpacity>
                 )}
               </TouchableOpacity>
-              {expanded.ready&&customOrders.filter(o=>o.status==='READY').map(o=>renderOrderCard(o))}
+              {expanded.ready&&[...customOrders.filter(o=>o.status==='READY')].sort((a,b)=>(parseInt(a.orderNo)||0)-(parseInt(b.orderNo)||0)).map(o=>renderOrderCard(o))}
             </View>
 
             {/* ΑΡΧΕΙΟ */}
@@ -3033,6 +3159,41 @@ export default function CustomScreen({ customOrders, setCustomOrders, soldOrders
         </View>
       </Modal>
 
+      {/* MODAL ΚΛΕΙΔΑΡΙΕΣ */}
+      <Modal visible={showLockPicker} transparent animationType="slide" onRequestClose={()=>setShowLockPicker(false)}>
+        <View style={{flex:1,backgroundColor:'rgba(0,0,0,0.5)',justifyContent:'flex-end'}}>
+          <View style={{backgroundColor:'#fff',borderTopLeftRadius:16,borderTopRightRadius:16,maxHeight:'60%'}}>
+            <View style={{backgroundColor:'#8B0000',padding:16,borderTopLeftRadius:16,borderTopRightRadius:16,flexDirection:'row',justifyContent:'space-between',alignItems:'center'}}>
+              <Text style={{color:'white',fontWeight:'bold',fontSize:16}}>🔒 Κλειδαριά</Text>
+              <TouchableOpacity onPress={()=>setShowLockPicker(false)}>
+                <Text style={{color:'white',fontSize:20,fontWeight:'bold'}}>✕</Text>
+              </TouchableOpacity>
+            </View>
+            <ScrollView>
+              <TouchableOpacity
+                style={{padding:16,borderBottomWidth:1,borderBottomColor:'#eee',flexDirection:'row',alignItems:'center',justifyContent:'space-between'}}
+                onPress={()=>{setCustomForm({...customForm,lock:''});setShowLockPicker(false);}}>
+                <Text style={{fontSize:15,color:'#888'}}>— Χωρίς κλειδαριά</Text>
+                {!customForm.lock&&<Text style={{color:'#00C851',fontSize:18}}>✓</Text>}
+              </TouchableOpacity>
+              {(locks||[]).map(l=>(
+                <TouchableOpacity key={l.id}
+                  style={{padding:16,borderBottomWidth:1,borderBottomColor:'#eee',flexDirection:'row',alignItems:'center',justifyContent:'space-between'}}
+                  onPress={()=>{setCustomForm({...customForm,lock:l.name+(l.type?' ('+l.type+')':'')});setShowLockPicker(false);}}>
+                  <View>
+                    <Text style={{fontSize:15,color:'#000',fontWeight:'600'}}>{l.name}</Text>
+                    {l.type?<Text style={{fontSize:12,color:'#666'}}>{l.type}</Text>:null}
+                  </View>
+                  {customForm.lock===l.name+(l.type?' ('+l.type+')':'')&&<Text style={{color:'#00C851',fontSize:18}}>✓</Text>}
+                </TouchableOpacity>
+              ))}
+              {(locks||[]).length===0&&<Text style={{textAlign:'center',color:'#aaa',padding:24}}>Δεν υπάρχουν καταχωρημένες κλειδαριές.</Text>}
+            </ScrollView>
+            <View style={{height:20}}/>
+          </View>
+        </View>
+      </Modal>
+
       {/* MODAL ΕΠΕΝΔΥΣΕΙΣ */}
       <Modal visible={showCoatingsPicker} transparent animationType="slide" onRequestClose={()=>setShowCoatingsPicker(false)}>
         <View style={{flex:1,backgroundColor:'rgba(0,0,0,0.5)',justifyContent:'flex-end'}}>
@@ -3049,13 +3210,18 @@ export default function CustomScreen({ customOrders, setCustomOrders, soldOrders
               )}
               {coatings.map(c=>{
                 const selected = (customForm.coatings||[]).includes(c.name);
+                const n = c.name?.toLowerCase()||'';
+                const bg = n.includes('μέσα')||n.includes('μεσα') ? '#E8F4FD' : n.includes('έξω')||n.includes('εξω') ? '#FFF3E0' : '#fff';
                 return (
                   <TouchableOpacity key={c.id}
-                    style={{padding:16,borderBottomWidth:1,borderBottomColor:'#eee',flexDirection:'row',alignItems:'center',justifyContent:'space-between'}}
+                    style={{padding:16,borderBottomWidth:1,borderBottomColor:'#eee',flexDirection:'row',alignItems:'center',justifyContent:'space-between', backgroundColor: bg}}
                     onPress={()=>{
                       const current = customForm.coatings||[];
                       const updated = selected ? current.filter(x=>x!==c.name) : [...current,c.name];
                       setCustomForm({...customForm,coatings:updated});
+                      if (!selected && updated.length >= 2) {
+                        setTimeout(()=>setShowCoatingsPicker(false), 150);
+                      }
                     }}>
                     <Text style={{fontSize:15,color:'#000'}}>{c.name}</Text>
                     {selected && <Text style={{color:'#007AFF',fontSize:18,fontWeight:'bold'}}>✓</Text>}
