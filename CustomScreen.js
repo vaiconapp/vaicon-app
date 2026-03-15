@@ -124,11 +124,13 @@ export default function CustomScreen({ customOrders, setCustomOrders, soldOrders
   const [selectedCustomer, setSelectedCustomer] = useState(null);
   const [showCustomerInfo, setShowCustomerInfo] = useState(false);
   const [sellModal, setSellModal]  = useState({ visible:false, orderId:null, totalQty:1 });
+  const [readyConfirmModal, setReadyConfirmModal] = useState({ visible:false, order:null, sasiItem:null, caseItem:null });
 
   const customerRef=useRef(); const orderNoRef=useRef(); const hRef=useRef(); const wRef=useRef(); const qtyEidikiRef=useRef();
   const hingeRef=useRef(); const glassRef=useRef(); const glassNotesRef=useRef(); const lockRef=useRef(); const notesRef=useRef();
   const customerSelectedRef = useRef(false);
   const prodScrollRef = useRef(null);
+  const mainScrollRef = useRef(null);
   const staveraWidthRefs = useRef({});
   const staveraNoteRefs = useRef({});
   const staveraHRefs = useRef({});
@@ -1813,7 +1815,52 @@ export default function CustomScreen({ customOrders, setCustomOrders, soldOrders
   return (
     <View style={{flex:1}}>
       <SellModal visible={sellModal.visible} totalQty={sellModal.totalQty} onConfirm={handleSellConfirm} onCancel={()=>setSellModal({visible:false,orderId:null,totalQty:1})} />
-      <ScrollView style={{padding:10}} keyboardShouldPersistTaps="handled">
+
+      {/* Modal επιβεβαίωσης ΕΤΟΙΜΗ */}
+      <Modal visible={readyConfirmModal.visible} transparent animationType="fade">
+        <View style={{flex:1, backgroundColor:'rgba(0,0,0,0.5)', justifyContent:'center', alignItems:'center'}}>
+          <View style={{backgroundColor:'white', borderRadius:16, padding:24, width:'85%', maxWidth:400}}>
+            <Text style={{fontSize:18, fontWeight:'bold', color:'#00796B', marginBottom:8}}>✅ Επιβεβαίωση ΕΤΟΙΜΗ</Text>
+            <Text style={{fontSize:14, color:'#444', marginBottom:4}}>Η παραγγελία <Text style={{fontWeight:'bold'}}>#{readyConfirmModal.order?.orderNo}</Text> είναι έτοιμη;</Text>
+            <Text style={{fontSize:13, color:'#666', marginBottom:16}}>Το σασί θα αφαιρεθεί από το στοκ{readyConfirmModal.caseItem ? ' και η κάσα θα δεσμευτεί.' : '.'}</Text>
+            <View style={{flexDirection:'row', gap:10}}>
+              <TouchableOpacity
+                style={{flex:1, padding:14, borderRadius:8, backgroundColor:'#eee', alignItems:'center'}}
+                onPress={()=>setReadyConfirmModal({visible:false,order:null,sasiItem:null,caseItem:null})}>
+                <Text style={{fontWeight:'bold', color:'#555'}}>ΑΚΥΡΟ</Text>
+              </TouchableOpacity>
+              <TouchableOpacity
+                style={{flex:1, padding:14, borderRadius:8, backgroundColor:'#00C851', alignItems:'center'}}
+                onPress={async()=>{
+                  const {order:o, sasiItem, caseItem} = readyConfirmModal;
+                  setReadyConfirmModal({visible:false,order:null,sasiItem:null,caseItem:null});
+                  const label = `${o.customer||''}${o.customer?' ':''} #${o.orderNo}`;
+                  const updOrder = {...o, status:'STD_READY', readyAt:Date.now(),
+                    reservedSasiId: sasiItem?.id||null,
+                    reservedCaseId: caseItem?.id||null
+                  };
+                  setCustomOrders(prev=>prev.map(x=>x.id===o.id?updOrder:x));
+                  await syncToCloud(updOrder);
+                  if(sasiItem) {
+                    const updSasi = {...sasiItem, reservedBy:label, reservedOrderNo:o.orderNo, reservedAt:Date.now()};
+                    setSasiOrders(prev=>prev.map(s=>s.id===sasiItem.id?updSasi:s));
+                    await fetch(`${FIREBASE_URL}/sasi_orders/${sasiItem.id}.json`,{method:'PUT',body:JSON.stringify(updSasi)});
+                  }
+                  if(caseItem) {
+                    const updCase = {...caseItem, reservedBy:label, reservedOrderNo:o.orderNo, reservedAt:Date.now()};
+                    setCaseOrders(prev=>prev.map(s=>s.id===caseItem.id?updCase:s));
+                    await fetch(`${FIREBASE_URL}/case_orders/${caseItem.id}.json`,{method:'PUT',body:JSON.stringify(updCase)});
+                  }
+                  await logActivity('ΤΥΠΟΠΟΙΗΜΕΝΗ','Φάση → ΕΤΟΙΜΟ',{orderNo:o.orderNo,customer:o.customer,size:`${o.h}x${o.w}`});
+                }}>
+                <Text style={{fontWeight:'bold', color:'white', fontSize:15}}>ΕΤΟΙΜΗ ✅</Text>
+              </TouchableOpacity>
+            </View>
+          </View>
+        </View>
+      </Modal>
+
+      <ScrollView ref={mainScrollRef} style={{padding:10}} keyboardShouldPersistTaps="handled">
         <View style={{paddingBottom:120}}>
           <Text style={styles.sectionTitle}>ΚΑΤΑΧΩΡΗΣΗ ΤΥΠΟΠΟΙΗΜΕΝΗΣ ΠΑΡΑΓΓΕΛΙΑΣ</Text>
 
@@ -2212,6 +2259,10 @@ export default function CustomScreen({ customOrders, setCustomOrders, soldOrders
                       setEditingOrder(o);
                       setCustomOrders(customOrders.filter(x=>x.id!==o.id));
                       deleteFromCloud(o.id);
+                      setTimeout(()=>{
+                        if(Platform.OS==='web') window.scrollTo({top:0, behavior:'smooth'});
+                        else mainScrollRef.current?.scrollTo({y:0, animated:true});
+                      }, 150);
                     }}
                     delayLongPress={1000}
                     activeOpacity={0.8}
@@ -2261,53 +2312,24 @@ export default function CustomScreen({ customOrders, setCustomOrders, soldOrders
                             <TouchableOpacity
                               disabled={!canMount}
                               style={{backgroundColor: canMount?'#00C851':'#ccc', paddingHorizontal:8, paddingVertical:6, borderRadius:5, alignItems:'center', minWidth:96, opacity:canMount?1:0.5}}
-                              onPress={()=>{
+                              onPress={async()=>{
                                 if(!canMount) return;
-                                Alert.alert(
-                                  '✅ Αποθήκευση',
-                                  `Η παραγγελία #${o.orderNo} είναι έτοιμη;
-Το σασί θα αφαιρεθεί από το στοκ.
-Η κάσα θα δεσμευτεί.`,
-                                  [
-                                    {text:'ΑΚΥΡΟ', style:'cancel'},
-                                    {text:'ΕΤΟΙΜΗ', onPress:async()=>{
-                                      // Βρίσκω το σασί READY για αυτή τη διάσταση
-                                      const sasiItem = sasiOrders.find(s=>
-                                        s.status==='READY' &&
-                                        String(s.selectedHeight)===String(o.h) &&
-                                        String(s.selectedWidth)===String(o.w) &&
-                                        s.side===o.side
-                                      );
-                                      // Βρίσκω την κάσα READY για αυτή τη διάσταση
-                                      const caseItem = caseOrders.find(s=>
-                                        s.status==='READY' &&
-                                        String(s.selectedHeight)===String(o.h) &&
-                                        String(s.selectedWidth)===String(o.w) &&
-                                        s.side===o.side
-                                      );
-                                      const label = `${o.customer||''}${o.customer?' ':''} #${o.orderNo}`;
-                                      // Ενημέρωση παραγγελίας → STD_READY
-                                      const updOrder = {...o, status:'STD_READY', readyAt:Date.now(),
-                                        reservedSasiId: sasiItem?.id||null,
-                                        reservedCaseId: caseItem?.id||null
-                                      };
-                                      setCustomOrders(customOrders.map(x=>x.id===o.id?updOrder:x));
-                                      await syncToCloud(updOrder);
-                                      // Σασί → δεσμευμένο (reservedBy)
-                                      if(sasiItem) {
-                                        const updSasi = {...sasiItem, reservedBy:label, reservedOrderNo:o.orderNo, reservedAt:Date.now()};
-                                        setSasiOrders(prev=>prev.map(s=>s.id===sasiItem.id?updSasi:s));
-                                        await fetch(`${FIREBASE_URL}/sasi_orders/${sasiItem.id}.json`,{method:'PUT',body:JSON.stringify(updSasi)});
-                                      }
-                                      // Κάσα → δεσμευμένη (reservedBy)
-                                      if(caseItem) {
-                                        const updCase = {...caseItem, reservedBy:label, reservedOrderNo:o.orderNo, reservedAt:Date.now()};
-                                        setCaseOrders(prev=>prev.map(s=>s.id===caseItem.id?updCase:s));
-                                        await fetch(`${FIREBASE_URL}/case_orders/${caseItem.id}.json`,{method:'PUT',body:JSON.stringify(updCase)});
-                                      }
-                                    }}
-                                  ]
-                                );
+                                const sasiItem = sasiOrders.find(s=>s.status==='READY'&&String(s.selectedHeight)===String(o.h)&&String(s.selectedWidth)===String(o.w)&&s.side===o.side);
+                                const caseItem = caseOrders.find(s=>s.status==='READY'&&String(s.selectedHeight)===String(o.h)&&String(s.selectedWidth)===String(o.w)&&s.side===o.side);
+                                const doReady = async()=>{
+                                  const label = `${o.customer||""}${o.customer?" ":""} #${o.orderNo}`;
+                                  const updOrder = {...o, status:"STD_READY", readyAt:Date.now(), reservedSasiId:sasiItem?.id||null, reservedCaseId:caseItem?.id||null};
+                                  setCustomOrders(prev=>prev.map(x=>x.id===o.id?updOrder:x));
+                                  await syncToCloud(updOrder);
+                                  if(sasiItem){const updSasi={...sasiItem,reservedBy:label,reservedOrderNo:o.orderNo,reservedAt:Date.now()};setSasiOrders(prev=>prev.map(s=>s.id===sasiItem.id?updSasi:s));await fetch(`${FIREBASE_URL}/sasi_orders/${sasiItem.id}.json`,{method:"PUT",body:JSON.stringify(updSasi)});}
+                                  if(caseItem){const updCase={...caseItem,reservedBy:label,reservedOrderNo:o.orderNo,reservedAt:Date.now()};setCaseOrders(prev=>prev.map(s=>s.id===caseItem.id?updCase:s));await fetch(`${FIREBASE_URL}/case_orders/${caseItem.id}.json`,{method:"PUT",body:JSON.stringify(updCase)});}
+                                  await logActivity('ΤΥΠΟΠΟΙΗΜΕΝΗ','Φάση → ΕΤΟΙΜΟ',{orderNo:o.orderNo,customer:o.customer,size:`${o.h}x${o.w}`});
+                                };
+                                if(Platform.OS==='web'){
+                                  if(window.confirm(`ΕΤΟΙΜΗ\nΠαραγγελία #${o.orderNo}${o.customer?" - "+o.customer:""}\n${o.h}x${o.w} | ${o.side}\n\nΕπιβεβαίωση;`)) await doReady();
+                                } else {
+                                  setReadyConfirmModal({visible:true, order:o, sasiItem, caseItem});
+                                }
                               }}>
                               <Text style={{color:'white', fontSize:11, fontWeight:'bold'}}>{canMount?'✅ ΕΤΟΙΜΗ':'⏳ ΑΝΑΜΟΝΗ'}</Text>
                             </TouchableOpacity>
