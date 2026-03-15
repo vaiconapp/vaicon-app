@@ -20,6 +20,27 @@ const printHTML = async (html, title) => {
   }
 };
 
+function ProdQtyModal({ visible, suggestedQty, onConfirm, onCancel }) {
+  const [qty, setQty] = React.useState('');
+  React.useEffect(() => { if (visible) setQty(String(suggestedQty||'')); }, [visible, suggestedQty]);
+  return (
+    <Modal visible={visible} transparent animationType="fade">
+      <View style={styles.modalOverlay}>
+        <View style={styles.modalBox}>
+          <Text style={styles.modalTitle}>▶ ΕΝΑΡΞΗ ΠΑΡΑΓΩΓΗΣ</Text>
+          <Text style={styles.modalSub}>Προτεινόμενη ποσότητα: {suggestedQty} τεμ.</Text>
+          <Text style={styles.modalSub}>Πόσα τεμάχια να παραχθούν;</Text>
+          <TextInput style={styles.modalInput} keyboardType="numeric" value={qty} onChangeText={setQty} placeholder="π.χ. 5" autoFocus />
+          <View style={{ flexDirection: 'row', gap: 10 }}>
+            <TouchableOpacity style={[styles.modalBtn, { backgroundColor: '#ccc' }]} onPress={() => { setQty(''); onCancel(); }}><Text style={{ fontWeight: 'bold' }}>ΑΚΥΡΟ</Text></TouchableOpacity>
+            <TouchableOpacity style={[styles.modalBtn, { backgroundColor: '#1565C0' }]} onPress={() => { const n = parseInt(qty); if (!n || n < 1) return Alert.alert('Σφάλμα', 'Βάλτε έγκυρο αριθμό'); setQty(''); onConfirm(n); }}><Text style={{ fontWeight: 'bold', color: 'white' }}>ΕΝΑΡΞΗ</Text></TouchableOpacity>
+          </View>
+        </View>
+      </View>
+    </Modal>
+  );
+}
+
 function SellModal({ visible, totalQty, mode, onConfirm, onCancel }) {
   const [qty, setQty] = React.useState('');
   const isRestore = mode === 'restore';
@@ -53,6 +74,7 @@ export default function SasiScreen({ sasiOrders=[], setSasiOrders, soldSasiOrder
   const [expanded, setExpanded] = useState({ pending: false, prod: false, ready: false, archive: false });
   const [form, setForm] = useState(INIT);
   const [sellModal, setSellModal] = useState({ visible: false, orderId: null, totalQty: 1 });
+  const [prodQtyModal, setProdQtyModal] = useState({ visible: false, orderId: null, suggestedQty: 1 });
 
   const syncToCloud = async (order) => {
     try { await fetch(`${FIREBASE_URL}/sasi_orders/${order.id}.json`, { method: 'PUT', body: JSON.stringify(order) }); }
@@ -86,6 +108,9 @@ export default function SasiScreen({ sasiOrders=[], setSasiOrders, soldSasiOrder
     if (newStatus === 'REJECTED') {
       const totalQty = parseInt(order.qty) || 1;
       setSellModal({ visible: true, orderId: id, totalQty, mode: 'reject' });
+    } else if (newStatus === 'PROD' && order.isAuto) {
+      // Αυτόματη πρόταση → modal για ποσότητα παραγωγής
+      setProdQtyModal({ visible: true, orderId: id, suggestedQty: parseInt(order.qty) || 1 });
     } else {
       let upd;
       setSasiOrders(sasiOrders.map(o => { if (o.id === id) { upd = { ...o, status: newStatus, [`${newStatus.toLowerCase()}At`]: now }; return upd; } return o; }));
@@ -95,6 +120,18 @@ export default function SasiScreen({ sasiOrders=[], setSasiOrders, soldSasiOrder
         if (actionMap[newStatus]) await logActivity('ΣΑΣΙ ΣΤΟΚ', actionMap[newStatus], { model: order.model, size: order.size, qty: order.qty });
       }
     }
+  };
+
+  const handleProdQtyConfirm = async (qty) => {
+    const { orderId } = prodQtyModal;
+    setProdQtyModal({ visible: false, orderId: null, suggestedQty: 1 });
+    const order = sasiOrders.find(o => o.id === orderId);
+    if (!order) return;
+    const now = Date.now();
+    const upd = { ...order, status: 'PROD', prodAt: now, qty: String(qty) };
+    setSasiOrders(sasiOrders.map(o => o.id === orderId ? upd : o));
+    await syncToCloud(upd);
+    await logActivity('ΣΑΣΙ ΣΤΟΚ', 'Φάση → ΠΑΡΑΓΩΓΗ', { model: order.model, size: order.size, qty: String(qty) });
   };
 
   const handleSellConfirm = async (qty) => {
@@ -288,6 +325,7 @@ export default function SasiScreen({ sasiOrders=[], setSasiOrders, soldSasiOrder
   return (
     <View style={{ flex: 1 }}>
       <SellModal visible={sellModal.visible} totalQty={sellModal.totalQty} mode={sellModal.mode} onConfirm={handleSellConfirm} onCancel={() => setSellModal({ visible: false, orderId: null, totalQty: 1, mode:'reject' })} />
+      <ProdQtyModal visible={prodQtyModal.visible} suggestedQty={prodQtyModal.suggestedQty} onConfirm={handleProdQtyConfirm} onCancel={() => setProdQtyModal({ visible: false, orderId: null, suggestedQty: 1 })} />
     <ScrollView style={{ padding: 10 }}>
       <View style={{ paddingBottom: 120 }}>
         <View style={styles.bigHeader}><Text style={styles.bigHeaderTxt}>🚪 ΤΥΠΟΠΟΙΗΜΕΝΑ ΣΑΣΙ ΣΤΟΚ</Text></View>

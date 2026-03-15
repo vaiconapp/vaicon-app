@@ -20,6 +20,27 @@ const printHTML = async (html, title) => {
   }
 };
 
+function ProdQtyModal({ visible, suggestedQty, onConfirm, onCancel }) {
+  const [qty, setQty] = React.useState('');
+  React.useEffect(() => { if (visible) setQty(String(suggestedQty||'')); }, [visible, suggestedQty]);
+  return (
+    <Modal visible={visible} transparent animationType="fade">
+      <View style={styles.modalOverlay}>
+        <View style={styles.modalBox}>
+          <Text style={styles.modalTitle}>▶ ΕΝΑΡΞΗ ΠΑΡΑΓΩΓΗΣ</Text>
+          <Text style={styles.modalSub}>Προτεινόμενη ποσότητα: {suggestedQty} τεμ.</Text>
+          <Text style={styles.modalSub}>Πόσα τεμάχια να παραχθούν;</Text>
+          <TextInput style={styles.modalInput} keyboardType="numeric" value={qty} onChangeText={setQty} placeholder="π.χ. 5" autoFocus />
+          <View style={{ flexDirection: 'row', gap: 10 }}>
+            <TouchableOpacity style={[styles.modalBtn, { backgroundColor: '#ccc' }]} onPress={() => { setQty(''); onCancel(); }}><Text style={{ fontWeight: 'bold' }}>ΑΚΥΡΟ</Text></TouchableOpacity>
+            <TouchableOpacity style={[styles.modalBtn, { backgroundColor: '#1565C0' }]} onPress={() => { const n = parseInt(qty); if (!n || n < 1) return Alert.alert('Σφάλμα', 'Βάλτε έγκυρο αριθμό'); setQty(''); onConfirm(n); }}><Text style={{ fontWeight: 'bold', color: 'white' }}>ΕΝΑΡΞΗ</Text></TouchableOpacity>
+          </View>
+        </View>
+      </View>
+    </Modal>
+  );
+}
+
 function SellModal({ visible, totalQty, mode, onConfirm, onCancel }) {
   const [qty, setQty] = React.useState('');
   const isRestore = mode === 'restore';
@@ -47,12 +68,13 @@ const HEIGHTS = ['208', '213', '218', '223'];
 const WIDTHS  = ['83', '88', '93', '98'];
 const MODELS  = ['ΚΑΣΑ ΚΛΕΙΣΤΗ', 'ΚΑΣΑ ΑΝΟΙΧΤΗ'];
 
-const INIT = { model: MODELS[0], selectedHeight: '', selectedWidth: '', qty: '1', side: 'ΔΕΞΙΑ', notes: '', status: 'PENDING' };
+const INIT = { model: 'ΚΑΣΑ ΚΛΕΙΣΤΗ', selectedHeight: '', selectedWidth: '', qty: '1', side: 'ΔΕΞΙΑ', notes: '', status: 'PENDING' };
 
 export default function CaseScreen({ caseOrders=[], setCaseOrders, soldCaseOrders=[], setSoldCaseOrders }) {
   const [expanded, setExpanded] = useState({ pending: false, prod: false, ready: false, archive: false });
   const [form, setForm] = useState(INIT);
   const [sellModal, setSellModal] = useState({ visible: false, orderId: null, totalQty: 1 });
+  const [prodQtyModal, setProdQtyModal] = useState({ visible: false, orderId: null, suggestedQty: 1 });
 
   const syncToCloud = async (order) => {
     try { await fetch(`${FIREBASE_URL}/case_orders/${order.id}.json`, { method: 'PUT', body: JSON.stringify(order) }); }
@@ -86,6 +108,11 @@ export default function CaseScreen({ caseOrders=[], setCaseOrders, soldCaseOrder
     if (newStatus === 'REJECTED') {
       const totalQty = parseInt(order.qty) || 1;
       setSellModal({ visible: true, orderId: id, totalQty, mode: 'reject' });
+    } else if (newStatus === 'PROD' && order.isAuto) {
+      // Αυτόματη πρόταση → modal για ποσότητα παραγωγής
+      setProdQtyModal({ visible: true, orderId: id, suggestedQty: parseInt(order.qty) || 1 });
+      return;
+
     } else {
       let upd;
       setCaseOrders(caseOrders.map(o => { if (o.id === id) { upd = { ...o, status: newStatus, [`${newStatus.toLowerCase()}At`]: now }; return upd; } return o; }));
@@ -95,6 +122,18 @@ export default function CaseScreen({ caseOrders=[], setCaseOrders, soldCaseOrder
         if (actionMap[newStatus]) await logActivity('ΚΑΣΕΣ ΣΤΟΚ', actionMap[newStatus], { model: order.model, size: order.size, qty: order.qty });
       }
     }
+  };
+
+  const handleProdQtyConfirm = async (qty) => {
+    const { orderId } = prodQtyModal;
+    setProdQtyModal({ visible: false, orderId: null, suggestedQty: 1 });
+    const order = caseOrders.find(o => o.id === orderId);
+    if (!order) return;
+    const now = Date.now();
+    const upd = { ...order, status: 'PROD', prodAt: now, qty: String(qty) };
+    setCaseOrders(caseOrders.map(o => o.id === orderId ? upd : o));
+    await syncToCloud(upd);
+    await logActivity('ΚΑΣΕΣ ΣΤΟΚ', 'Φάση → ΠΑΡΑΓΩΓΗ', { model: order.model, size: order.size, qty: String(qty) });
   };
 
   const handleSellConfirm = async (qty) => {
@@ -160,7 +199,7 @@ export default function CaseScreen({ caseOrders=[], setCaseOrders, soldCaseOrder
     const btn = isArchive?'ΔΙΑΓΡΑΦΗ':(order.status==='PENDING'?'ΕΝΑΡΞΗ':order.status==='PROD'?'ΕΤΟΙΜΗ':'ΕΚΤΟΣ ΠΡΟΔ.');
     const btnC = isArchive?'#000':(order.status==='PENDING'?'#ffbb33':order.status==='PROD'?'#00C851':'#8B0000');
     return (
-      <TouchableOpacity key={order.id} onLongPress={() => !isArchive && editOrder(order)} delayLongPress={1000} activeOpacity={0.7} style={[styles.orderCard, { borderLeftColor: bc }, order.isAuto && {backgroundColor:'#fffde7', borderLeftColor:'#FFC107'}]}>
+      <TouchableOpacity key={order.id} onLongPress={() => !isArchive && editOrder(order)} delayLongPress={1000} activeOpacity={0.7} style={[styles.orderCard, { borderLeftColor: bc }, order.isAuto && {backgroundColor:'#fffde7', borderLeftColor:'#FFC107'}]}> 
         <View style={styles.cardContent}>
           <Text style={styles.cardModel}>{order.model}{order.isAuto ? ' ⚡' : ''}</Text>
           <Text style={styles.cardDetails}>{order.size} | {order.side}</Text>
@@ -199,6 +238,7 @@ export default function CaseScreen({ caseOrders=[], setCaseOrders, soldCaseOrder
     const today = new Date();
     const dateStr = `${String(today.getDate()).padStart(2,'0')}/${String(today.getMonth()+1).padStart(2,'0')}/${today.getFullYear()}`;
 
+    // Υπολογισμός δεσμεύσεων από autoNote
     const getReserved = (o) => {
       if (!o.autoNote) return 0;
       return o.autoNote.split(',').reduce((sum, entry) => {
@@ -207,6 +247,7 @@ export default function CaseScreen({ caseOrders=[], setCaseOrders, soldCaseOrder
       }, 0);
     };
 
+    // Ταξινόμηση: ΔΕΞΙΑ πρώτα, μετά ΑΡΙΣΤΕΡΗ, κατά διάσταση, κατά μοντέλο
     const sortFn = (a, b) => {
       if (a.side === 'ΔΕΞΙΑ' && b.side !== 'ΔΕΞΙΑ') return -1;
       if (a.side !== 'ΔΕΞΙΑ' && b.side === 'ΔΕΞΙΑ') return 1;
@@ -219,6 +260,27 @@ export default function CaseScreen({ caseOrders=[], setCaseOrders, soldCaseOrder
 
     const left  = [...orders].filter(o => o.side !== 'ΔΕΞΙΑ').sort(sortFn);
     const right = [...orders].filter(o => o.side === 'ΔΕΞΙΑ').sort(sortFn);
+    const maxRows = Math.max(right.length, left.length);
+
+    const makeRow = (o) => {
+      if (!o) return '<td colspan="4" style="background:#fafafa"></td>';
+      const reserved = getReserved(o);
+      const available = Math.max(0, (parseInt(o.qty)||1) - reserved);
+      return `
+        <td style="font-weight:bold;font-size:14px;padding:3px 5px">${o.model||'—'}</td>
+        <td style="font-weight:bold;font-size:16px;padding:3px 5px">${o.selectedHeight||'—'}x${o.selectedWidth||'—'}</td>
+        <td style="font-weight:bold;font-size:18px;color:#00796B;text-align:center;padding:3px 5px">${available}</td>
+        <td style="font-size:18px;color:#E65100;text-align:center;padding:3px 5px">${reserved > 0 ? reserved : '—'}</td>
+      `;
+    };
+
+    const rows = Array.from({length: maxRows}, (_, i) => `
+      <tr style="border-bottom:1px solid #ddd">
+        ${makeRow(left[i])}
+        <td style="width:10px;background:#ddd"></td>
+        ${makeRow(right[i])}
+      </tr>
+    `).join('');
 
     const html = `<html><head><meta charset="utf-8"><style>
       *{box-sizing:border-box;margin:0;padding:0;}
@@ -265,11 +327,13 @@ export default function CaseScreen({ caseOrders=[], setCaseOrders, soldCaseOrder
   return (
     <View style={{ flex: 1 }}>
       <SellModal visible={sellModal.visible} totalQty={sellModal.totalQty} mode={sellModal.mode} onConfirm={handleSellConfirm} onCancel={() => setSellModal({ visible: false, orderId: null, totalQty: 1, mode:'reject' })} />
+      <ProdQtyModal visible={prodQtyModal.visible} suggestedQty={prodQtyModal.suggestedQty} onConfirm={handleProdQtyConfirm} onCancel={() => setProdQtyModal({ visible: false, orderId: null, suggestedQty: 1 })} />
     <ScrollView style={{ padding: 10 }}>
       <View style={{ paddingBottom: 120 }}>
-        <View style={styles.bigHeader}><Text style={styles.bigHeaderTxt}>🔲 ΤΥΠΟΠΟΙΗΜΕΝΕΣ ΚΑΣΕΣ ΣΤΟΚ</Text></View>
-        <Text style={styles.sectionTitle}>ΚΑΤΑΧΩΡΗΣΗ ΤΥΠΟΠΟΙΗΜΕΝΗΣ ΚΑΣΑΣ</Text>
+        <View style={styles.bigHeader}><Text style={styles.bigHeaderTxt}>🚪 ΤΥΠΟΠΟΙΗΜΕΝΕΣ ΚΑΣΕΣ ΣΤΟΚ</Text></View>
+        <Text style={styles.sectionTitle}>ΚΑΤΑΧΩΡΗΣΗ ΚΑΣΑΣ</Text>
 
+        {/* ΔΙΑΣΤΑΣΕΙΣ + ΘΩΡΑΚΙΣΗ/ΤΕΜΑΧΙΑ — side by side */}
         <View style={{flexDirection:'row', gap:10, marginBottom:8}}>
 
           {/* ΑΡΙΣΤΕΡΑ: Ύψος + Πλάτος chips + ΑΡ/ΔΕΞ κάτω */}
@@ -291,6 +355,7 @@ export default function CaseScreen({ caseOrders=[], setCaseOrders, soldCaseOrder
                   </TouchableOpacity>
                 ))}
               </View>
+              {/* ΑΡ/ΔΕΞ — ίδιο πλάτος με chips row */}
               <View style={{flexDirection:'row', gap:4}}>
                 <TouchableOpacity style={[styles.dimBtn, {flex:1, alignItems:'center'}, form.side==='ΑΡΙΣΤΕΡΗ' && styles.dimActive]} onPress={() => setForm({...form, side:'ΑΡΙΣΤΕΡΗ'})}>
                   <Text style={[styles.dimTxt, form.side==='ΑΡΙΣΤΕΡΗ' && styles.dimActiveTxt]}>◄ ΑΡ.</Text>
@@ -302,7 +367,7 @@ export default function CaseScreen({ caseOrders=[], setCaseOrders, soldCaseOrder
             </View>
           </View>
 
-          {/* ΔΕΞΙΑ: ΤΥΠΟΣ ΚΑΣΑΣ + Τεμάχια */}
+          {/* ΔΕΞΙΑ: ΘΩΡΑΚΙΣΗ + Τεμάχια */}
           <View style={{flex:2}}>
             <Text style={[styles.label,{textAlign:'center'}]}>ΤΥΠΟΣ ΚΑΣΑΣ</Text>
             <View style={{flexDirection:'row', gap:4, marginBottom:8}}>

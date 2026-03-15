@@ -77,25 +77,8 @@ const STD_HEIGHTS = ['208','213','218','223'];
 const STD_WIDTHS  = ['83','88','93','98'];
 const INIT_FORM   = { customer:'', orderNo:'', h:'', w:'', hinges:'2', qty:'1', glassDim:'', glassNotes:'', armor:'ΜΟΝΗ', side:'ΔΕΞΙΑ', lock:'', notes:'', status:'PENDING', hardware:'', installation:'ΟΧΙ', caseType:'ΚΛΕΙΣΤΟΥ ΤΥΠΟΥ', caseMaterial:'DKP', deliveryDate:'', sasiType:'ΜΟΝΗ ΘΩΡΑΚΙΣΗ', coatings:[], stavera:[], heightReduction:'' };
 
-const PHASES = [
-  { key:'laser',    label:'🔴 LASER ΚΟΠΕΣ' },
-  { key:'cases',    label:'🟡 ΚΑΣΕΣ' },
-  { key:'montSasi', label:'🔵 ΚΑΤΑΣΚΕΥΗ ΣΑΣΙ' },
-  { key:'montDoor', label:'🟢 ΜΟΝΤΑΡΙΣΜΑ / ΕΠΕΝΔΥΣΗ ΠΟΡΤΑΣ' },
-  { key:'vafio',    label:'⚫ ΒΑΦΕΙΟ' },
-];
 
-const DIPLI_PHASES = [
-  { key:'laser',    label:'🔴 LASER ΚΟΠΕΣ' },
-  { key:'montSasi', label:'🔵 ΚΑΤΑΣΚΕΥΗ ΣΑΣΙ' },
-  { key:'montDoor', label:'🟢 ΜΟΝΤΑΡΙΣΜΑ / ΕΠΕΝΔΥΣΗ ΠΟΡΤΑΣ' },
-];
 
-const initPhases = () => {
-  const p = {};
-  PHASES.forEach(ph => { p[ph.key] = { active:true, printed:false, done:false }; });
-  return p;
-};
 
 function SellModal({ visible, totalQty, onConfirm, onCancel }) {
   const [qty, setQty] = useState('');
@@ -125,10 +108,8 @@ function SellModal({ visible, totalQty, onConfirm, onCancel }) {
   );
 }
 
-export default function CustomScreen({ customOrders, setCustomOrders, soldOrders, setSoldOrders, customers, onRequestAddCustomer, sasiOrders=[], setSasiOrders, caseOrders=[], setCaseOrders, coatings=[], dipliSasiStock=[], setDipliSasiStock, locks=[] }) {
+export default function CustomScreen({ customOrders, setCustomOrders, soldOrders, setSoldOrders, customers, onRequestAddCustomer, sasiOrders=[], setSasiOrders, caseOrders=[], setCaseOrders, coatings=[], dipliSasiStock=[], setDipliSasiStock, locks=[], specialOrders=[] }) {
   const [expanded, setExpanded] = useState({ pending:false, prod:false, ready:false, archive:false, stdList:true, stdMoni:true, stdDipli:true, stdReady:true, stdSold:false, stdReadyD:true, stdSoldD:false, stdMoniOpen:false, stdDipliOpen:false, dipliProd:true, dipliSasiStock:false, moniProd:true, moniSasiStock:false });
-  const [dipliProdTab, setDipliProdTab] = useState('laser');
-  const [moniProdTab, setMoniProdTab] = useState('laser');
   const [showHardwarePicker, setShowHardwarePicker] = useState(false);
   const [showLockPicker, setShowLockPicker] = useState(false);
   const [showCoatingsPicker, setShowCoatingsPicker] = useState(false);
@@ -136,17 +117,13 @@ export default function CustomScreen({ customOrders, setCustomOrders, soldOrders
   const [customHardwareText, setCustomHardwareText] = useState('');
   const [showCustomHardwareInput, setShowCustomHardwareInput] = useState(false);
   const [stdTab, setStdTab] = useState('ΜΟΝΗ');
-  const [activeProdPhase, setActiveProdPhase] = useState('laser'); // ποια υποκαρτέλα παραγωγής είναι ανοιχτή
   const [customForm, setCustomForm] = useState(INIT_FORM);
-  const [orderType, setOrderType]  = useState('ΕΙΔΙΚΗ');
   const [editingOrder, setEditingOrder] = useState(null); // η πόρτα που επεξεργαζόμαστε
   const [customerSearch, setCustomerSearch] = useState('');
   const [showCustomerList, setShowCustomerList] = useState(false);
   const [selectedCustomer, setSelectedCustomer] = useState(null);
   const [showCustomerInfo, setShowCustomerInfo] = useState(false);
   const [sellModal, setSellModal]  = useState({ visible:false, orderId:null, totalQty:1 });
-  const [printSelected, setPrintSelected] = useState({});
-  const [printPreview, setPrintPreview] = useState({ visible:false, phaseKey:null, orders:[], copies:1 });
 
   const customerRef=useRef(); const orderNoRef=useRef(); const hRef=useRef(); const wRef=useRef(); const qtyEidikiRef=useRef();
   const hingeRef=useRef(); const glassRef=useRef(); const glassNotesRef=useRef(); const lockRef=useRef(); const notesRef=useRef();
@@ -159,10 +136,18 @@ export default function CustomScreen({ customOrders, setCustomOrders, soldOrders
   const staveraGridNoteRefs = useRef({});
   const [pageWidth, setPageWidth] = useState(SCREEN_WIDTH);
 
-  const syncToCloud = async (o) => { try { await fetch(`${FIREBASE_URL}/orders/${o.id}.json`,{method:'PUT',body:JSON.stringify(o)}); } catch { Alert.alert("Σφάλμα","Δεν αποθηκεύτηκε."); } };
-  const deleteFromCloud = async (id) => { try { await fetch(`${FIREBASE_URL}/orders/${id}.json`,{method:'DELETE'}); } catch(e){} };
 
-  // Αυτόματο πέρασμα ΔΙΠΛΗΣ στα ΕΤΟΙΜΑ όταν τελειώσουν οι φάσεις ΚΑΙ υπάρχει κάσα
+  const syncToCloud = async (o) => { try { await fetch(`${FIREBASE_URL}/std_orders/${o.id}.json`,{method:'PUT',body:JSON.stringify(o)}); } catch { Alert.alert("Σφάλμα","Δεν αποθηκεύτηκε."); } };
+  const deleteFromCloud = async (id) => { try { await fetch(`${FIREBASE_URL}/std_orders/${id}.json`,{method:'DELETE'}); } catch(e){} };
+
+  const resetForm = () => { setCustomForm(INIT_FORM); setCustomerSearch(''); setSelectedCustomer(null); setShowCustomerList(false); setEditingOrder(null); };
+
+  const blurAll = () => {
+    Object.values(staveraHRefs.current).forEach(r=>r?.blur());
+    Object.values(staveraGridNoteRefs.current).forEach(r=>r?.blur());
+  };
+  useEffect(()=>{ setTimeout(()=>customerRef.current?.focus(), 300); }, []);
+
   useEffect(() => {
     const caseReady = caseOrders.filter(o=>o.status==='READY');
     const sasiReadyAll = sasiOrders.filter(o=>o.status==='READY');
@@ -193,24 +178,24 @@ export default function CustomScreen({ customOrders, setCustomOrders, soldOrders
         if(!hasSasi) return o;
         // Κάσα βρέθηκε!
         if(hasMontage){
-          // Με μοντάρισμα → MONI_PROD με μόνο ΜΟΝΤ. ενεργό
+          // Με μοντάρισμα (χωρίς κλειδαριά) → μένει STD_PENDING, παίρνει flag stdInProd
+          if(o.stdInProd) return o; // ήδη σημαδεμένο
           updated = true;
-          const moniPhases = {
-            laser:   {active:false, done:false, printHistory:[]},
-            montSasi:{active:false, done:false, printHistory:[]},
-            montDoor:{active:true,  done:false, printHistory:[]}
-          };
-          const upd = {...o, status:'MONI_PROD', moniPhases};
+          const upd = {...o, stdInProd:true};
           syncToCloud(upd);
           return upd;
         } else {
-          // Μόνο σταθερά, χωρίς μοντάρισμα → STD_READY αμέσως (σταθερά διαχειρίζεται χωριστά)
+          // Μόνο σταθερά, χωρίς μοντάρισμα → STD_READY με badge εκκρεμή σταθερά
           updated = true;
-          const upd = {...o, status:'STD_READY', readyAt:Date.now()};
+          const upd = {...o, status:'STD_READY', readyAt:Date.now(), staveraPendingAtReady:true};
           syncToCloud(upd);
           return upd;
         }
       }
+
+      // ── ΜΟΝΗ χωρίς κλειδαριά, χωρίς μοντάρισμα, χωρίς σταθερά ──
+      // ΔΕΝ μεταφέρεται αυτόματα — ο χρήστης πατάει ΕΤΟΙΜΗ χειροκίνητα
+      // (το κουμπί εμφανίζεται στο renderStdCard όταν hasCase && hasSasi)
 
       // ── MONI_PROD / DIPLI_PROD → μετάβαση στα ΕΤΟΙΜΑ όταν όλες οι φάσεις done ──
       if(o.status!=='DIPLI_PROD' && o.status!=='MONI_PROD') return o;
@@ -219,54 +204,20 @@ export default function CustomScreen({ customOrders, setCustomOrders, soldOrders
       const allDone = phases && Object.keys(phases).every(k=>!phases[k].active||phases[k].done);
       if(!allDone) return o;
       // Έλεγχος σταθερών (αν υπάρχουν)
-      if(hasStavera && (!o.staveraGiven || !o.staveraDone)) return o;
-      // Έλεγχος κάσας (FIFO)
+      const staveraPending = hasStavera && !o.staveraDone;
+      // Έλεγχος κάσας (FIFO) — μόνο μη δεσμευμένες
       const key2=`${o.h}_${o.w}_${o.side}`;
-      const caseStock2=caseReady.filter(s=>String(s.selectedHeight)===String(o.h)&&String(s.selectedWidth)===String(o.w)&&s.side===o.side).reduce((sum,s)=>sum+(parseInt(s.qty)||1),0);
+      const caseStock2=caseReady.filter(s=>String(s.selectedHeight)===String(o.h)&&String(s.selectedWidth)===String(o.w)&&s.side===o.side&&!s.reservedBy).reduce((sum,s)=>sum+(parseInt(s.qty)||1),0);
       const hasCase2=(caseUsed[key2]||0)<caseStock2;
       caseUsed[key2]=(caseUsed[key2]||0)+1;
       if(!hasCase2) return o;
       updated = true;
-      const upd2 = {...o, status:'STD_READY', readyAt:Date.now()};
+      const upd2 = {...o, status:'STD_READY', readyAt:Date.now(), ...(staveraPending ? {staveraPendingAtReady:true} : {})};
       syncToCloud(upd2);
       return upd2;
     });
     if(updated) setCustomOrders(newOrders);
   }, [customOrders, caseOrders, sasiOrders]);
-  const resetForm = () => { setCustomForm(INIT_FORM); setCustomerSearch(''); setSelectedCustomer(null); setShowCustomerList(false); setEditingOrder(null); };
-
-  // Αλλαγή tab — αν υπάρχει πόρτα σε επεξεργασία → επαναφέρει πρώτα
-  const handleTabSwitch = (newType) => {
-    if (newType === orderType) return;
-    if (editingOrder) {
-      setCustomOrders(prev => [editingOrder, ...prev]);
-      syncToCloud(editingOrder);
-      setEditingOrder(null);
-    }
-    resetForm();
-    setOrderType(newType);
-    setTimeout(()=>customerRef.current?.focus(), 150);
-  };
-
-  // Auto-focus πελάτη στο mount
-  useEffect(()=>{ setTimeout(()=>customerRef.current?.focus(), 300); }, []);
-
-  const blurAll = () => {
-    glassRef.current?.blur();
-    glassNotesRef.current?.blur();
-    Object.values(staveraHRefs.current).forEach(r=>r?.blur());
-    Object.values(staveraGridNoteRefs.current).forEach(r=>r?.blur());
-  };
-
-  const handleGlassEnter = () => {
-    if (customForm.glassDim.length>0 && !customForm.glassDim.includes('×')) {
-      setCustomForm({...customForm, glassDim:customForm.glassDim+' × '});
-      setTimeout(()=>glassRef.current?.focus(),10);
-    } else {
-      glassRef.current?.blur();
-      setTimeout(()=>glassNotesRef.current?.focus(),10);
-    }
-  };
 
   const saveOrder = async () => {
     if (!customForm.orderNo) return Alert.alert("Προσοχή","Το Νούμερο Παραγγελίας είναι υποχρεωτικό.");
@@ -295,29 +246,30 @@ export default function CustomScreen({ customOrders, setCustomOrders, soldOrders
         return;
       }
     }
-    const isMoniWithLock = orderType==='ΤΥΠΟΠΟΙΗΜΕΝΗ' && (customForm.sasiType==='ΜΟΝΗ ΘΩΡΑΚΙΣΗ'||!customForm.sasiType) && customForm.lock;
-    const isMoniWithInstallation = orderType==='ΤΥΠΟΠΟΙΗΜΕΝΗ' && (customForm.sasiType==='ΜΟΝΗ ΘΩΡΑΚΙΣΗ'||!customForm.sasiType) && !customForm.lock && customForm.installation==='ΝΑΙ';
+    const isMoniWithLock = (customForm.sasiType==='ΜΟΝΗ ΘΩΡΑΚΙΣΗ'||!customForm.sasiType) && customForm.lock;
+    const isMoniWithInstallation = (customForm.sasiType==='ΜΟΝΗ ΘΩΡΑΚΙΣΗ'||!customForm.sasiType) && !customForm.lock && customForm.installation==='ΝΑΙ';
     const moniPhases = isMoniWithLock ? {
       laser:   {active:true, done:false, printHistory:[]},
       montSasi:{active:true, done:false, printHistory:[]},
       montDoor:{active:true, done:false, printHistory:[]}
     } : null;
-    const newOrder = {...customForm, orderType, id:Date.now().toString(), createdAt:Date.now(),
-      status: orderType==='ΤΥΠΟΠΟΙΗΜΕΝΗ' ? (isMoniWithLock ? 'MONI_PROD' : 'STD_PENDING') : 'PENDING',
+    const newOrder = {...customForm, orderType:'ΤΥΠΟΠΟΙΗΜΕΝΗ', id:Date.now().toString(), createdAt:Date.now(),
+      status: isMoniWithLock ? 'MONI_PROD' : 'STD_PENDING',
       ...(isMoniWithLock ? {moniPhases} : {})
     };
     setCustomOrders([newOrder,...customOrders]);
     await syncToCloud(newOrder);
-    await logActivity(orderType, 'Νέα παραγγελία', { orderNo: newOrder.orderNo, customer: newOrder.customer, size: `${newOrder.h}x${newOrder.w}`, qty: newOrder.qty });
+    await logActivity('ΤΥΠΟΠΟΙΗΜΕΝΗ', 'Νέα παραγγελία', { orderNo: newOrder.orderNo, customer: newOrder.customer, size: `${newOrder.h}x${newOrder.w}`, qty: newOrder.qty });
     resetForm();
 
-    // Αυτόματη πρόταση παραγωγής για ΤΥΠΟΠΟΙΗΜΕΝΗ
-    if (orderType==='ΤΥΠΟΠΟΙΗΜΕΝΗ' && setSasiOrders && setCaseOrders) {
+    // Αυτόματη πρόταση παραγωγής για ΤΥΠΟΠΟΙΗΜΕΝΗ — υπολογισμός από μηδέν
+    if (setSasiOrders && setCaseOrders) {
       const h = newOrder.h, w = newOrder.w, side = newOrder.side;
-      const customer = newOrder.customer || `#${newOrder.orderNo}`;
-      const customerQty = parseInt(newOrder.qty)||1;
-      const allStdOrders = [...customOrders, newOrder].filter(o=>o.orderType==='ΤΥΠΟΠΟΙΗΜΕΝΗ' && (o.status==='STD_PENDING'||o.status==='DIPLI_PROD'||!o.status));
       const sameSize = o => String(o.h)===String(h) && String(o.w)===String(w) && o.side===side;
+      const activeStatuses = ['STD_PENDING','DIPLI_PROD','MONI_PROD'];
+      const allActive = [...customOrders, newOrder].filter(o=>
+        o.orderType==='ΤΥΠΟΠΟΙΗΜΕΝΗ' && (activeStatuses.includes(o.status)||!o.status) && sameSize(o)
+      );
 
       // Έλεγχος ΑΠΟΘΕΜΑ ΣΑΣΙ για ΔΙΠΛΗ ή ΜΟΝΗ με κλειδαριά
       const isMoniWithLockNew = (newOrder.sasiType==='ΜΟΝΗ ΘΩΡΑΚΙΣΗ'||!newOrder.sasiType) && newOrder.lock;
@@ -327,13 +279,13 @@ export default function CustomScreen({ customOrders, setCustomOrders, soldOrders
         );
         if (availSasi.length > 0) {
           const stockItem = availSasi[0];
+          const customer = newOrder.customer || `#${newOrder.orderNo}`;
           Alert.alert(
             "⚡ ΑΠΟΘΕΜΑ ΣΑΣΙ",
             `Υπάρχει έτοιμο σασί στην αποθήκη!\n\n📐 ${stockItem.h}x${stockItem.w} | ${stockItem.side}\n🎨 ${stockItem.hardware||'—'}\n📝 ${stockItem.notes||'—'}\n\nΘέλεις να το χρησιμοποιήσεις;`,
             [
               { text: "ΝΕΟ ΣΑΣΙ", style: "cancel" },
               { text: "✅ ΧΡΗΣΙΜΟΠΟΙΩ", onPress: async () => {
-                // Δεσμεύω το σασί από το απόθεμα
                 const upd = {...stockItem, reservedBy: customer, reservedOrderNo: newOrder.orderNo};
                 setDipliSasiStock(prev => prev.map(s=>s.id===stockItem.id?upd:s));
                 await fetch(`${FIREBASE_URL}/dipli_sasi_stock/${upd.id}.json`,{method:'PUT',body:JSON.stringify(upd)});
@@ -343,32 +295,26 @@ export default function CustomScreen({ customOrders, setCustomOrders, soldOrders
         }
       }
 
-      // Ξεχωριστό neededQty για ΜΟΝΗ και ΔΙΠΛΗ
-      const neededMoni = allStdOrders.filter(o=>sameSize(o)&&(o.sasiType==='ΜΟΝΗ ΘΩΡΑΚΙΣΗ'||!o.sasiType)).reduce((s,o)=>s+(parseInt(o.qty)||1),0);
-      const neededDipli = allStdOrders.filter(o=>sameSize(o)&&o.sasiType==='ΔΙΠΛΗ ΘΩΡΑΚΙΣΗ').reduce((s,o)=>s+(parseInt(o.qty)||1),0);
-      const neededTotal = neededMoni + neededDipli;
-
       // --- ΣΑΣΙ (μόνο ΜΟΝΗ χωρίς κλειδαριά) ---
       if ((newOrder.sasiType==='ΜΟΝΗ ΘΩΡΑΚΙΣΗ' || !newOrder.sasiType) && !newOrder.lock) {
-        const sasiReady = sasiOrders.filter(o=>o.status==='READY'&&sameSize({h:o.selectedHeight,w:o.selectedWidth,side:o.side})).reduce((s,o)=>s+(parseInt(o.qty)||1),0);
-        const sasiProd = sasiOrders.filter(o=>o.status!=='SOLD'&&o.status!=='READY'&&String(o.selectedHeight)===String(h)&&String(o.selectedWidth)===String(w)&&o.side===side);
+        const moniOrders = allActive.filter(o=>(o.sasiType==='ΜΟΝΗ ΘΩΡΑΚΙΣΗ'||!o.sasiType)&&!o.lock);
+        const sasiReady = sasiOrders.filter(o=>o.status==='READY'&&String(o.selectedHeight)===String(h)&&String(o.selectedWidth)===String(w)&&o.side===side).reduce((s,o)=>s+(parseInt(o.qty)||1),0);
+        const totalNeededMoni = moniOrders.reduce((s,o)=>s+(parseInt(o.qty)||1),0);
+        const shortfall = totalNeededMoni - sasiReady;
 
-        if (sasiReady < neededMoni) {
-          const shortfall = neededMoni - sasiReady;
+        // Χτίζω customerMap από μηδέν βάσει ενεργών παραγγελιών
+        const sasiCustomerMap = {};
+        moniOrders.forEach(o=>{
+          const c = o.customer||`#${o.orderNo}`;
+          sasiCustomerMap[c] = (sasiCustomerMap[c]||0) + (parseInt(o.qty)||1);
+        });
+        const sasiNote = Object.entries(sasiCustomerMap).map(([n,q])=>`${n} (${q}τεμ)`).join(', ');
+
+        const sasiProd = sasiOrders.filter(o=>o.status!=='SOLD'&&o.status!=='READY'&&String(o.selectedHeight)===String(h)&&String(o.selectedWidth)===String(w)&&o.side===side&&o.isAuto);
+        if (shortfall > 0) {
           if (sasiProd.length > 0) {
-            const existing = sasiProd[0];
-            const customerMap = {};
-            if (existing.autoNote) {
-              existing.autoNote.split(',').forEach(entry => {
-                const match = entry.trim().match(/^(.+)\s+\((\d+)τεμ\)$/);
-                if (match) customerMap[match[1].trim()] = (customerMap[match[1].trim()]||0) + parseInt(match[2]);
-              });
-            }
-            customerMap[customer] = (customerMap[customer]||0) + customerQty;
-            const newNote = Object.entries(customerMap).map(([n,q])=>`${n} (${q}τεμ)`).join(', ');
-            const newQty = (parseInt(existing.qty)||0) + customerQty;
-            const upd = {...existing, autoNote: newNote, qty: String(newQty), notes: `⚡ Αυτόματη πρόταση`};
-            setSasiOrders(prev => prev.map(o=>o.id===existing.id?upd:o));
+            const upd = {...sasiProd[0], qty: String(shortfall), autoNote: sasiNote, notes: '⚡ Αυτόματη πρόταση'};
+            setSasiOrders(prev => prev.map(o=>o.id===upd.id?upd:o));
             await fetch(`${FIREBASE_URL}/sasi_orders/${upd.id}.json`,{method:'PUT',body:JSON.stringify(upd)});
           } else {
             const autoSasi = {
@@ -377,59 +323,66 @@ export default function CustomScreen({ customOrders, setCustomOrders, soldOrders
               selectedHeight: h, selectedWidth: w,
               size: `${h}x${w}`, side, qty: String(shortfall),
               status: 'PENDING', createdAt: Date.now(),
-              autoNote: `${customer} (${customerQty}τεμ)`,
-              isAuto: true, notes: `⚡ Αυτόματη πρόταση`
+              autoNote: sasiNote, isAuto: true, notes: '⚡ Αυτόματη πρόταση'
             };
             setSasiOrders(prev => [autoSasi, ...prev]);
             await fetch(`${FIREBASE_URL}/sasi_orders/${autoSasi.id}.json`,{method:'PUT',body:JSON.stringify(autoSasi)});
           }
+        } else if (sasiProd.length > 0) {
+          // Δεν χρειάζεται πλέον — διαγραφή αυτόματης πρότασης
+          setSasiOrders(prev => prev.filter(o=>o.id!==sasiProd[0].id));
+          await fetch(`${FIREBASE_URL}/sasi_orders/${sasiProd[0].id}.json`,{method:'DELETE'});
         }
       }
 
-      // --- ΚΑΣΕΣ (ΜΟΝΗ + ΔΙΠΛΗ) — ΠΑΝΤΑ δεσμεύει ---
+      // --- ΚΑΣΕΣ — υπολογισμός από μηδέν ανά caseModel ---
       const caseModel = (newOrder.caseType||'').includes('ΑΝΟΙΧΤΟΥ') ? 'ΚΑΣΑ ΑΝΟΙΧΤΗ' : 'ΚΑΣΑ ΚΛΕΙΣΤΗ';
       const sameCase = o => o.model===caseModel && String(o.selectedHeight)===String(h) && String(o.selectedWidth)===String(w) && o.side===side;
-      const addReservation = (existing) => {
-        const customerMap = {};
-        if (existing.autoNote) {
-          existing.autoNote.split(',').forEach(entry => {
-            const match = entry.trim().match(/^(.+)\s+\((\d+)τεμ\)$/);
-            if (match) customerMap[match[1].trim()] = (customerMap[match[1].trim()]||0) + parseInt(match[2]);
-          });
+
+      // Χτίζω customerMap κάσας από μηδέν
+      const caseCustomerMap = {};
+      allActive.filter(o=>(o.caseType||'').includes('ΑΝΟΙΧΤΟΥ')===caseModel.includes('ΑΝΟΙΧΤΗ')).forEach(o=>{
+        const c = o.customer||`#${o.orderNo}`;
+        caseCustomerMap[c] = (caseCustomerMap[c]||0) + (parseInt(o.qty)||1);
+      });
+      const caseNote = Object.entries(caseCustomerMap).map(([n,q])=>`${n} (${q}τεμ)`).join(', ');
+      const totalNeededCase = allActive.filter(o=>(o.caseType||'').includes('ΑΝΟΙΧΤΟΥ')===caseModel.includes('ΑΝΟΙΧΤΗ')).reduce((s,o)=>s+(parseInt(o.qty)||1),0);
+
+      // Shortfall = πόσες κάσες χρειάζονται μείον όσες είναι ήδη READY στην αποθήκη
+      const caseReadyQty = caseOrders.filter(o=>o.status==='READY'&&sameCase(o)).reduce((s,o)=>s+(parseInt(o.qty)||1),0);
+      const caseShortfall = totalNeededCase - caseReadyQty;
+      const casePendAuto = caseOrders.filter(o=>o.status==='PENDING'&&sameCase(o)&&o.isAuto);
+
+
+      if (caseShortfall > 0) {
+        if (casePendAuto.length > 0) {
+          // Ενημερώνω υπάρχουσα PENDING πρόταση
+          const upd = {...casePendAuto[0], qty: String(caseShortfall), autoNote: caseNote, notes: '⚡ Αυτόματη πρόταση'};
+          setCaseOrders(prev => prev.map(o=>o.id===upd.id?upd:o));
+          await fetch(`${FIREBASE_URL}/case_orders/${upd.id}.json`,{method:'PUT',body:JSON.stringify(upd)});
+        } else {
+          // Δημιουργώ νέα PENDING πρόταση
+          const autoCase = {
+            id: `auto_case_${Date.now()}`,
+            model: caseModel,
+            selectedHeight: h, selectedWidth: w,
+            size: `${h}x${w}`, side, qty: String(caseShortfall),
+            status: 'PENDING', createdAt: Date.now(),
+            autoNote: caseNote, isAuto: true, notes: '⚡ Αυτόματη πρόταση'
+          };
+          setCaseOrders(prev => [autoCase, ...prev]);
+          await fetch(`${FIREBASE_URL}/case_orders/${autoCase.id}.json`,{method:'PUT',body:JSON.stringify(autoCase)});
         }
-        customerMap[customer] = (customerMap[customer]||0) + customerQty;
-        const newNote = Object.entries(customerMap).map(([n,q])=>`${n} (${q}τεμ)`).join(', ');
-        return {...existing, autoNote: newNote, isAuto: true, notes: `⚡ Αυτόματη πρόταση`};
-      };
-
-      // Βρίσκω το καλύτερο record: READY πρώτα, μετά PROD, μετά PENDING
-      const caseReadyRec  = caseOrders.filter(o=>o.status==='READY' && sameCase(o));
-      const caseProdRec   = caseOrders.filter(o=>o.status==='PROD'  && sameCase(o));
-      const casePendRec   = caseOrders.filter(o=>o.status==='PENDING'&& sameCase(o));
-      const caseTarget = caseReadyRec[0] || caseProdRec[0] || casePendRec[0];
-
-      if (caseTarget) {
-        // Δεσμεύω στο υπάρχον record
-        const upd = addReservation(caseTarget);
-        setCaseOrders(prev => prev.map(o=>o.id===caseTarget.id?upd:o));
-        await fetch(`${FIREBASE_URL}/case_orders/${upd.id}.json`,{method:'PUT',body:JSON.stringify(upd)});
-      } else {
-        // Δεν υπάρχει καθόλου — φτιάχνω νέο PENDING
-        const autoCase = {
-          id: `auto_case_${Date.now()}`,
-          model: caseModel,
-          selectedHeight: h, selectedWidth: w,
-          size: `${h}x${w}`, side, qty: String(customerQty),
-          status: 'PENDING', createdAt: Date.now(),
-          autoNote: `${customer} (${customerQty}τεμ)`,
-          isAuto: true, notes: `⚡ Αυτόματη πρόταση`
-        };
-        setCaseOrders(prev => [autoCase, ...prev]);
-        await fetch(`${FIREBASE_URL}/case_orders/${autoCase.id}.json`,{method:'PUT',body:JSON.stringify(autoCase)});
+      } else if (casePendAuto.length > 0) {
+        // Δεν χρειάζεται πλέον — διαγραφή αυτόματης πρότασης
+        setCaseOrders(prev => prev.filter(o=>o.id!==casePendAuto[0].id));
+        await fetch(`${FIREBASE_URL}/case_orders/${casePendAuto[0].id}.json`,{method:'DELETE'});
       }
+
     }
 
-    Alert.alert("VAICON", orderType==='ΤΥΠΟΠΟΙΗΜΕΝΗ' ? "Η τυποποιημένη παραγγελία αποθηκεύτηκε!" : "Η παραγγελία αποθηκεύτηκε!");
+    Alert.alert("VAICON", "Η παραγγελία αποθηκεύτηκε!");
+
   };
 
   const editOrder = async (order) => {
@@ -483,25 +436,32 @@ export default function CustomScreen({ customOrders, setCustomOrders, soldOrders
     const upd = {...order, status:'PROD', prodAt:Date.now(), phases};
     setCustomOrders(customOrders.map(o=>o.id===id?upd:o));
     await syncToCloud(upd);
-    await logActivity(order.orderType||'ΕΙΔΙΚΗ', 'Φάση → ΠΑΡΑΓΩΓΗ', { orderNo: order.orderNo, customer: order.customer, size: `${order.h}x${order.w}` });
+    await logActivity('ΤΥΠΟΠΟΙΗΜΕΝΗ', 'Φάση → ΠΑΡΑΓΩΓΗ', { orderNo: order.orderNo, customer: order.customer, size: `${order.h}x${order.w}` });
   };
 
   const updateStatus = async (id, newStatus) => {
     const now=Date.now(); const order=customOrders.find(o=>o.id===id); if(!order) return;
     if (newStatus==='PROD') { moveToProd(id); return; }
+    if (newStatus==='READY') {
+      const hasStavera = order.stavera && order.stavera.filter(s=>s.dim).length > 0;
+      if (hasStavera && !order.staveraDone) {
+        Alert.alert('⚠️ Προσοχή', 'Τα σταθερά δεν έχουν ολοκληρωθεί (DONE). Δεν μπορεί να πάει ΕΤΟΙΜΗ.');
+        return;
+      }
+    }
     if (newStatus==='SOLD') {
       const totalQty=parseInt(order.qty)||1;
       if (totalQty<=1) {
         const upd={...order,status:'SOLD',soldAt:now};
         setSoldOrders([upd,...soldOrders]); setCustomOrders(customOrders.filter(o=>o.id!==id)); await syncToCloud(upd);
-        await logActivity(order.orderType||'ΕΙΔΙΚΗ', 'Πώληση', { orderNo: order.orderNo, customer: order.customer, size: `${order.h}x${order.w}` });
+        await logActivity('ΤΥΠΟΠΟΙΗΜΕΝΗ', 'Πώληση', { orderNo: order.orderNo, customer: order.customer, size: `${order.h}x${order.w}` });
       } else { setSellModal({visible:true,orderId:id,totalQty}); }
     } else {
       let upd;
       setCustomOrders(customOrders.map(o=>{ if(o.id===id){upd={...o,status:newStatus,[`${newStatus.toLowerCase()}At`]:now};return upd;} return o; }));
       if(upd) {
         await syncToCloud(upd);
-        if(newStatus==='READY') await logActivity(order.orderType||'ΕΙΔΙΚΗ', 'Φάση → ΕΤΟΙΜΟ', { orderNo: order.orderNo, customer: order.customer, size: `${order.h}x${order.w}` });
+        if(newStatus==='READY') await logActivity('ΤΥΠΟΠΟΙΗΜΕΝΗ', 'Φάση → ΕΤΟΙΜΟ', { orderNo: order.orderNo, customer: order.customer, size: `${order.h}x${order.w}` });
       }
     }
   };
@@ -513,14 +473,14 @@ export default function CustomScreen({ customOrders, setCustomOrders, soldOrders
     if (sellQty===totalQty) {
       const upd={...order,status:'SOLD',soldAt:now};
       setSoldOrders([upd,...soldOrders]); setCustomOrders(customOrders.filter(o=>o.id!==orderId)); await syncToCloud(upd);
-      await logActivity(order.orderType||'ΕΙΔΙΚΗ', 'Πώληση', { orderNo: order.orderNo, customer: order.customer, size: `${order.h}x${order.w}`, qty: String(sellQty) });
+      await logActivity('ΤΥΠΟΠΟΙΗΜΕΝΗ', 'Πώληση', { orderNo: order.orderNo, customer: order.customer, size: `${order.h}x${order.w}`, qty: String(sellQty) });
     } else {
       const soldEntry={...order,id:Date.now().toString(),qty:String(sellQty),status:'SOLD',soldAt:now,partialNote:`${sellQty} από ${totalQty}`};
       const remaining={...order,qty:String(totalQty-sellQty),remainingNote:`Υπόλοιπο: ${totalQty-sellQty} από ${totalQty}`};
       setSoldOrders([soldEntry,...soldOrders]);
       setCustomOrders(customOrders.map(o=>o.id===orderId?remaining:o));
       await syncToCloud(soldEntry); await syncToCloud(remaining);
-      await logActivity(order.orderType||'ΕΙΔΙΚΗ', 'Πώληση (μερική)', { orderNo: order.orderNo, customer: order.customer, size: `${order.h}x${order.w}`, qty: `${sellQty}/${totalQty}` });
+      await logActivity('ΤΥΠΟΠΟΙΗΜΕΝΗ', 'Πώληση (μερική)', { orderNo: order.orderNo, customer: order.customer, size: `${order.h}x${order.w}`, qty: `${sellQty}/${totalQty}` });
     }
   };
 
@@ -535,11 +495,15 @@ export default function CustomScreen({ customOrders, setCustomOrders, soldOrders
     const isMounting = phaseKey==='montDoor';
     const isProductionPhase = phaseKey !== null;
     const showCoatings = !isProductionPhase || isMounting;
+    const isCases = phaseKey==='cases';
+    const isSasi     = phaseKey==='montSasi';
+    const isMontDoor = phaseKey==='montDoor';
+    const isVafio    = phaseKey==='vafio';
     const isLaser = copies.some(c => c.title && c.title.includes('LASER') || c.title.includes('ΚΑΣΣΕΣ') || c.title.includes('ΣΑΣΙ') || c.title.includes('ΠΡΟΦΙΛ') || c.title.includes('ΠΡΟΓΡΑΜΜΑ ΕΙΔΙΚΩΝ'));
     const tableCSS = `
       body{font-family:Arial,sans-serif;margin:5mm;color:#000;background:#fff;}
-      h1{font-size:15px;margin-bottom:2px;font-weight:bold;}
-      h2{font-size:11px;margin-top:0;margin-bottom:8px;}
+      h1{font-size:22px;margin-bottom:2px;font-weight:bold;}
+      h2{font-size:13px;margin-top:0;margin-bottom:8px;}
       table{width:100%;border-collapse:collapse;font-size:10px;}
       th{padding:5px 4px;text-align:left;border-top:2px solid #000;border-bottom:1px solid #000;font-weight:bold;white-space:nowrap;}
       td{padding:5px 4px;border-bottom:1px solid #000;vertical-align:top;}
@@ -547,6 +511,114 @@ export default function CustomScreen({ customOrders, setCustomOrders, soldOrders
       .page-break{page-break-after:always;}
       @media print{@page{size:A4 landscape;margin:5mm;}*{color:#000!important;background:#fff!important;}}
     `;
+
+    const buildCasesTable = (orders) => {
+      const rows = orders.map(o => {
+        const fora = o.side==='ΑΡΙΣΤΕΡΗ'?'ΑΡ':'ΔΕ';
+        const mentesedesVal = (!o.hinges||o.hinges==='2')?'':o.hinges;
+        const kleidaria = o.lock||'—';
+        const createdFmt = o.createdAt ? new Date(o.createdAt).toLocaleDateString('el-GR',{day:'2-digit',month:'2-digit',year:'2-digit'}) : '';
+        const deliveryFmt = o.deliveryDate ? new Date(o.deliveryDate).toLocaleDateString('el-GR',{day:'2-digit',month:'2-digit',year:'2-digit'}) : '';
+        const datesLine = [createdFmt, deliveryFmt].filter(Boolean).join('    ');
+        return `<tr>
+          <td style="font-weight:bold;font-size:20px">${o.orderNo||'—'}</td>
+          <td style="font-size:20px;font-weight:900">${o.h||'—'} × ${o.w||'—'}</td>
+          <td style="font-weight:bold;font-size:17px">${fora}</td>
+          <td style="font-size:16px">${mentesedesVal}</td>
+          <td style="font-size:15px">${kleidaria}</td>
+          <td style="font-size:15px">${o.caseType||'—'}</td>
+          <td style="font-size:15px">${o.caseMaterial||'DKP'}</td>
+          <td style="min-width:140px;font-size:13px">${o.notes||''}</td>
+          <td style="font-size:12px;color:#444">${datesLine}</td>
+        </tr>`;
+      }).join('');
+      return `<table><thead><tr>
+        <th>Νο</th><th>Διάσταση</th><th>Φορά</th><th>Μεντ.</th><th>Κλειδαριά</th><th>Τ.Κάσας</th><th>Υλ.Κάσας</th><th>Παρατηρήσεις</th><th>Ημερομηνίες</th>
+      </tr></thead><tbody>${rows}</tbody></table>`;
+    };
+
+    const buildSasiTable = (orders) => {
+      const rows = orders.map(o => {
+        const fora = o.side==='ΑΡΙΣΤΕΡΗ'?'ΑΡ':'ΔΕ';
+        const mentesedesVal = (!o.hinges||o.hinges==='2')?'':o.hinges;
+        const thorakisi = (o.armor||'ΜΟΝΗ')+' ΘΩΡ.';
+        const tzami = o.orderType==="ΤΥΠΟΠΟΙΗΜΕΝΗ"?"—":((o.glassDim||"")+(o.glassNotes?` ${o.glassNotes}`:""))||"—";
+        const kleidaria = o.orderType==='ΤΥΠΟΠΟΙΗΜΕΝΗ'?'—':(o.lock||'—');
+        const createdFmt = o.createdAt ? new Date(o.createdAt).toLocaleDateString('el-GR',{day:'2-digit',month:'2-digit',year:'2-digit'}) : '';
+        const deliveryFmt = o.deliveryDate ? new Date(o.deliveryDate).toLocaleDateString('el-GR',{day:'2-digit',month:'2-digit',year:'2-digit'}) : '';
+        const datesLine = [createdFmt, deliveryFmt].filter(Boolean).join('    ');
+        return `<tr>
+          <td style="font-weight:bold;font-size:20px">${o.orderNo||'—'}</td>
+          <td style="font-size:20px;font-weight:900">${o.h||'—'} × ${o.w||'—'}</td>
+          <td style="font-weight:bold;font-size:17px">${fora}</td>
+          <td style="font-size:16px">${thorakisi}</td>
+          <td style="font-size:16px">${mentesedesVal}</td>
+          <td style="font-size:15px">${tzami}</td>
+          <td style="font-size:15px">${kleidaria}</td>
+          <td style="min-width:140px;font-size:13px">${o.notes||''}</td>
+          <td style="font-size:12px;color:#444">${datesLine}</td>
+        </tr>`;
+      }).join('');
+      return `<table><thead><tr>
+        <th>Νο</th><th>Διάσταση</th><th>Φορά</th><th>Θωράκιση</th><th>Μεντ.</th><th>Τζάμι</th><th>Κλειδαριά</th><th>Παρατηρήσεις</th><th>Ημερομηνίες</th>
+      </tr></thead><tbody>${rows}</tbody></table>`;
+    };
+
+    const buildMontDoorTable = (orders) => {
+      const rows = orders.map(o => {
+        const fora = o.side==='ΑΡΙΣΤΕΡΗ'?'ΑΡ':'ΔΕ';
+        const mentesedesVal = (!o.hinges||o.hinges==='2')?'':o.hinges;
+        const thorakisi = (o.armor||'ΜΟΝΗ')+' ΘΩΡ.';
+        const tzami = o.orderType==="ΤΥΠΟΠΟΙΗΜΕΝΗ"?"—":((o.glassDim||"")+(o.glassNotes?` ${o.glassNotes}`:""))||"—";
+        const kleidaria = o.orderType==='ΤΥΠΟΠΟΙΗΜΕΝΗ'?'—':(o.lock||'—');
+        const coatings = (o.coatings&&o.coatings.length>0)?o.coatings.join(', '):'';
+        const createdFmt = o.createdAt ? new Date(o.createdAt).toLocaleDateString('el-GR',{day:'2-digit',month:'2-digit',year:'2-digit'}) : '';
+        const deliveryFmt = o.deliveryDate ? new Date(o.deliveryDate).toLocaleDateString('el-GR',{day:'2-digit',month:'2-digit',year:'2-digit'}) : '';
+        const datesLine = [createdFmt, deliveryFmt].filter(Boolean).join('    ');
+        return `<tr>
+          <td style="font-weight:bold;font-size:17px">${o.orderNo||'—'}</td>
+          <td style="font-size:17px;font-weight:900">${o.h||'—'} × ${o.w||'—'}</td>
+          <td style="font-weight:bold;font-size:17px">${fora}</td>
+          <td style="font-size:13px">${thorakisi}</td>
+          <td style="font-size:13px">${o.hardware||'—'}</td>
+          <td style="font-size:13px">${mentesedesVal}</td>
+          <td style="font-size:13px">${tzami}</td>
+          <td style="font-size:13px">${kleidaria}</td>
+          <td style="font-size:13px">${o.caseType||'—'}</td>
+          <td style="font-size:13px">${coatings}</td>
+          <td style="min-width:140px;font-size:13px">${o.notes||''}</td>
+          <td style="font-size:12px;color:#444">${datesLine}</td>
+        </tr>`;
+      }).join('');
+      return `<table><thead><tr>
+        <th>Νο</th><th>Διάσταση</th><th>Φορά</th><th>Θωράκιση</th><th>Χρώμα</th><th>Μεντ.</th><th>Τζάμι</th><th>Κλειδαριά</th><th>Τ.Κάσας</th><th>Επένδυση</th><th>Παρατηρήσεις</th><th>Ημερομηνίες</th>
+      </tr></thead><tbody>${rows}</tbody></table>`;
+    };
+
+    const buildVafioTable = (orders) => {
+      const rows = orders.map(o => {
+        const fora = o.side==='ΑΡΙΣΤΕΡΗ'?'ΑΡ':'ΔΕ';
+        const mentesedesVal = (!o.hinges||o.hinges==='2')?'':o.hinges;
+        const qtyVal = o.qty&&parseInt(o.qty)>1?`<span style="font-size:15px;font-weight:900;color:#cc0000">${o.qty}</span>`:'';
+        const createdFmt = o.createdAt ? new Date(o.createdAt).toLocaleDateString('el-GR',{day:'2-digit',month:'2-digit',year:'2-digit'}) : '';
+        const deliveryFmt = o.deliveryDate ? new Date(o.deliveryDate).toLocaleDateString('el-GR',{day:'2-digit',month:'2-digit',year:'2-digit'}) : '';
+        const datesLine = [createdFmt, deliveryFmt].filter(Boolean).join('    ');
+        return `<tr>
+          <td style="font-weight:bold;font-size:17px">${o.orderNo||'—'}</td>
+          <td style="font-size:15px;text-align:center">${qtyVal}</td>
+          <td style="font-size:17px;font-weight:900">${o.h||'—'} × ${o.w||'—'}</td>
+          <td style="font-weight:bold;font-size:17px">${fora}</td>
+          <td style="font-size:13px">${mentesedesVal}</td>
+          <td style="font-size:13px">${o.caseType||'—'}</td>
+          <td style="font-size:13px">${o.caseMaterial||'DKP'}</td>
+          <td style="min-width:140px;font-size:13px">${o.notes||''}</td>
+          <td style="font-size:12px;color:#444">${datesLine}</td>
+        </tr>`;
+      }).join('');
+      return `<table><thead><tr>
+        <th>Νο</th><th>Τεμ.</th><th>Διάσταση</th><th>Φορά</th><th>Μεντ.</th><th>Τ.Κάσας</th><th>Υλ.Κάσας</th><th>Παρατηρήσεις</th><th>Ημερομηνίες</th>
+      </tr></thead><tbody>${rows}</tbody></table>`;
+    };
 
     const dimCell = (o) => `<span style="font-size:15px;font-weight:900;letter-spacing:0.5px">${o.h||'—'} × ${o.w||'—'}</span>`;
     const qtyDisplay = (o) => { const q=parseInt(o.qty)||1; return q>1?`<span style="font-size:15px;font-weight:900;color:#cc0000">${q}</span>`:""; };
@@ -679,7 +751,7 @@ export default function CustomScreen({ customOrders, setCustomOrders, soldOrders
       <div class="${idx < copies.length-1 ? 'page-break' : ''}">
         <h1>${copy.title}</h1>
         <h2>Σύνολο: ${copy.orders.length} παραγγελίες</h2>
-        ${isLaser ? buildLaserTable(copy.orders, copy.title) : buildTable(copy.orders)}
+        ${isLaser ? buildLaserTable(copy.orders, copy.title) : isCases ? buildCasesTable(copy.orders) : isSasi ? buildSasiTable(copy.orders) : isMontDoor ? buildMontDoorTable(copy.orders) : isVafio ? buildVafioTable(copy.orders) : buildTable(copy.orders)}
       </div>
     `).join('');
 
@@ -768,10 +840,56 @@ export default function CustomScreen({ customOrders, setCustomOrders, soldOrders
     setPrintPreview({visible:false, phaseKey:null, orders:[], copies:1});
 
     try {
-      const allCopies = getCopies(orders, phaseLabel, dateStr);
-      const selectedCopies = copies===4 ? allCopies : [allCopies[0]];
-      const html = buildPrintHTML(selectedCopies, phaseKey);
-      await printHTML(html, `VAICON — ${phaseLabel}`);
+      if (phaseKey==='stavera') {
+        const today = new Date();
+        const dateStr = `${String(today.getDate()).padStart(2,'0')}/${String(today.getMonth()+1).padStart(2,'0')}/${today.getFullYear()}`;
+        const rows = orders.flatMap(o=>
+          (o.stavera||[]).filter(s=>s.dim).map(s=>`<tr>
+            <td style="font-weight:bold;font-size:17px">${o.orderNo||'—'}</td>
+            <td style="font-size:13px">${o.caseType||'—'}</td>
+            <td style="font-size:20px;font-weight:900">${s.dim||'—'}</td>
+            <td style="font-size:13px;min-width:180px">${s.note||''}</td>
+            <td style="font-size:12px;color:#444">${o.deliveryDate?new Date(o.deliveryDate).toLocaleDateString('el-GR',{day:'2-digit',month:'2-digit',year:'2-digit'}):''}</td>
+          </tr>`)
+        ).join('');
+        const html = `<html><head><meta charset="utf-8"><style>
+          body{font-family:Arial,sans-serif;margin:8mm;}
+          h1{font-size:22px;font-weight:bold;margin-bottom:2px;}
+          h2{font-size:13px;color:#555;margin-bottom:10px;}
+          table{width:100%;border-collapse:collapse;}
+          th{padding:6px 4px;text-align:left;border-top:2px solid #000;border-bottom:1px solid #000;font-weight:bold;}
+          td{padding:6px 4px;border-bottom:1px solid #ddd;vertical-align:top;}
+          tr:last-child td{border-bottom:2px solid #000;}
+          @media print{@page{size:A4 landscape;margin:8mm;}}
+        </style></head><body>
+          <h1>📏 ΣΤΑΘΕΡΑ — ΕΙΔΙΚΗ</h1>
+          <h2>📅 ${dateStr} | ${orders.length} παραγγελίες</h2>
+          <table><thead><tr><th>Νο</th><th>Τ.Κάσας</th><th>Διάσταση Σταθερού</th><th>Παρατήρηση</th><th>Ημερομηνία</th></tr></thead>
+          <tbody>${rows}</tbody></table>
+        </body></html>`;
+        await printHTML(html, 'ΣΤΑΘΕΡΑ — ΕΙΔΙΚΗ');
+        const selectedIds = orders.map(o=>o.id);
+        const updated = customOrders.map(o=>selectedIds.includes(o.id)?{...o,staveraPrinted:true}:o);
+        setCustomOrders(updated);
+        updated.filter(o=>selectedIds.includes(o.id)).forEach(o=>syncToCloud(o));
+        return;
+      }
+      if (phaseKey==='cases') {
+        const sorted = [...orders].sort((a,b)=>(parseInt(a.orderNo)||0)-(parseInt(b.orderNo)||0));
+        const kleistou = sorted.filter(o=>(o.caseType||'').includes('ΚΛΕΙΣΤΟΥ'));
+        const anoixtou = sorted.filter(o=>(o.caseType||'').includes('ΑΝΟΙΧΤΟΥ'));
+        const caseCopies = [];
+        if (kleistou.length>0) caseCopies.push({ title:`VAICON — ${dateStr} — ΚΑΣΕΣ ΚΛΕΙΣΤΟΥ ΤΥΠΟΥ`, orders:kleistou });
+        if (anoixtou.length>0) caseCopies.push({ title:`VAICON — ${dateStr} — ΚΑΣΕΣ ΑΝΟΙΧΤΟΥ ΤΥΠΟΥ`, orders:anoixtou });
+        if (caseCopies.length===0) return;
+        const html = buildPrintHTML(caseCopies, phaseKey);
+        await printHTML(html, `VAICON — ΚΑΣΕΣ`);
+      } else {
+        const allCopies = getCopies(orders, phaseLabel, dateStr);
+        const selectedCopies = copies===4 ? allCopies : [allCopies[0]];
+        const html = buildPrintHTML(selectedCopies, phaseKey);
+        await printHTML(html, `VAICON — ${phaseLabel}`);
+      }
       // Μαρκάρει ως printed
       const selectedIds = orders.map(o=>o.id);
       const updated = customOrders.map(o => {
@@ -795,8 +913,45 @@ export default function CustomScreen({ customOrders, setCustomOrders, soldOrders
     const today = new Date();
     const dateStr = `${String(today.getDate()).padStart(2,'0')}/${String(today.getMonth()+1).padStart(2,'0')}/${today.getFullYear()}`;
 
-    const allCopies = getCopies(orders, phaseLabel, dateStr);
+    const allCopies = phaseKey==='stavera'
+      ? [{ title:`VAICON — ${dateStr} — ΣΤΑΘΕΡΑ`, orders }]
+      : phaseKey==='cases'
+      ? (() => {
+          const sorted = [...orders].sort((a,b)=>(parseInt(a.orderNo)||0)-(parseInt(b.orderNo)||0));
+          const kleistou = sorted.filter(o=>(o.caseType||'').includes('ΚΛΕΙΣΤΟΥ'));
+          const anoixtou = sorted.filter(o=>(o.caseType||'').includes('ΑΝΟΙΧΤΟΥ'));
+          const result = [];
+          if (kleistou.length>0) result.push({ title:`VAICON — ${dateStr} — ΚΑΣΕΣ ΚΛΕΙΣΤΟΥ ΤΥΠΟΥ`, orders:kleistou });
+          if (anoixtou.length>0) result.push({ title:`VAICON — ${dateStr} — ΚΑΣΕΣ ΑΝΟΙΧΤΟΥ ΤΥΠΟΥ`, orders:anoixtou });
+          return result.length>0 ? result : [{ title:`VAICON — ${dateStr} — ΚΑΣΕΣ`, orders:sorted }];
+        })()
+      : getCopies(orders, phaseLabel, dateStr);
     const previewCopies = copies===4 ? allCopies : [allCopies[0]];
+
+    const COLS_CASES = [
+      {label:'Νο',w:50},{label:'Διάσταση',w:95},{label:'Φορά',w:40},
+      {label:'Μεντ.',w:35},{label:'Κλειδαριά',w:80},{label:'Τ.Κάσας',w:90},
+      {label:'Υλ.Κάσας',w:65},{label:'Παρατηρήσεις',w:200},{label:'Ημερομηνίες',w:120},
+    ];
+
+    const COLS_SASI = [
+      {label:'Νο',w:50},{label:'Διάσταση',w:95},{label:'Φορά',w:40},
+      {label:'Θωράκιση',w:70},{label:'Μεντ.',w:35},{label:'Τζάμι',w:55},
+      {label:'Κλειδαριά',w:70},{label:'Παρατηρήσεις',w:200},{label:'Ημερομηνίες',w:120},
+    ];
+
+    const COLS_MONTDOOR = [
+      {label:'Νο',w:50},{label:'Διάσταση',w:95},{label:'Φορά',w:40},
+      {label:'Θωράκιση',w:70},{label:'Χρώμα',w:50},{label:'Μεντ.',w:35},
+      {label:'Τζάμι',w:55},{label:'Κλειδαριά',w:70},{label:'Τ.Κάσας',w:65},
+      {label:'Επένδυση',w:120},{label:'Παρατηρήσεις',w:200},{label:'Ημερομηνίες',w:120},
+    ];
+
+    const COLS_VAFIO = [
+      {label:'Νο',w:50},{label:'Τεμ.',w:35},{label:'Διάσταση',w:95},{label:'Φορά',w:40},
+      {label:'Μεντ.',w:35},{label:'Τ.Κάσας',w:90},{label:'Υλ.Κάσας',w:65},
+      {label:'Παρατηρήσεις',w:200},{label:'Ημερομηνίες',w:120},
+    ];
 
     const COLS = [
       {label:'Νο',w:50},{label:'Τεμ.',w:35},{label:'Διάσταση',w:80},{label:'Φορά',w:40},
@@ -804,7 +959,178 @@ export default function CustomScreen({ customOrders, setCustomOrders, soldOrders
       {label:'Χρώμα',w:50},{label:'Τ.Κάσας',w:65},{label:'Υλ.Κάσας',w:65},{label:'Μον.',w:40},{label:'Επένδυση',w:120},{label:'Παρατηρήσεις',w:220},
     ];
 
-    const renderTable = (sortedOrders) => (
+    const renderTable = (sortedOrders) => {
+      if (phaseKey==='stavera') {
+        const COLS_STAVERA = [
+          {label:'Νο',w:50},{label:'Τ.Κάσας',w:90},{label:'Διάσταση Σταθερού',w:130},
+          {label:'Παρατήρηση',w:220},{label:'Ημερομηνία',w:110},
+        ];
+        return (
+          <ScrollView horizontal>
+            <View>
+              <View style={styles.previewThead}>
+                {COLS_STAVERA.map(h=>(
+                  <Text key={h.label} style={[styles.previewTh,{width:h.w}]}>{h.label}</Text>
+                ))}
+              </View>
+              {sortedOrders.flatMap((o,i)=>
+                (o.stavera||[]).filter(s=>s.dim).map((s,si)=>{
+                  const deliveryFmt = o.deliveryDate ? new Date(o.deliveryDate).toLocaleDateString('el-GR',{day:'2-digit',month:'2-digit',year:'2-digit'}) : '';
+                  return (
+                    <View key={o.id+'-'+si} style={[styles.previewTr,(i+si)%2===0?styles.previewTrEven:styles.previewTrOdd]}>
+                      <Text style={[styles.previewTd,{width:50,fontWeight:'bold'}]}>{si===0?o.orderNo||'—':''}</Text>
+                      <Text style={[styles.previewTd,{width:90,fontSize:12}]}>{si===0?o.caseType||'—':''}</Text>
+                      <Text style={[styles.previewTd,{width:130,fontWeight:'900',fontSize:15}]}>{s.dim||'—'}</Text>
+                      <Text style={[styles.previewTd,{width:220,fontSize:12}]}>{s.note||''}</Text>
+                      <Text style={[styles.previewTd,{width:110,fontSize:11,color:'#555'}]}>{si===0?deliveryFmt:''}</Text>
+                    </View>
+                  );
+                })
+              )}
+            </View>
+          </ScrollView>
+        );
+      }
+      if (phaseKey==='cases') {
+        return (
+          <ScrollView horizontal>
+            <View>
+              <View style={styles.previewThead}>
+                {COLS_CASES.map(h=>(
+                  <Text key={h.label} style={[styles.previewTh,{width:h.w}]}>{h.label}</Text>
+                ))}
+              </View>
+              {sortedOrders.map((o,i)=>{
+                const fora = o.side==='ΑΡΙΣΤΕΡΗ'?'ΑΡ':'ΔΕ';
+                const mentesedesVal = (!o.hinges||o.hinges==='2')?'':o.hinges;
+                const bold = {fontWeight:'bold',fontSize:13,color:'#000'};
+                const createdFmt = o.createdAt ? new Date(o.createdAt).toLocaleDateString('el-GR',{day:'2-digit',month:'2-digit',year:'2-digit'}) : '';
+                const deliveryFmt = o.deliveryDate ? new Date(o.deliveryDate).toLocaleDateString('el-GR',{day:'2-digit',month:'2-digit',year:'2-digit'}) : '';
+                return (
+                  <View key={o.id+i} style={[styles.previewTr,i%2===0?styles.previewTrEven:styles.previewTrOdd]}>
+                    <Text style={[styles.previewTd,{width:50},...[bold]]}>{o.orderNo||'—'}</Text>
+                    <Text style={[styles.previewTd,{width:95},...[bold]]}>{o.h||'—'} × {o.w||'—'}</Text>
+                    <Text style={[styles.previewTd,{width:40},...[bold]]}>{fora}</Text>
+                    <Text style={[styles.previewTd,{width:35},...[bold]]}>{mentesedesVal}</Text>
+                    <Text style={[styles.previewTd,{width:80}]}>{o.lock||'—'}</Text>
+                    <Text style={[styles.previewTd,{width:90}]}>{o.caseType||'—'}</Text>
+                    <Text style={[styles.previewTd,{width:65}]}>{o.caseMaterial||'DKP'}</Text>
+                    <Text style={[styles.previewTd,{width:200}]}>{o.notes||''}</Text>
+                    <Text style={[styles.previewTd,{width:120,fontSize:11,color:'#555'}]}>{[createdFmt,deliveryFmt].filter(Boolean).join('  ')}</Text>
+                  </View>
+                );
+              })}
+            </View>
+          </ScrollView>
+        );
+      }
+      if (phaseKey==='montSasi') {
+        return (
+          <ScrollView horizontal>
+            <View>
+              <View style={styles.previewThead}>
+                {COLS_SASI.map(h=>(
+                  <Text key={h.label} style={[styles.previewTh,{width:h.w}]}>{h.label}</Text>
+                ))}
+              </View>
+              {sortedOrders.map((o,i)=>{
+                const fora = o.side==='ΑΡΙΣΤΕΡΗ'?'ΑΡ':'ΔΕ';
+                const mentesedesVal = (!o.hinges||o.hinges==='2')?'':o.hinges;
+                const thorakisi = (o.armor||'ΜΟΝΗ')+' ΘΩΡ.';
+                const tzami = o.orderType==="ΤΥΠΟΠΟΙΗΜΕΝΗ"?"—":((o.glassDim||"")+(o.glassNotes?` ${o.glassNotes}`:""))||"—";
+                const bold = {fontWeight:'bold',fontSize:13,color:'#000'};
+                const createdFmt = o.createdAt ? new Date(o.createdAt).toLocaleDateString('el-GR',{day:'2-digit',month:'2-digit',year:'2-digit'}) : '';
+                const deliveryFmt = o.deliveryDate ? new Date(o.deliveryDate).toLocaleDateString('el-GR',{day:'2-digit',month:'2-digit',year:'2-digit'}) : '';
+                return (
+                  <View key={o.id+i} style={[styles.previewTr,i%2===0?styles.previewTrEven:styles.previewTrOdd]}>
+                    <Text style={[styles.previewTd,{width:50},...[bold]]}>{o.orderNo||'—'}</Text>
+                    <Text style={[styles.previewTd,{width:95},...[bold]]}>{o.h||'—'} × {o.w||'—'}</Text>
+                    <Text style={[styles.previewTd,{width:40},...[bold]]}>{fora}</Text>
+                    <Text style={[styles.previewTd,{width:70}]}>{thorakisi}</Text>
+                    <Text style={[styles.previewTd,{width:35},...[bold]]}>{mentesedesVal}</Text>
+                    <Text style={[styles.previewTd,{width:55},...[bold]]}>{tzami}</Text>
+                    <Text style={[styles.previewTd,{width:70}]}>{o.orderType==='ΤΥΠΟΠΟΙΗΜΕΝΗ'?'—':(o.lock||'—')}</Text>
+                    <Text style={[styles.previewTd,{width:200}]}>{o.notes||''}</Text>
+                    <Text style={[styles.previewTd,{width:120,fontSize:11,color:'#555'}]}>{[createdFmt,deliveryFmt].filter(Boolean).join('  ')}</Text>
+                  </View>
+                );
+              })}
+            </View>
+          </ScrollView>
+        );
+      }
+      if (phaseKey==='montDoor') {
+        return (
+          <ScrollView horizontal>
+            <View>
+              <View style={styles.previewThead}>
+                {COLS_MONTDOOR.map(h=>(
+                  <Text key={h.label} style={[styles.previewTh,{width:h.w}]}>{h.label}</Text>
+                ))}
+              </View>
+              {sortedOrders.map((o,i)=>{
+                const fora = o.side==='ΑΡΙΣΤΕΡΗ'?'ΑΡ':'ΔΕ';
+                const mentesedesVal = (!o.hinges||o.hinges==='2')?'':o.hinges;
+                const thorakisi = (o.armor||'ΜΟΝΗ')+' ΘΩΡ.';
+                const tzami = o.orderType==="ΤΥΠΟΠΟΙΗΜΕΝΗ"?"—":((o.glassDim||"")+(o.glassNotes?` ${o.glassNotes}`:""))||"—";
+                const bold = {fontWeight:'bold',fontSize:13,color:'#000'};
+                const createdFmt2 = o.createdAt ? new Date(o.createdAt).toLocaleDateString('el-GR',{day:'2-digit',month:'2-digit',year:'2-digit'}) : '';
+                const deliveryFmt2 = o.deliveryDate ? new Date(o.deliveryDate).toLocaleDateString('el-GR',{day:'2-digit',month:'2-digit',year:'2-digit'}) : '';
+                return (
+                  <View key={o.id+i} style={[styles.previewTr,i%2===0?styles.previewTrEven:styles.previewTrOdd]}>
+                    <Text style={[styles.previewTd,{width:50},...[bold]]}>{o.orderNo||'—'}</Text>
+                    <Text style={[styles.previewTd,{width:95},...[bold]]}>{o.h||'—'} × {o.w||'—'}</Text>
+                    <Text style={[styles.previewTd,{width:40},...[bold]]}>{fora}</Text>
+                    <Text style={[styles.previewTd,{width:70}]}>{thorakisi}</Text>
+                    <Text style={[styles.previewTd,{width:50}]}>{o.hardware||'—'}</Text>
+                    <Text style={[styles.previewTd,{width:35},...[bold]]}>{mentesedesVal}</Text>
+                    <Text style={[styles.previewTd,{width:55},...[bold]]}>{tzami}</Text>
+                    <Text style={[styles.previewTd,{width:70}]}>{o.orderType==='ΤΥΠΟΠΟΙΗΜΕΝΗ'?'—':(o.lock||'—')}</Text>
+                    <Text style={[styles.previewTd,{width:65}]}>{o.caseType||'—'}</Text>
+                    <Text style={[styles.previewTd,{width:120}]}>{(o.coatings&&o.coatings.length>0)?o.coatings.join(', '):''}</Text>
+                    <Text style={[styles.previewTd,{width:200}]}>{o.notes||''}</Text>
+                    <Text style={[styles.previewTd,{width:120,fontSize:11,color:'#555'}]}>{[createdFmt2,deliveryFmt2].filter(Boolean).join('  ')}</Text>
+                  </View>
+                );
+              })}
+            </View>
+          </ScrollView>
+        );
+      }
+      if (phaseKey==='vafio') {
+        return (
+          <ScrollView horizontal>
+            <View>
+              <View style={styles.previewThead}>
+                {COLS_VAFIO.map(h=>(
+                  <Text key={h.label} style={[styles.previewTh,{width:h.w}]}>{h.label}</Text>
+                ))}
+              </View>
+              {sortedOrders.map((o,i)=>{
+                const fora = o.side==='ΑΡΙΣΤΕΡΗ'?'ΑΡ':'ΔΕ';
+                const mentesedesVal = (!o.hinges||o.hinges==='2')?'':o.hinges;
+                const bold = {fontWeight:'bold',fontSize:13,color:'#000'};
+                const createdFmt3 = o.createdAt ? new Date(o.createdAt).toLocaleDateString('el-GR',{day:'2-digit',month:'2-digit',year:'2-digit'}) : '';
+                const deliveryFmt3 = o.deliveryDate ? new Date(o.deliveryDate).toLocaleDateString('el-GR',{day:'2-digit',month:'2-digit',year:'2-digit'}) : '';
+                return (
+                  <View key={o.id+i} style={[styles.previewTr,i%2===0?styles.previewTrEven:styles.previewTrOdd]}>
+                    <Text style={[styles.previewTd,{width:50},...[bold]]}>{o.orderNo||'—'}</Text>
+                    <Text style={[styles.previewTd,{width:35},...[bold]]}>{o.qty||'1'}</Text>
+                    <Text style={[styles.previewTd,{width:95},...[bold]]}>{o.h||'—'} × {o.w||'—'}</Text>
+                    <Text style={[styles.previewTd,{width:40},...[bold]]}>{fora}</Text>
+                    <Text style={[styles.previewTd,{width:35}]}>{mentesedesVal}</Text>
+                    <Text style={[styles.previewTd,{width:90}]}>{o.caseType||'—'}</Text>
+                    <Text style={[styles.previewTd,{width:65}]}>{o.caseMaterial||'DKP'}</Text>
+                    <Text style={[styles.previewTd,{width:200}]}>{o.notes||''}</Text>
+                    <Text style={[styles.previewTd,{width:120,fontSize:11,color:'#555'}]}>{[createdFmt3,deliveryFmt3].filter(Boolean).join('  ')}</Text>
+                  </View>
+                );
+              })}
+            </View>
+          </ScrollView>
+        );
+      }
+      return (
       <ScrollView horizontal>
         <View>
           <View style={styles.previewThead}>
@@ -839,6 +1165,7 @@ export default function CustomScreen({ customOrders, setCustomOrders, soldOrders
         </View>
       </ScrollView>
     );
+    };
 
     return (
       <Modal visible={true} animationType="slide" onRequestClose={()=>setPrintPreview({visible:false,phaseKey:null,orders:[],copies:1})}>
@@ -846,7 +1173,7 @@ export default function CustomScreen({ customOrders, setCustomOrders, soldOrders
           {/* HEADER */}
           <View style={styles.previewHeader}>
             <Text style={styles.previewTitle}>VAICON — {phaseLabel}</Text>
-            <Text style={styles.previewSub}>📅 {dateStr} &nbsp;|&nbsp; {orders.length} παραγγελίες &nbsp;|&nbsp; {copies===4?'4 ΑΝΤΙΓΡΑΦΑ':'1 ΑΝΤΙΓΡΑΦΟ'}</Text>
+            <Text style={styles.previewSub}>📅 {dateStr}  |  {orders.length} παραγγελίες  |  {copies===4?'4 ΑΝΤΙΓΡΑΦΑ':'1 ΑΝΤΙΓΡΑΦΟ'}</Text>
           </View>
 
           {/* ΑΝΤΙΓΡΑΦΑ */}
@@ -880,28 +1207,51 @@ export default function CustomScreen({ customOrders, setCustomOrders, soldOrders
   // Τσεκάρισμα ολοκλήρωσης φάσης — αν όλες done → ΕΤΟΙΜΑ
   const handlePhaseDone = async (orderId, phaseKey) => {
     const order = customOrders.find(o=>o.id===orderId); if(!order||!order.phases) return;
+    if (phaseKey==='montDoor' && !order.phases?.vafio?.done) {
+      Alert.alert('⚠️ Προσοχή', 'Το Βαφείο δεν έχει ολοκληρωθεί. Δεν μπορεί να γίνει DONE το Μοντάρισμα.');
+      return;
+    }
     const newPhases = {...order.phases, [phaseKey]:{...order.phases[phaseKey], done:true}};
     const phaseLabel = PHASES.find(p=>p.key===phaseKey)?.label?.replace(/🔴|🟡|🔵|🟢|⚫/g,'').trim() || phaseKey;
     const allDone = Object.keys(newPhases).every(k => !newPhases[k].active || newPhases[k].done);
+    const hasStavera = order.stavera && order.stavera.filter(s=>s.dim).length > 0;
+    const staveraPending = hasStavera && !order.staveraDone;
+
     if (allDone) {
-      Alert.alert(
-        "⚠️ ΠΡΟΣΟΧΗ",
-        "Ολοκληρώνεται η διαδικασία παραγωγής.\nΗ πόρτα μεταφέρεται στην ΑΠΟΘΗΚΗ.",
-        [
-          { text:"ΑΚΥΡΟ", style:"cancel", onPress: ()=>{} },
-          { text:"ΕΠΙΒΕΒΑΙΩΣΗ", style:"default", onPress: async () => {
-            const upd = {...order, phases:newPhases, status:'READY', readyAt:Date.now()};
-            setCustomOrders(customOrders.map(o=>o.id===orderId?upd:o));
-            await syncToCloud(upd);
-            await logActivity(order.orderType||'ΕΙΔΙΚΗ', 'Φάση → ΕΤΟΙΜΟ (όλες done)', { orderNo: order.orderNo, customer: order.customer, size: `${order.h}x${order.w}` });
-          }}
-        ]
-      );
+      if (staveraPending) {
+        Alert.alert(
+          "⚠️ ΠΡΟΣΟΧΗ",
+          "Όλες οι φάσεις παραγωγής ολοκληρώθηκαν.\n\n⚠️ ΕΚΚΡΕΜΕΙ ΣΤΑΘΕΡΟ — η παραγγελία μπορεί να κατέβει στην αποθήκη αλλά το σταθερό θα παραμείνει σε εξέλιξη.",
+          [
+            { text:"ΑΚΥΡΟ", style:"cancel" },
+            { text:"ΚΑΤΕΒΑΣΗ ΣΤΗΝ ΑΠΟΘΗΚΗ", onPress: async () => {
+              const upd = {...order, phases:newPhases, status:'READY', readyAt:Date.now(), staveraPendingAtReady:true};
+              setCustomOrders(customOrders.map(o=>o.id===orderId?upd:o));
+              await syncToCloud(upd);
+              await logActivity('ΤΥΠΟΠΟΙΗΜΕΝΗ', 'Φάση → ΕΤΟΙΜΟ (εκκρεμές σταθερό)', { orderNo: order.orderNo, customer: order.customer, size: `${order.h}x${order.w}` });
+            }}
+          ]
+        );
+      } else {
+        Alert.alert(
+          "⚠️ ΠΡΟΣΟΧΗ",
+          "Ολοκληρώνεται η διαδικασία παραγωγής.\nΗ πόρτα μεταφέρεται στην ΑΠΟΘΗΚΗ.",
+          [
+            { text:"ΑΚΥΡΟ", style:"cancel", onPress: ()=>{} },
+            { text:"ΕΠΙΒΕΒΑΙΩΣΗ", style:"default", onPress: async () => {
+              const upd = {...order, phases:newPhases, status:'READY', readyAt:Date.now()};
+              setCustomOrders(customOrders.map(o=>o.id===orderId?upd:o));
+              await syncToCloud(upd);
+              await logActivity('ΤΥΠΟΠΟΙΗΜΕΝΗ', 'Φάση → ΕΤΟΙΜΟ (όλες done)', { orderNo: order.orderNo, customer: order.customer, size: `${order.h}x${order.w}` });
+            }}
+          ]
+        );
+      }
     } else {
       const upd = {...order, phases:newPhases};
       setCustomOrders(customOrders.map(o=>o.id===orderId?upd:o));
       await syncToCloud(upd);
-      await logActivity(order.orderType||'ΕΙΔΙΚΗ', `Φάση ✓ ${phaseLabel}`, { orderNo: order.orderNo, customer: order.customer, size: `${order.h}x${order.w}` });
+      await logActivity('ΤΥΠΟΠΟΙΗΜΕΝΗ', `Φάση ✓ ${phaseLabel}`, { orderNo: order.orderNo, customer: order.customer, size: `${order.h}x${order.w}` });
     }
   };
 
@@ -993,15 +1343,21 @@ export default function CustomScreen({ customOrders, setCustomOrders, soldOrders
   const toggleSection = (s) => { LayoutAnimation.configureNext(LayoutAnimation.Presets.easeInEaseOut); setExpanded({...expanded,[s]:!expanded[s]}); };
 
   const renderOrderCard = (order, isArchive=false) => {
-    const bc = isArchive?'#333':(order.status==='PENDING'?'#ff4444':order.status==='PROD'?'#ffbb33':'#00C851');
+    const isProd = order.status==='PROD';
+    const bc = isArchive?'#333':(isProd?'#2e7d32':order.status==='PENDING'?'#ff4444':'#00C851');
     const next = order.status==='PENDING'?'PROD':order.status==='PROD'?'READY':'SOLD';
     const btn  = isArchive?'ΔΙΑΓΡΑΦΗ':(order.status==='PENDING'?'ΕΝΑΡΞΗ':order.status==='PROD'?'ΕΤΟΙΜΗ':'ΠΩΛΗΣΗ');
     const btnC = isArchive?'#000':(order.status==='PENDING'?'#ffbb33':order.status==='PROD'?'#00C851':'#222');
     const isStd = order.orderType==='ΤΥΠΟΠΟΙΗΜΕΝΗ';
     return (
-      <TouchableOpacity key={order.id} onLongPress={()=>!isArchive&&order.status==='PENDING'&&editOrder(order)} delayLongPress={1000} activeOpacity={0.7} style={[styles.orderCard,{borderLeftColor:bc}]}>
+      <TouchableOpacity key={order.id} onLongPress={()=>!isArchive&&order.status==='PENDING'&&editOrder(order)} delayLongPress={1000} activeOpacity={0.7} style={[styles.orderCard,{borderLeftColor:bc, backgroundColor: isProd?'#e8f5e9':'white'}]}>
         <View style={styles.cardContent}>
-          {/* ΓΡΑΜΜΗ 1: Πελάτης | Νο | Διάσταση | Τεμ. | Φορά | Θωράκιση | Χρώμα */}
+          {isProd&&<View style={{backgroundColor:'#2e7d32', borderRadius:6, paddingHorizontal:10, paddingVertical:3, alignSelf:'flex-start', marginBottom:5}}>
+            <Text style={{color:'white', fontWeight:'bold', fontSize:12}}>⚙️ ΣΤΗΝ ΠΑΡΑΓΩΓΗ</Text>
+          </View>}
+          {order.staveraPendingAtReady&&!order.staveraDone&&<View style={{backgroundColor:'#e65100', borderRadius:6, paddingHorizontal:10, paddingVertical:3, alignSelf:'flex-start', marginBottom:5}}>
+            <Text style={{color:'white', fontWeight:'bold', fontSize:12}}>⏳ ΕΚΚΡΕΜΕΙ ΣΤΑΘΕΡΟ</Text>
+          </View>}
           <View style={{flexDirection:'row',alignItems:'center',flexWrap:'wrap',gap:4,marginBottom:3}}>
             {order.customer?<Text style={[styles.cardCustomer]}>👤 {order.customer}</Text>:null}
             <Text style={[styles.cardDetails,{fontWeight:'bold'}]}>#{order.orderNo}</Text>
@@ -1238,12 +1594,12 @@ export default function CustomScreen({ customOrders, setCustomOrders, soldOrders
 
   // Ενότητα ΣΤΗΝ ΠΑΡΑΓΩΓΗ με υποκαρτέλες
   const renderProdSection = () => {
-    const prodOrders = customOrders.filter(o=>o.status==='PROD');
+    const prodOrders = customOrders.filter(o=>o.status==='PROD').sort((a,b)=>(b.prodAt||0)-(a.prodAt||0));
     const maxPhaseCount = prodOrders.length === 0 ? 0 : Math.max(...PHASES.map(ph =>
       prodOrders.filter(o => o.phases?.[ph.key]?.active && !o.phases?.[ph.key]?.done).length
     ));
 
-    const phaseKeys = PHASES.map(p=>p.key);
+    const phaseKeys = [...PHASES.map(p=>p.key), 'stavera'];
 
     const handlePageScroll = (e) => {
       const page = Math.round(e.nativeEvent.contentOffset.x / SCREEN_WIDTH);
@@ -1279,15 +1635,15 @@ export default function CustomScreen({ customOrders, setCustomOrders, soldOrders
               ))}
               {/* ΣΤΑΘΕΡΑ tab */}
               <TouchableOpacity
-                style={[styles.phaseTab, activeProdPhase==='stavera'&&styles.phaseTabActive, {backgroundColor: activeProdPhase==='stavera'?'#7b1fa2':'#f3e5f5'}]}
-                onPress={()=>{ setActiveProdPhase('stavera'); }}>
-                <Text style={[styles.phaseTabTxt, activeProdPhase==='stavera'&&{color:'white'}]}>📏 ΣΤΑΘΕΡΑ</Text>
+                style={[styles.phaseTab, activeProdPhase==='stavera'&&styles.phaseTabActive, {backgroundColor: activeProdPhase==='stavera'?'#7b1fa2':'#f3e5f5', minWidth:0, paddingHorizontal:14}]}
+                onPress={()=>{ setActiveProdPhase('stavera'); prodScrollRef.current?.scrollTo({x: phaseKeys.indexOf('stavera') * pageWidth, animated:true}); }}>
+                <Text style={[styles.phaseTabTxt, activeProdPhase==='stavera'&&styles.phaseTabTxtActive]}>ΣΤΑΘΕΡΑ</Text>
                 <Text style={styles.phaseTabCount}>{prodOrders.filter(o=>o.stavera&&o.stavera.length>0).length}</Text>
               </TouchableOpacity>
             </ScrollView>
 
             {/* ΚΟΥΜΠΙΑ ΕΠΙΛΟΓΗΣ + ΕΚΤΥΠΩΣΗΣ */}
-            <View style={{flexDirection:'row', alignItems:'center', gap:6, marginBottom:4, flexWrap:'wrap'}}>
+            {activeProdPhase!=='stavera'&&<View style={{flexDirection:'row', alignItems:'center', gap:6, marginBottom:4, flexWrap:'wrap'}}>
               {/* ΕΠΙΛΟΓΗ ΟΛΩΝ */}
               <TouchableOpacity
                 style={{flexDirection:'row', alignItems:'center', gap:5, paddingVertical:8, paddingHorizontal:10, backgroundColor:'#f0f0f0', borderRadius:8, borderWidth:1, borderColor:'#ccc'}}
@@ -1325,10 +1681,9 @@ export default function CustomScreen({ customOrders, setCustomOrders, soldOrders
               <TouchableOpacity style={[styles.printBtn,{flex:1,marginBottom:0}]} onPress={()=>handlePrint(activeProdPhase)}>
                 <Text style={styles.printBtnTxt}>🖨️ ΕΚΤΥΠΩΣΗ ΕΠΙΛΕΓΜΕΝΩΝ</Text>
               </TouchableOpacity>
-            </View>
+            </View>}
 
-            {/* PAGED SCROLL — ένα page ανά φάση */}
-            {activeProdPhase!=='stavera'&&(
+            {/* PAGED SCROLL — ένα page ανά φάση + ΣΤΑΘΕΡΑ */}
             <ScrollView
               ref={prodScrollRef}
               horizontal
@@ -1337,7 +1692,7 @@ export default function CustomScreen({ customOrders, setCustomOrders, soldOrders
               onLayout={e=>{ setPageWidth(e.nativeEvent.layout.width); }}
               onMomentumScrollEnd={e=>{
                 const page = Math.round(e.nativeEvent.contentOffset.x / pageWidth);
-                if (page >= 0 && page < PHASES.length) setActiveProdPhase(PHASES[page].key);
+                if (page >= 0 && page < phaseKeys.length) setActiveProdPhase(phaseKeys[page]);
               }}
               scrollEventThrottle={16}>
               {PHASES.map(ph=>(
@@ -1349,130 +1704,120 @@ export default function CustomScreen({ customOrders, setCustomOrders, soldOrders
                   )}
                 </View>
               ))}
-            </ScrollView>
-            )}
-            {/* ΣΤΑΘΕΡΑ tab content για ΕΙΔΙΚΗ */}
-            {activeProdPhase==='stavera'&&(()=>{
-              const staveraOrders = prodOrders.filter(o=>o.stavera&&o.stavera.length>0);
-              return (
-                <View style={{marginTop:6}}>
-                  <TouchableOpacity
-                    style={{backgroundColor:'#7b1fa2', paddingHorizontal:10, paddingVertical:7, borderRadius:6, alignSelf:'flex-start', marginBottom:8}}
-                    onPress={()=>{
-                      const today = new Date();
-                      const dateStr = `${String(today.getDate()).padStart(2,'0')}/${String(today.getMonth()+1).padStart(2,'0')}/${today.getFullYear()}`;
-                      const rows = staveraOrders.flatMap(o=>
-                        (o.stavera||[]).map(s=>`<tr>
-                          <td style="font-weight:bold">${o.orderNo||'—'}</td>
-                          <td>${o.customer||'—'}</td>
-                          <td style="font-weight:bold;font-size:14px">${s.dim||'—'}</td>
-                          <td style="min-width:200px">${s.note||''}</td>
-                        </tr>`)
-                      ).join('');
-                      const html = `<html><head><meta charset="utf-8"><style>
-                        body{font-family:Arial,sans-serif;margin:8mm;}
-                        h1{font-size:14px;font-weight:bold;margin-bottom:2px;}
-                        h2{font-size:11px;color:#555;margin-bottom:10px;}
-                        table{width:100%;border-collapse:collapse;font-size:11px;}
-                        th{padding:6px 4px;text-align:left;border-top:2px solid #000;border-bottom:1px solid #000;font-weight:bold;}
-                        td{padding:6px 4px;border-bottom:1px solid #ddd;vertical-align:top;}
-                        @media print{@page{size:A4 landscape;margin:8mm;}}
-                      </style></head><body>
-                        <h1>📏 ΣΤΑΘΕΡΑ — ΕΙΔΙΚΗ ΠΑΡΑΓΓΕΛΙΑ</h1>
-                        <h2>📅 ${dateStr} | ${staveraOrders.length} παραγγελίες</h2>
-                        <table><thead><tr><th>Νο</th><th>Πελάτης</th><th>Διάσταση</th><th>Παρατήρηση</th></tr></thead>
-                        <tbody>${rows}</tbody></table>
-                      </body></html>`;
-                      printHTML(html, 'ΣΤΑΘΕΡΑ — ΕΙΔΙΚΗ');
-                    }}>
-                    <Text style={{color:'white', fontSize:11, fontWeight:'bold'}}>🖨️ ΕΚΤΥΠΩΣΗ ΣΤΑΘΕΡΩΝ</Text>
-                  </TouchableOpacity>
-                  {staveraOrders.length===0?(
-                    <Text style={{textAlign:'center',color:'#999',padding:16}}>Δεν υπάρχουν παραγγελίες με σταθερά</Text>
-                  ):staveraOrders.map(o=>{
-                    const isGiven = !!o.staveraGiven;
-                    return (
-                    <View key={o.id} style={{backgroundColor:o.staveraDone?'#e8f5e9':isGiven?'#ede7f6':'#f3e5f5', borderRadius:8, padding:10, marginBottom:6, borderLeftWidth:4, borderLeftColor:o.staveraDone?'#00C851':isGiven?'#4a148c':'#7b1fa2', elevation:1, flexDirection:'row', alignItems:'flex-start'}}>
-                      {/* CHECKBOX */}
-                      <TouchableOpacity
-                        style={{marginRight:10, marginTop:2}}
-                        onPress={()=>{
-                          Alert.alert(isGiven?'☐ Ξετσεκάρισμα':'✅ Επιβεβαίωση',
-                            isGiven?`Ξετσεκάρισμα σταθερών #${o.orderNo};`:`Τα σταθερά της #${o.orderNo} δόθηκαν για παραγωγή;`,
-                            [{text:'ΑΚΥΡΟ',style:'cancel'},{text:'ΝΑΙ',onPress:async()=>{
-                              const upd={...o,staveraGiven:!isGiven};
-                              setCustomOrders(customOrders.map(x=>x.id===o.id?upd:x));
-                              await syncToCloud(upd);
-                            }}]);
-                        }}>
-                        <View style={{width:28,height:28,borderRadius:6,borderWidth:2,borderColor:isGiven?'#4a148c':'#7b1fa2',backgroundColor:isGiven?'#4a148c':'white',alignItems:'center',justifyContent:'center'}}>
-                          {isGiven&&<Text style={{color:'white',fontWeight:'bold',fontSize:14}}>✓</Text>}
-                        </View>
-                      </TouchableOpacity>
-                      <View style={{flex:1}}>
-                        <Text style={{fontWeight:'bold', fontSize:13, marginBottom:4}}>#{o.orderNo} {o.customer?`— ${o.customer}`:''}</Text>
-                        <Text style={{fontSize:12, color:'#555', marginBottom:6}}>{o.h}x{o.w} | {o.side}</Text>
-                        {(o.stavera||[]).map((s,idx)=>(
-                          <View key={idx} style={{backgroundColor:'white', borderRadius:6, padding:8, marginBottom:4, borderLeftWidth:2, borderLeftColor:'#ce93d8'}}>
-                            <Text style={{fontWeight:'bold', fontSize:13, color:'#4a148c'}}>📐 {s.dim||'—'}</Text>
-                            {s.note?<Text style={{fontSize:12, color:'#555', marginTop:2}}>{s.note}</Text>:null}
-                          </View>
-                        ))}
-                        {o.staveraDone&&<Text style={{fontSize:11,color:'#00796B',fontWeight:'bold',marginTop:2}}>✅ Ολοκληρώθηκαν</Text>}
-                      </View>
-                      {/* DONE + ΠΙΣΩ */}
-                      <View style={{justifyContent:'space-between', gap:6, marginLeft:8, paddingVertical:2}}>
+              {/* ΣΤΑΘΕΡΑ — τελευταίο page */}
+              <View style={{width:pageWidth}}>
+                {(()=>{
+                  const staveraOrders = [
+                    ...prodOrders.filter(o=>o.stavera&&o.stavera.length>0),
+                    ...customOrders.filter(o=>o.status==='READY'&&o.staveraPendingAtReady&&!o.staveraDone)
+                  ];
+                  return (
+                    <View style={{marginTop:6}}>
+                      {/* PRINT BAR για ΣΤΑΘΕΡΑ */}
+                      <View style={{flexDirection:'row', alignItems:'center', gap:6, marginBottom:8, flexWrap:'wrap'}}>
                         <TouchableOpacity
-                          style={[styles.doneBtn, o.staveraDone&&styles.doneBtnActive]}
-                          onPress={async()=>{
-                            const upd={...o, staveraDone:!o.staveraDone};
-                            setCustomOrders(customOrders.map(x=>x.id===o.id?upd:x));
-                            await syncToCloud(upd);
+                          style={{flexDirection:'row', alignItems:'center', gap:5, paddingVertical:8, paddingHorizontal:10, backgroundColor:'#f0f0f0', borderRadius:8, borderWidth:1, borderColor:'#ccc'}}
+                          onPress={()=>{
+                            const allSelected = staveraOrders.every(o=>printSelected[o.id]);
+                            const newSelected = {...printSelected};
+                            staveraOrders.forEach(o=>{ newSelected[o.id] = !allSelected; });
+                            setPrintSelected(newSelected);
                           }}>
-                          <Text style={styles.doneBtnTxt}>{o.staveraDone?'↩️ UNDO':'✓ DONE'}</Text>
+                          <View style={{width:18,height:18,borderRadius:4,borderWidth:2,borderColor:'#555',backgroundColor:
+                            staveraOrders.length>0&&staveraOrders.every(o=>printSelected[o.id])?'#555':'white',alignItems:'center',justifyContent:'center'}}>
+                            {staveraOrders.length>0&&staveraOrders.every(o=>printSelected[o.id])&&<Text style={{color:'white',fontSize:11,fontWeight:'bold'}}>✓</Text>}
+                          </View>
+                          <Text style={{fontSize:11,fontWeight:'bold',color:'#555'}}>ΟΛΩΝ</Text>
                         </TouchableOpacity>
                         <TouchableOpacity
-                          style={{backgroundColor:'#ff9800', paddingHorizontal:6, paddingVertical:6, borderRadius:6, alignItems:'center'}}
-                          onPress={()=>Alert.alert("↩ Επιστροφή",`Επιστροφή σταθερών #${o.orderNo};`,[
-                            {text:"ΑΚΥΡΟ",style:"cancel"},
-                            {text:"ΝΑΙ",onPress:async()=>{
-                              const upd={...o,staveraGiven:false,staveraDone:false};
-                              setCustomOrders(customOrders.map(x=>x.id===o.id?upd:x));
-                              await syncToCloud(upd);
-                            }}
-                          ])}>
-                          <Text style={{color:'white', fontSize:10, fontWeight:'bold'}}>↩ ΠΙΣΩ</Text>
+                          style={{flexDirection:'row', alignItems:'center', gap:5, paddingVertical:8, paddingHorizontal:10, backgroundColor:'#fff3cd', borderRadius:8, borderWidth:1, borderColor:'#ffc107'}}
+                          onPress={()=>{
+                            const newSelected = {...printSelected};
+                            staveraOrders.forEach(o=>{ newSelected[o.id] = !o.staveraPrinted; });
+                            setPrintSelected(newSelected);
+                          }}>
+                          <Text style={{fontSize:11,fontWeight:'bold',color:'#856404'}}>🖨️ ΜΗ ΕΚΤΥΠ.</Text>
+                        </TouchableOpacity>
+                        <TouchableOpacity
+                          style={[styles.printBtn,{flex:1,marginBottom:0}]}
+                          onPress={()=>{
+                            const selected = Object.keys(printSelected).filter(id=>printSelected[id]);
+                            if (selected.length===0) return Alert.alert("Προσοχή","Επίλεξε τουλάχιστον μία παραγγελία.");
+                            const orders = staveraOrders.filter(o=>selected.includes(o.id));
+                            if (orders.length===0) return Alert.alert("Προσοχή","Καμία έγκυρη παραγγελία.");
+                            setPrintPreview({ visible:true, phaseKey:'stavera', orders, copies:1 });
+                          }}>
+                          <Text style={styles.printBtnTxt}>🖨️ ΕΚΤΥΠΩΣΗ ΕΠΙΛΕΓΜΕΝΩΝ</Text>
                         </TouchableOpacity>
                       </View>
+                      {staveraOrders.length===0?(
+                        <Text style={{textAlign:'center',color:'#999',padding:16}}>Δεν υπάρχουν παραγγελίες με σταθερά</Text>
+                      ):staveraOrders.map(o=>{
+                        const isSelected = !!printSelected[o.id];
+                        return (
+                        <View key={o.id} style={{backgroundColor:o.staveraDone?'#e8f5e9':o.staveraGiven?'#ede7f6':'#f3e5f5', borderRadius:8, padding:10, marginBottom:6, borderLeftWidth:4, borderLeftColor:o.staveraDone?'#00C851':o.staveraGiven?'#4a148c':'#7b1fa2', elevation:1, flexDirection:'row', alignItems:'flex-start'}}>
+                          <TouchableOpacity style={{marginRight:10, marginTop:2}} onPress={()=>setPrintSelected(p=>({...p,[o.id]:!p[o.id]}))}>
+                            <View style={{width:28,height:28,borderRadius:6,borderWidth:2,borderColor:isSelected?'#1565c0':'#7b1fa2',backgroundColor:isSelected?'#1565c0':'white',alignItems:'center',justifyContent:'center'}}>
+                              {isSelected&&<Text style={{color:'white',fontWeight:'bold',fontSize:14}}>✓</Text>}
+                            </View>
+                          </TouchableOpacity>
+                          <View style={{flex:1}}>
+                            <Text style={{fontWeight:'bold', fontSize:13, marginBottom:4}}>#{o.orderNo} {o.customer?`— ${o.customer}`:''}</Text>
+                            <Text style={{fontSize:12, color:'#555', marginBottom:6}}>{o.h}x{o.w} | {o.side}</Text>
+                            {(o.stavera||[]).map((s,idx)=>(
+                              <View key={idx} style={{backgroundColor:'white', borderRadius:6, padding:8, marginBottom:4, borderLeftWidth:2, borderLeftColor:'#ce93d8'}}>
+                                <Text style={{fontWeight:'bold', fontSize:13, color:'#4a148c'}}>📐 {s.dim||'—'}</Text>
+                                {s.note?<Text style={{fontSize:12, color:'#555', marginTop:2}}>{s.note}</Text>:null}
+                              </View>
+                            ))}
+                            {o.staveraDone&&<Text style={{fontSize:11,color:'#00796B',fontWeight:'bold',marginTop:2}}>✅ Ολοκληρώθηκαν</Text>}
+                          </View>
+                          <View style={{justifyContent:'space-between', gap:6, marginLeft:8, paddingVertical:2}}>
+                            <TouchableOpacity
+                              style={[styles.doneBtn, o.staveraDone&&styles.doneBtnActive]}
+                              onPress={async()=>{
+                                const newDone = !o.staveraDone;
+                                const upd={...o, staveraDone:newDone, ...(newDone && {staveraPendingAtReady:false})};
+                                setCustomOrders(customOrders.map(x=>x.id===o.id?upd:x));
+                                await syncToCloud(upd);
+                              }}>
+                              <Text style={styles.doneBtnTxt}>{o.staveraDone?'↩️ UNDO':'✓ DONE'}</Text>
+                            </TouchableOpacity>
+                            <TouchableOpacity
+                              style={{backgroundColor:'#ff4444', paddingHorizontal:8, paddingVertical:3, borderRadius:5, alignSelf:'stretch', alignItems:'center'}}
+                              onPress={()=>Alert.alert("⚠️ Διαγραφή",`Διαγραφή παραγγελίας #${o.orderNo};`,[
+                                {text:"ΑΚΥΡΟ",style:"cancel"},
+                                {text:"ΔΙΑΓΡΑΦΗ",style:"destructive",onPress:async()=>{
+                                  setCustomOrders(customOrders.filter(x=>x.id!==o.id));
+                                  await deleteFromCloud(o.id);
+                                }}
+                              ])}>
+                              <Text style={{color:'white', fontSize:10, fontWeight:'bold'}}>✕ ΔΙΑ/ΦΗ</Text>
+                            </TouchableOpacity>
+                          </View>
+                        </View>
+                        );
+                      })}
                     </View>
-                    );
-                  })}
-                </View>
-              );
-            })()}
+                  );
+                })()}
+              </View>
+            </ScrollView>
           </View>
         )}
       </View>
     );
   };
 
+
   return (
     <View style={{flex:1}}>
-      {renderPrintPreview()}
       <SellModal visible={sellModal.visible} totalQty={sellModal.totalQty} onConfirm={handleSellConfirm} onCancel={()=>setSellModal({visible:false,orderId:null,totalQty:1})} />
       <ScrollView style={{padding:10}} keyboardShouldPersistTaps="handled">
         <View style={{paddingBottom:120}}>
-          <Text style={styles.sectionTitle}>ΚΑΤΑΧΩΡΗΣΗ ΝΕΑΣ ΠΑΡΑΓΓΕΛΙΑΣ</Text>
+          <Text style={styles.sectionTitle}>ΚΑΤΑΧΩΡΗΣΗ ΤΥΠΟΠΟΙΗΜΕΝΗΣ ΠΑΡΑΓΓΕΛΙΑΣ</Text>
 
-          {/* ΕΠΙΛΟΓΗ ΤΥΠΟΥ */}
-          <View style={styles.typeRow}>
-            <TouchableOpacity style={[styles.typeBtn, orderType==='ΕΙΔΙΚΗ'&&styles.typeBtnActive]} onPress={()=>handleTabSwitch('ΕΙΔΙΚΗ')}>
-              <Text style={[styles.typeBtnTxt, orderType==='ΕΙΔΙΚΗ'&&{color:'white'}]}>✏️ ΕΙΔΙΚΗ</Text>
-            </TouchableOpacity>
-            <TouchableOpacity style={[styles.typeBtn, orderType==='ΤΥΠΟΠΟΙΗΜΕΝΗ'&&styles.typeBtnActiveStd]} onPress={()=>handleTabSwitch('ΤΥΠΟΠΟΙΗΜΕΝΗ')}>
-              <Text style={[styles.typeBtnTxt, orderType==='ΤΥΠΟΠΟΙΗΜΕΝΗ'&&{color:'white'}]}>📐 ΤΥΠΟΠΟΙΗΜΕΝΗ</Text>
-            </TouchableOpacity>
-          </View>
+
 
           {/* ═══ CARD: ΠΕΛΑΤΗΣ + ΑΡ. ΠΑΡΑΓΓΕΛΙΑΣ ═══ */}
           <View style={vstyles.card}>
@@ -1577,27 +1922,55 @@ export default function CustomScreen({ customOrders, setCustomOrders, soldOrders
               }
             }}
             onChangeText={v=>setCustomForm({...customForm,orderNo:v})}
-            onSubmitEditing={()=>hRef.current?.focus()}
-            onBlur={()=>{
-              if (!customForm.orderNo) return;
-              const exists = customOrders.some(o=>o.orderNo===customForm.orderNo && o.id!==editingOrder?.id);
+            onSubmitEditing={()=>{
+              if (!customForm.orderNo) { hRef.current?.focus(); return; }
+              const exists = [...customOrders,...specialOrders].some(o=>o.orderNo===customForm.orderNo && o.id!==editingOrder?.id);
               if (exists) {
-                // Βρες το base (χωρίς τελικό γράμμα αν υπάρχει)
                 const base = customForm.orderNo;
                 const letters = 'ΑΒΓΔΕΖΗΘΙΚΛΜΝΞΟΠΡΣΤΥΦΧΨΩ';
                 let suggested = base;
                 for(let i=0; i<letters.length; i++){
                   const candidate = base+'-'+letters[i];
-                  if(!customOrders.some(o=>o.orderNo===candidate && o.id!==editingOrder?.id)){
+                  if(![...customOrders,...specialOrders].some(o=>o.orderNo===candidate && o.id!==editingOrder?.id)){
                     suggested = candidate;
                     break;
                   }
                 }
+                Keyboard.dismiss();
+                setTimeout(()=>Alert.alert(
+                  "⚠️ Διπλότυπο Νούμερο",
+                  `Το νούμερο ${customForm.orderNo} υπάρχει ήδη.\nΠρόταση: ${suggested}`,
+                  [
+                    { text:"ΑΚΥΡΟ", style:"cancel", onPress:()=>setCustomForm(f=>({...f,orderNo:''})) },
+                    { text:"ΚΡΑΤΩ "+customForm.orderNo, onPress:()=>hRef.current?.focus() },
+                    { text:"ΧΡΗΣΙΜΟΠΟΙΩ "+suggested, onPress:()=>{ setCustomForm(f=>({...f,orderNo:suggested})); hRef.current?.focus(); } }
+                  ]
+                ), 100);
+              } else {
+                Keyboard.dismiss();
+              }
+            }}
+            onBlur={()=>{
+              if (!customForm.orderNo) return;
+              const exists = [...customOrders,...specialOrders].some(o=>o.orderNo===customForm.orderNo && o.id!==editingOrder?.id);
+              if (exists) {
+                const base = customForm.orderNo;
+                const letters = 'ΑΒΓΔΕΖΗΘΙΚΛΜΝΞΟΠΡΣΤΥΦΧΨΩ';
+                let suggested = base;
+                for(let i=0; i<letters.length; i++){
+                  const candidate = base+'-'+letters[i];
+                  if(![...customOrders,...specialOrders].some(o=>o.orderNo===candidate && o.id!==editingOrder?.id)){
+                    suggested = candidate;
+                    break;
+                  }
+                }
+                Keyboard.dismiss();
                 Alert.alert(
                   "⚠️ Διπλότυπο Νούμερο",
                   `Το νούμερο ${customForm.orderNo} υπάρχει ήδη.\nΠρόταση: ${suggested}`,
                   [
-                    { text:"ΚΡΑΤΩ "+customForm.orderNo, style:"cancel" },
+                    { text:"ΑΚΥΡΟ", style:"cancel", onPress:()=>setCustomForm(f=>({...f,orderNo:''})) },
+                    { text:"ΚΡΑΤΩ "+customForm.orderNo },
                     { text:"ΧΡΗΣΙΜΟΠΟΙΩ "+suggested, onPress:()=>setCustomForm(f=>({...f,orderNo:suggested})) }
                   ]
                 );
@@ -1615,195 +1988,7 @@ export default function CustomScreen({ customOrders, setCustomOrders, soldOrders
             </View>{/* end cardBody */}
           </View>{/* end card */}
 
-          {/* ═══ ΦΟΡΜΑ ΕΙΔΙΚΗΣ — REDESIGNED ═══ */}
-          {orderType==='ΕΙΔΙΚΗ'&&(<>
-
-            {/* CARD: ΔΙΑΣΤΑΣΕΙΣ & ΣΤΑΘΕΡΑ */}
-            <View style={vstyles.card}>
-              <View style={vstyles.cardHeader}><Text style={vstyles.cardHeaderTxt}>📐  ΔΙΑΣΤΑΣΕΙΣ & ΣΤΑΘΕΡΑ</Text></View>
-              <View style={[vstyles.cardBody,{flexDirection:'row',gap:8}]}>
-
-                {/* ΑΡΙΣΤΕΡΑ: Υψ/Πλτ/Τεμ → Μεντ (κάτω από Τεμ) → Φορά → Θωράκιση */}
-                <View style={{flex:4}}>
-                  {/* Γραμμή 1+2: Ύψος | Πλάτος | [Τεμ. πάνω / Μεντ. κάτω] */}
-                  <View style={{flexDirection:'row',gap:4,marginBottom:6,alignItems:'flex-start'}}>
-                    {/* Ύψος */}
-                    <View style={{alignItems:'center',flex:2}}>
-                      <Text style={vstyles.fieldLabelDark}>Ύψος</Text>
-                      <TextInput ref={hRef} style={[vstyles.textInput,{marginTop:2,fontWeight:'900',fontSize:20,textAlign:'center',padding:6,width:'100%'}]} placeholder="—" keyboardType="numeric" maxLength={3} value={customForm.h} onChangeText={v=>{setCustomForm({...customForm,h:v}); if(v.length===3) wRef.current?.focus();}} onSubmitEditing={()=>wRef.current?.focus()} blurOnSubmit={false}/>
-                    </View>
-                    {/* Πλάτος */}
-                    <View style={{alignItems:'center',flex:2}}>
-                      <Text style={vstyles.fieldLabelDark}>Πλάτος</Text>
-                      <TextInput ref={wRef} style={[vstyles.textInput,{marginTop:2,fontWeight:'900',fontSize:20,textAlign:'center',padding:6,width:'100%'}]} placeholder="—" keyboardType="numeric" maxLength={3} value={customForm.w} onChangeText={v=>setCustomForm({...customForm,w:v})} onSubmitEditing={()=>qtyEidikiRef.current?.focus()} blurOnSubmit={false}/>
-                    </View>
-                    {/* Τεμ. πάνω / Μεντεσέδες κάτω — στήλη */}
-                    <View style={{flex:1.5,gap:4}}>
-                      <View style={{alignItems:'center'}}>
-                        <Text style={vstyles.fieldLabelDark}>Τεμ.</Text>
-                        <TextInput ref={qtyEidikiRef} style={[vstyles.textInput,{marginTop:2,fontWeight:'900',fontSize:18,textAlign:'center',padding:6,width:'100%'}]} keyboardType="numeric" value={customForm.qty} selectTextOnFocus onChangeText={v=>setCustomForm({...customForm,qty:v})} blurOnSubmit={true} returnKeyType="done"/>
-                      </View>
-                      <View style={{alignItems:'center'}}>
-                        <Text style={vstyles.fieldLabelDark}>Μεντ.</Text>
-                        <TextInput ref={hingeRef} style={[vstyles.textInput,{marginTop:2,fontWeight:'900',fontSize:18,textAlign:'center',padding:6,width:'100%'}]} maxLength={1} keyboardType="numeric" value={customForm.hinges} selectTextOnFocus onChangeText={v=>{if(['2','3','4','5',''].includes(v))setCustomForm({...customForm,hinges:v});}} onSubmitEditing={()=>glassRef.current?.focus()} blurOnSubmit={false}/>
-                      </View>
-                    </View>
-                  </View>
-                  {/* Γραμμή 3: ΑΡΙΣΤΕΡΗ / ΔΕΞΙΑ — χωρίς label */}
-                  <View style={{flexDirection:'row',gap:3,marginBottom:6}}>
-                    {['ΑΡΙΣΤΕΡΗ','ΔΕΞΙΑ'].map(s=>(
-                      <TouchableOpacity key={s} style={[vstyles.sideChip,customForm.side===s&&vstyles.sideChipOn]} onPress={()=>setCustomForm({...customForm,side:s})}>
-                        <Text style={[vstyles.sideChipTxt,customForm.side===s&&vstyles.sideChipTxtOn]}>{s==='ΑΡΙΣΤΕΡΗ'?'◄ ΑΡ.':'ΔΕΞ. ►'}</Text>
-                      </TouchableOpacity>
-                    ))}
-                  </View>
-                  {/* Γραμμή 4: ΜΟΝΗ / ΔΙΠΛΗ — label κεντραρισμένο πάνω */}
-                  <Text style={[vstyles.fieldLabelDark,{textAlign:'center',marginBottom:2}]}>ΘΩΡΑΚΙΣΗ</Text>
-                  <View style={{flexDirection:'row',gap:3}}>
-                    {['ΜΟΝΗ','ΔΙΠΛΗ'].map(a=>(
-                      <TouchableOpacity key={a} style={[vstyles.togBtnSm,customForm.armor===a&&vstyles.togBtnOn]} onPress={()=>setCustomForm({...customForm,armor:a})}>
-                        <Text style={[vstyles.togBtnSmTxt,customForm.armor===a&&vstyles.togBtnTxtOn]}>{a}</Text>
-                      </TouchableOpacity>
-                    ))}
-                  </View>
-                </View>
-
-                {/* ΔΙΑΧΩΡΙΣΤΙΚΟ */}
-                <View style={{width:1,backgroundColor:'#ddd',marginVertical:2}}/>
-
-                {/* ΔΕΞΙΑ: ΣΤΑΘΕΡΑ grid */}
-                <View style={{flex:6}}>
-                  <Text style={{fontSize:11,fontWeight:'900',color:'#2c2c2c',letterSpacing:2,marginBottom:4,textAlign:'center'}}>ΣΤΑΘΕΡΑ</Text>
-                  <View style={{flexDirection:'row',gap:3,marginBottom:3}}>
-                    <Text style={[vstyles.fieldLabel,{flex:1}]}>Διάσταση</Text>
-                    <Text style={[vstyles.fieldLabel,{flex:2}]}>Παρατήρηση Σταθερά</Text>
-                  </View>
-                  {[0,1,2,3].map(i=>{
-                    const s=(customForm.stavera||[])[i]||{dim:'',note:''};
-                    return (
-                      <View key={i} style={{flexDirection:'row',gap:3,marginBottom:4,alignItems:'center'}}>
-                        <TextInput
-                          ref={el=>{staveraHRefs.current['e'+i]=el;}}
-                          style={[vstyles.staveraCell,{width:90,textAlign:'center',fontSize:13,fontWeight:'700'}]}
-                          placeholder="Υ × Π"
-                          keyboardType="numeric"
-                          returnKeyType="next"
-                          value={s.dim||''}
-                          onChangeText={v=>{
-                            const upd=[...(customForm.stavera||Array(4).fill(null).map(()=>({dim:'',note:''})))];
-                            while(upd.length<=i) upd.push({dim:'',note:''});
-                            upd[i]={...upd[i],dim:v};
-                            setCustomForm({...customForm,stavera:upd});
-                          }}
-                          onSubmitEditing={()=>{
-                            const upd=[...(customForm.stavera||Array(4).fill(null).map(()=>({dim:'',note:''})))];
-                            while(upd.length<=i) upd.push({dim:'',note:''});
-                            const dim=upd[i].dim||'';
-                            if(dim && !dim.includes(' × ')){
-                              upd[i]={...upd[i],dim:dim+' × '};
-                              setCustomForm({...customForm,stavera:upd});
-                              setTimeout(()=>staveraHRefs.current['e'+i]?.focus(),30);
-                            } else {
-                              staveraGridNoteRefs.current['e'+i]?.focus();
-                            }
-                          }}
-                        />
-                        <TextInput
-                          ref={el=>{staveraGridNoteRefs.current['e'+i]=el;}}
-                          style={[vstyles.staveraCell,{flex:1,minHeight:32}]}
-                          placeholder="..."
-                          returnKeyType="next"
-                          blurOnSubmit={false}
-                          value={s.note||''}
-                          onChangeText={v=>{
-                            const upd=[...(customForm.stavera||Array(4).fill(null).map(()=>({dim:'',note:''})))];
-                            while(upd.length<=i) upd.push({dim:'',note:''});
-                            upd[i]={...upd[i],note:v};
-                            setCustomForm({...customForm,stavera:upd});
-                          }}
-                          onSubmitEditing={()=>{ staveraHRefs.current['e'+(i+1)]?.focus(); }}
-                        />
-                      </View>
-                    );
-                  })}
-                  {/* Μοντάρισμα κάτω από ΣΤΑΘΕΡΑ */}
-                  <View style={{flexDirection:'row',alignItems:'center',marginTop:4,gap:6}}>
-                    <Text style={[vstyles.fieldLabelDark,{minWidth:80}]}>Μοντάρισμα</Text>
-                    <View style={{flexDirection:'row',gap:3,flex:1}}>
-                      {['ΝΑΙ','ΟΧΙ'].map(v=>(
-                        <TouchableOpacity key={v} style={[vstyles.togBtnSm,{flex:1},customForm.installation===v&&(v==='ΝΑΙ'?vstyles.togBtnGreen:vstyles.togBtnOn)]} onPress={()=>setCustomForm({...customForm,installation:v})}>
-                          <Text style={[vstyles.togBtnSmTxt,customForm.installation===v&&vstyles.togBtnTxtOn]}>{v}</Text>
-                        </TouchableOpacity>
-                      ))}
-                    </View>
-                  </View>
-                </View>
-              </View>
-            </View>
-
-            {/* CARD: ΛΟΙΠΑ ΣΤΟΙΧΕΙΑ ΕΙΔΙΚΗΣ */}
-            <View style={vstyles.card}>
-              <View style={vstyles.cardHeader}><Text style={vstyles.cardHeaderTxt}>⚙️  ΛΟΙΠΑ ΣΤΟΙΧΕΙΑ</Text></View>
-              <View style={vstyles.cardBody}>
-                {/* Αριστερά: Τύπος Κάσας + Υλικό | Δεξιά: Κλειδαριά + Τζάμι */}
-                <View style={{flexDirection:'row',gap:8,marginBottom:8}}>
-                  <View style={{flex:1}}>
-                    <Text style={vstyles.fieldLabelDark}>Τύπος Κάσας</Text>
-                    <View style={{flexDirection:'row',gap:3,marginTop:2,marginBottom:6}}>
-                      {['ΑΝΟΙΧΤΟΥ ΤΥΠΟΥ','ΚΛΕΙΣΤΟΥ ΤΥΠΟΥ'].map(t=>(
-                        <TouchableOpacity key={t} style={[vstyles.togBtnSm,customForm.caseType===t&&vstyles.togBtnOn]} onPress={()=>setCustomForm({...customForm,caseType:t})}>
-                          <Text style={[vstyles.togBtnSmTxt,customForm.caseType===t&&vstyles.togBtnTxtOn]}>{t==='ΑΝΟΙΧΤΟΥ ΤΥΠΟΥ'?'ΑΝΟΙΧΤΗ':'ΚΛΕΙΣΤΗ'}</Text>
-                        </TouchableOpacity>
-                      ))}
-                    </View>
-                    <Text style={vstyles.fieldLabelDark}>Υλικό Κάσας</Text>
-                    <View style={{flexDirection:'row',gap:3,marginTop:2}}>
-                      {['DKP','ΓΑΛΒΑΝΙΖΕ'].map(m=>(
-                        <TouchableOpacity key={m} style={[vstyles.togBtnSm,customForm.caseMaterial===m&&vstyles.togBtnOn]} onPress={()=>setCustomForm({...customForm,caseMaterial:m})}>
-                          <Text style={[vstyles.togBtnSmTxt,customForm.caseMaterial===m&&vstyles.togBtnTxtOn]}>{m}</Text>
-                        </TouchableOpacity>
-                      ))}
-                    </View>
-                  </View>
-                  <View style={{flex:2}}>
-                    <Text style={vstyles.fieldLabelDark}>Κλειδαριά</Text>
-                    <TouchableOpacity style={[vstyles.selectBtn,{marginTop:2,marginBottom:6}]} onPress={()=>{blurAll();setShowLockPicker(true);}}>
-                      <Text style={{fontSize:13,color:customForm.lock?'#1a1a1a':'#aaa',flex:1}} numberOfLines={1}>{customForm.lock||'Επιλέξτε...'}</Text>
-                      <Text style={{color:'#aaa',fontSize:11}}>▼</Text>
-                    </TouchableOpacity>
-                    <Text style={vstyles.fieldLabelDark}>Τζάμι</Text>
-                    <View style={{flexDirection:'row', gap:4, marginTop:2}}>
-                      <TextInput ref={glassRef} style={[vstyles.staveraCell,{width:90,textAlign:'center',fontSize:13,fontWeight:'700',minHeight:36}]} placeholder="Υ × Π" keyboardType="numeric" value={customForm.glassDim} selectTextOnFocus onChangeText={v=>setCustomForm({...customForm,glassDim:v})} onSubmitEditing={handleGlassEnter} blurOnSubmit={false} returnKeyType="next"/>
-                      <TextInput ref={glassNotesRef} style={[vstyles.staveraCell,{flex:4,minHeight:36}]} placeholder="..." keyboardType="default" value={customForm.glassNotes||''} onChangeText={v=>setCustomForm({...customForm,glassNotes:v})} returnKeyType="done" blurOnSubmit={true}/>
-                    </View>
-                  </View>
-                </View>
-                {/* Χρώμα Εξαρτημάτων */}
-                <Text style={vstyles.fieldLabelDark}>Χρώμα Εξαρτημάτων</Text>
-                <TouchableOpacity style={[vstyles.selectBtn,{marginTop:2,marginBottom:8}]} onPress={()=>{blurAll();setShowHardwarePicker(true);}}>
-                  <Text style={{fontSize:13,color:customForm.hardware?'#1a1a1a':'#aaa',flex:1}} numberOfLines={1}>{customForm.hardware||'Επιλέξτε...'}</Text>
-                  <Text style={{color:'#aaa',fontSize:11}}>▼</Text>
-                </TouchableOpacity>
-                {/* Επένδυση */}
-                <Text style={vstyles.fieldLabelDark}>Επένδυση</Text>
-                <TouchableOpacity style={[vstyles.selectBtn,{marginTop:2,marginBottom:8}]} onPress={()=>{blurAll();setShowCoatingsPicker(true);}}>
-                  <Text style={{fontSize:13,color:(customForm.coatings&&customForm.coatings.length>0)?'#1a1a1a':'#aaa',flex:1}} numberOfLines={1}>
-                    {(customForm.coatings&&customForm.coatings.length>0)?customForm.coatings.join(', '):'Επιλέξτε...'}
-                  </Text>
-                  <Text style={{color:'#aaa',fontSize:11}}>▼</Text>
-                </TouchableOpacity>
-                {/* Παρατηρήσεις */}
-                <Text style={vstyles.fieldLabelDark}>Παρατηρήσεις</Text>
-                <TextInput ref={notesRef} style={[vstyles.textInput,{height:55,textAlignVertical:'top',marginTop:2}]} placeholder="Προαιρετικά..." value={customForm.notes} multiline onChangeText={v=>setCustomForm({...customForm,notes:v})}/>
-              </View>
-            </View>
-
-          </>)}
-
-          {/* ═══ ΦΟΡΜΑ ΤΥΠΟΠΟΙΗΜΕΝΗΣ — REDESIGNED ═══ */}
-          {orderType==='ΤΥΠΟΠΟΙΗΜΕΝΗ'&&(<>
-
-            {/* CARD: ΔΙΑΣΤΑΣΕΙΣ + ΣΤΑΘΕΡΑ — σχέδιο χαρτί */}
+                      {/* CARD: ΔΙΑΣΤΑΣΕΙΣ + ΣΤΑΘΕΡΑ — σχέδιο χαρτί */}
             <View style={vstyles.card}>
               <View style={vstyles.cardHeader}><Text style={vstyles.cardHeaderTxt}>📐  ΔΙΑΣΤΑΣΕΙΣ & ΣΤΑΘΕΡΑ</Text></View>
               <View style={[vstyles.cardBody,{flexDirection:'row',gap:8}]}>
@@ -1991,75 +2176,20 @@ export default function CustomScreen({ customOrders, setCustomOrders, soldOrders
               </View>
             </View>
 
-          </>)}
+          
 
-          <TouchableOpacity style={[styles.saveBtn,{backgroundColor:orderType==='ΤΥΠΟΠΟΙΗΜΕΝΗ'?'#8B0000':'#007AFF'}]} onPress={()=>{
+          <TouchableOpacity style={[styles.saveBtn,{backgroundColor:'#8B0000'}]} onPress={()=>{
             Keyboard.dismiss();
-            if (orderType==='ΕΙΔΙΚΗ') {
-              Alert.alert("Επιβεβαίωση", "Αποθήκευση παραγγελίας προς παραγωγή;", [
-                {text:"ΟΧΙ", style:"cancel"},
-                {text:"ΝΑΙ", onPress:()=>{ saveOrder(); setTimeout(()=>customerRef.current?.focus(), 400); }}
-              ]);
-            } else {
-              saveOrder();
-            }
+            saveOrder();
           }}>
             <Text style={{color:'white',fontWeight:'bold',fontSize:15}}>
-              {orderType==='ΤΥΠΟΠΟΙΗΜΕΝΗ'?'📐 ΑΠΟΘΗΚΕΥΣΗ ΠΑΡΑΓΓΕΛΙΑΣ':'ΑΠΟΘΗΚΕΥΣΗ ΠΡΟΣ ΠΑΡΑΓΩΓΗ'}
+              '📐 ΑΠΟΘΗΚΕΥΣΗ ΠΑΡΑΓΓΕΛΙΑΣ'
             </Text>
           </TouchableOpacity>
 
-          {/* ΡΟΗ ΠΑΡΑΓΩΓΗΣ — μόνο για ΕΙΔΙΚΗ */}
-          {orderType==='ΕΙΔΙΚΗ' && (<>
-            <Text style={styles.mainTitle}>ΡΟΗ ΠΑΡΑΓΩΓΗΣ</Text>
-
-            {/* ΚΑΤΑΧΩΡΗΜΕΝΕΣ ΠΑΡΑΓΓΕΛΙΕΣ */}
-            <View>
-              <TouchableOpacity style={[styles.listHeader,{backgroundColor:'#ff4444', flexDirection:'row', alignItems:'center', justifyContent:'space-between'}]} onPress={()=>toggleSection('pending')}>
-                <Text style={styles.listHeaderText}>● ΚΑΤΑΧΩΡΗΜΕΝΕΣ ΠΑΡΑΓΓΕΛΙΕΣ ({customOrders.filter(o=>o.status==='PENDING').length})</Text>
-                {expanded.pending&&(
-                  <TouchableOpacity style={{backgroundColor:'white', paddingHorizontal:10, paddingVertical:5, borderRadius:20, marginRight:4}}
-                    onPress={()=>handleSimplePrint(customOrders.filter(o=>o.status==='PENDING'), 'ΚΑΤΑΧΩΡΗΜΕΝΕΣ ΠΑΡΑΓΓΕΛΙΕΣ')}>
-                    <Text style={{color:'#ff4444', fontSize:11, fontWeight:'bold'}}>🖨️ ΕΚΤΥΠΩΣΗ</Text>
-                  </TouchableOpacity>
-                )}
-              </TouchableOpacity>
-              {expanded.pending&&[...customOrders.filter(o=>o.status==='PENDING')].sort((a,b)=>(parseInt(a.orderNo)||0)-(parseInt(b.orderNo)||0)).map(o=>renderOrderCard(o))}
-            </View>
-
-            {renderProdSection()}
-
-            {/* ΕΤΟΙΜΑ ΑΠΟΘΗΚΗΣ */}
-            <View>
-              <TouchableOpacity style={[styles.listHeader,{backgroundColor:'#00C851', flexDirection:'row', alignItems:'center', justifyContent:'space-between'}]} onPress={()=>toggleSection('ready')}>
-                <Text style={styles.listHeaderText}>● ΕΤΟΙΜΑ ΑΠΟΘΗΚΗΣ ({customOrders.filter(o=>o.status==='READY').length})</Text>
-                {expanded.ready&&(
-                  <TouchableOpacity style={{backgroundColor:'white', paddingHorizontal:10, paddingVertical:5, borderRadius:20, marginRight:4}}
-                    onPress={()=>handleSimplePrint(customOrders.filter(o=>o.status==='READY'), 'ΕΤΟΙΜΑ ΑΠΟΘΗΚΗΣ')}>
-                    <Text style={{color:'#00C851', fontSize:11, fontWeight:'bold'}}>🖨️ ΕΚΤΥΠΩΣΗ</Text>
-                  </TouchableOpacity>
-                )}
-              </TouchableOpacity>
-              {expanded.ready&&[...customOrders.filter(o=>o.status==='READY')].sort((a,b)=>(parseInt(a.orderNo)||0)-(parseInt(b.orderNo)||0)).map(o=>renderOrderCard(o))}
-            </View>
-
-            {/* ΑΡΧΕΙΟ */}
-            <View>
-              <TouchableOpacity style={[styles.listHeader,{backgroundColor:'#333', marginTop:20, flexDirection:'row', alignItems:'center', justifyContent:'space-between'}]} onPress={()=>toggleSection('archive')}>
-                <Text style={styles.listHeaderText}>📂 ΑΡΧΕΙΟ ΠΩΛΗΣΕΩΝ ({soldOrders.length})</Text>
-                {expanded.archive&&(
-                  <TouchableOpacity style={{backgroundColor:'white', paddingHorizontal:10, paddingVertical:5, borderRadius:20, marginRight:4}}
-                    onPress={()=>handleSimplePrint(soldOrders, 'ΑΡΧΕΙΟ ΠΩΛΗΣΕΩΝ')}>
-                    <Text style={{color:'#333', fontSize:11, fontWeight:'bold'}}>🖨️ ΕΚΤΥΠΩΣΗ</Text>
-                  </TouchableOpacity>
-                )}
-              </TouchableOpacity>
-              {expanded.archive&&soldOrders.map(o=>renderOrderCard(o,true))}
-            </View>
-          </>)}
 
           {/* ΠΑΡΑΓΓΕΛΙΕΣ ΤΥΠΟΠΟΙΗΜΕΝΩΝ — μόνο για ΤΥΠΟΠΟΙΗΜΕΝΗ tab */}
-          {orderType==='ΤΥΠΟΠΟΙΗΜΕΝΗ' && (<>
+          <>
             <Text style={styles.mainTitle}>ΠΑΡΑΓΓΕΛΙΕΣ ΤΥΠΟΠΟΙΗΜΕΝΩΝ</Text>
 
             {/* --- helper για render κάρτας --- */}
@@ -2090,6 +2220,10 @@ export default function CustomScreen({ customOrders, setCustomOrders, soldOrders
                       <View style={{flex:1}}>
                         <Text style={{fontWeight:'bold', fontSize:13}}>#{o.orderNo} {o.customer?`— ${o.customer}`:''}</Text>
                         <Text style={{fontSize:12, color:'#555', marginTop:1}}>{o.h}x{o.w} | {o.side}</Text>
+                        {o.qty&&parseInt(o.qty)>1?<Text style={{fontSize:13,fontWeight:'900',color:'#cc0000'}}>Τεμ: {o.qty}</Text>:null}
+                        {o.hardware?<Text style={{fontSize:11, color:'#555'}}>🎨 {o.hardware}</Text>:null}
+                        {o.installation==='ΝΑΙ'&&<View style={{backgroundColor:'#E65100',borderRadius:5,paddingHorizontal:6,paddingVertical:2,alignSelf:'flex-start',marginTop:2}}><Text style={{color:'white',fontWeight:'bold',fontSize:11}}>🪛 ΜΟΝΤΑΡΙΣΜΑ</Text></View>}
+                        {o.stavera&&o.stavera.filter(s=>s.dim).length>0&&<Text style={{fontSize:11,color:'#555',marginTop:2}}>📐 Σταθ: {o.stavera.filter(s=>s.dim).map(s=>s.dim+(s.note?' '+s.note:'')).join(' | ')}</Text>}
                         {o.notes?<Text style={{fontSize:11, color:'#888'}}>Σημ: {o.notes}</Text>:null}
                         {o.deliveryDate?<Text style={{fontSize:10, color:'#007AFF'}}>📅 Παράδοση: {o.deliveryDate}</Text>:null}
                         <Text style={{fontSize:10, color:'#999'}}>📋 {fmtDate(o.createdAt)}</Text>
@@ -2121,11 +2255,68 @@ export default function CustomScreen({ customOrders, setCustomOrders, soldOrders
                           <Text style={{color:'white', fontSize:10, fontWeight:'bold'}}>✕ ΔΙΑ/ΦΗ</Text>
                         </TouchableOpacity>
 
-                        {sasiActive ? (
-                          // ΜΟΝΗ: κουμπί ΜΟΝΤΑΡΙΣΜΑ
+                        {sasiActive ? (<>
+                          {/* ΜΟΝΗ: κουμπί ΕΤΟΙΜΗ — μόνο αν δεν έχει μοντάρισμα και υπάρχουν κάσα+σασί */}
+                          {o.installation!=='ΝΑΙ' && (
+                            <TouchableOpacity
+                              disabled={!canMount}
+                              style={{backgroundColor: canMount?'#00C851':'#ccc', paddingHorizontal:8, paddingVertical:6, borderRadius:5, alignItems:'center', minWidth:96, opacity:canMount?1:0.5}}
+                              onPress={()=>{
+                                if(!canMount) return;
+                                Alert.alert(
+                                  '✅ Αποθήκευση',
+                                  `Η παραγγελία #${o.orderNo} είναι έτοιμη;
+Το σασί θα αφαιρεθεί από το στοκ.
+Η κάσα θα δεσμευτεί.`,
+                                  [
+                                    {text:'ΑΚΥΡΟ', style:'cancel'},
+                                    {text:'ΕΤΟΙΜΗ', onPress:async()=>{
+                                      // Βρίσκω το σασί READY για αυτή τη διάσταση
+                                      const sasiItem = sasiOrders.find(s=>
+                                        s.status==='READY' &&
+                                        String(s.selectedHeight)===String(o.h) &&
+                                        String(s.selectedWidth)===String(o.w) &&
+                                        s.side===o.side
+                                      );
+                                      // Βρίσκω την κάσα READY για αυτή τη διάσταση
+                                      const caseItem = caseOrders.find(s=>
+                                        s.status==='READY' &&
+                                        String(s.selectedHeight)===String(o.h) &&
+                                        String(s.selectedWidth)===String(o.w) &&
+                                        s.side===o.side
+                                      );
+                                      const label = `${o.customer||''}${o.customer?' ':''} #${o.orderNo}`;
+                                      // Ενημέρωση παραγγελίας → STD_READY
+                                      const updOrder = {...o, status:'STD_READY', readyAt:Date.now(),
+                                        reservedSasiId: sasiItem?.id||null,
+                                        reservedCaseId: caseItem?.id||null
+                                      };
+                                      setCustomOrders(customOrders.map(x=>x.id===o.id?updOrder:x));
+                                      await syncToCloud(updOrder);
+                                      // Σασί → δεσμευμένο (reservedBy)
+                                      if(sasiItem) {
+                                        const updSasi = {...sasiItem, reservedBy:label, reservedOrderNo:o.orderNo, reservedAt:Date.now()};
+                                        setSasiOrders(prev=>prev.map(s=>s.id===sasiItem.id?updSasi:s));
+                                        await fetch(`${FIREBASE_URL}/sasi_orders/${sasiItem.id}.json`,{method:'PUT',body:JSON.stringify(updSasi)});
+                                      }
+                                      // Κάσα → δεσμευμένη (reservedBy)
+                                      if(caseItem) {
+                                        const updCase = {...caseItem, reservedBy:label, reservedOrderNo:o.orderNo, reservedAt:Date.now()};
+                                        setCaseOrders(prev=>prev.map(s=>s.id===caseItem.id?updCase:s));
+                                        await fetch(`${FIREBASE_URL}/case_orders/${caseItem.id}.json`,{method:'PUT',body:JSON.stringify(updCase)});
+                                      }
+                                    }}
+                                  ]
+                                );
+                              }}>
+                              <Text style={{color:'white', fontSize:11, fontWeight:'bold'}}>{canMount?'✅ ΕΤΟΙΜΗ':'⏳ ΑΝΑΜΟΝΗ'}</Text>
+                            </TouchableOpacity>
+                          )}
+                          {/* ΜΟΝΗ: κουμπί ΜΟΝΤΑΡΙΣΜΑ — μόνο αν installation=ΝΑΙ */}
+                          {o.installation==='ΝΑΙ' ? (
                           <TouchableOpacity
                             disabled={!canMount}
-                            style={{alignItems:'center', backgroundColor: !canMount?'#eee':'#f9f9f9', borderRadius:5, padding:4, borderWidth:1, borderColor: !canMount?'#ccc':'#aaa', minWidth:96, opacity:!canMount?0.5:1}}
+                            style={{alignItems:'center', backgroundColor: !canMount?'#eee':'#f9f9f9', borderRadius:5, padding:4, borderWidth:1, borderColor: !canMount?'#ccc':'#00C851', minWidth:96, opacity:!canMount?0.5:1}}
                             onPress={()=>{
                               if(!canMount) return;
                               Alert.alert("✅ Μοντάρισμα",`Επιβεβαίωση μοντάρίσματος #${o.orderNo};`,[
@@ -2137,10 +2328,12 @@ export default function CustomScreen({ customOrders, setCustomOrders, soldOrders
                                 }}
                               ]);
                             }}>
-                            <Text style={{fontSize:9, fontWeight:'bold', color:!canMount?'#aaa':'#555'}}>ΜΟΝΤΑΡΙΣΜΑ</Text>
-                            <Text style={{fontSize:14}}>☐</Text>
+                            <Text style={{fontSize:9, fontWeight:'bold', color:!canMount?'#aaa':'#1b5e20'}}>ΜΟΝΤΑΡΙΣΜΑ</Text>
+                            <Text style={{fontSize:14}}>{canMount?'✅':'☐'}</Text>
                           </TouchableOpacity>
-                        ) : (<>
+                          ) : null}
+                        </>) : null}
+                        {!sasiActive && (<>
                           {/* ΔΙΠΛΗ: ΜΟΝΤΑΡΙΣΜΑ indicator */}
                           {o.installation==='ΝΑΙ'&&(
                             <View style={{alignItems:'center', backgroundColor: dipliMontDone?'#e8f5e9':'#f9f9f9', borderRadius:5, padding:4, borderWidth:1, borderColor: dipliMontDone?'#00C851':'#aaa', minWidth:96}}>
@@ -2244,11 +2437,14 @@ export default function CustomScreen({ customOrders, setCustomOrders, soldOrders
                             const orderQty = parseInt(o.qty)||1;
                             const customer = o.customer || `#${o.orderNo}`;
 
-                            const removeFromStock = async (stockOrders, setStockOrders, firebasePath) => {
-                              // Βρίσκω εγγραφή που έχει δεσμευμένο αυτόν τον πελάτη — σε οποιοδήποτε στάδιο
+                            const removeFromStock = async (stockOrders, setStockOrders, firebasePath, reservedId) => {
                               const sameSize = s => String(s.selectedHeight)===String(o.h) && String(s.selectedWidth)===String(o.w) && s.side===o.side;
-                              let target = stockOrders.find(s=> sameSize(s) && s.autoNote && s.autoNote.includes(customer));
-                              // Αν δεν βρω με όνομα, πάρε READY πρώτα, μετά οποιοδήποτε
+                              // Πρώτα ψάχνω με reservedId (νέος τρόπος δέσμευσης)
+                              let target = reservedId ? stockOrders.find(s=>s.id===reservedId) : null;
+                              // Fallback: ψάχνω με reservedOrderNo
+                              if (!target) target = stockOrders.find(s=> s.reservedOrderNo===o.orderNo && sameSize(s));
+                              // Fallback παλιός τρόπος
+                              if (!target) target = stockOrders.find(s=> sameSize(s) && s.autoNote && s.autoNote.includes(customer));
                               if (!target) target = stockOrders.find(s=> s.status==='READY' && sameSize(s));
                               if (!target) target = stockOrders.find(s=> sameSize(s) && s.status!=='SOLD');
                               if (!target) return;
@@ -2282,8 +2478,8 @@ export default function CustomScreen({ customOrders, setCustomOrders, soldOrders
                               }
                             };
 
-                            if (isMoni && setSasiOrders) await removeFromStock(sasiOrders, setSasiOrders, 'sasi_orders');
-                            if (setCaseOrders) await removeFromStock(caseOrders, setCaseOrders, 'case_orders');
+                            if (isMoni && setSasiOrders) await removeFromStock(sasiOrders, setSasiOrders, 'sasi_orders', o.reservedSasiId);
+                            if (setCaseOrders) await removeFromStock(caseOrders, setCaseOrders, 'case_orders', o.reservedCaseId);
                           }}
                         ])}>
                         <Text style={{color:'white', fontSize:10, fontWeight:'bold'}}>📦 ΑΡΧΕΙΟ</Text>
@@ -2407,8 +2603,10 @@ export default function CustomScreen({ customOrders, setCustomOrders, soldOrders
               const caseReady = caseOrders.filter(o=>o.status==='READY');
 
               // Φιλτράρω ανά status
-              const moniOrders = customOrders.filter(o=>o.orderType==='ΤΥΠΟΠΟΙΗΜΕΝΗ'&&(o.sasiType==='ΜΟΝΗ ΘΩΡΑΚΙΣΗ'||!o.sasiType)&&(o.status==='STD_PENDING'||!o.status)).sort((a,b)=>(parseInt(a.orderNo)||0)-(parseInt(b.orderNo)||0));
+              const moniOrders = customOrders.filter(o=>o.orderType==='ΤΥΠΟΠΟΙΗΜΕΝΗ'&&(o.sasiType==='ΜΟΝΗ ΘΩΡΑΚΙΣΗ'||!o.sasiType)&&((o.status==='STD_PENDING'||!o.status)||(o.status==='STD_READY'&&o.staveraPendingAtReady))).sort((a,b)=>(parseInt(a.orderNo)||0)-(parseInt(b.orderNo)||0));
               const moniProdOrders = customOrders.filter(o=>o.orderType==='ΤΥΠΟΠΟΙΗΜΕΝΗ'&&(o.sasiType==='ΜΟΝΗ ΘΩΡΑΚΙΣΗ'||!o.sasiType)&&o.status==='MONI_PROD').sort((a,b)=>(parseInt(a.orderNo)||0)-(parseInt(b.orderNo)||0));
+              const staveraTabOrders = customOrders.filter(o=>o.orderType==='ΤΥΠΟΠΟΙΗΜΕΝΗ'&&(o.sasiType==='ΜΟΝΗ ΘΩΡΑΚΙΣΗ'||!o.sasiType)&&o.stavera&&o.stavera.filter(s=>s.dim).length>0&&(o.status==='STD_PENDING'||o.status==='MONI_PROD'||(o.status==='STD_READY'&&o.staveraPendingAtReady))&&!o.staveraDone).sort((a,b)=>(parseInt(a.orderNo)||0)-(parseInt(b.orderNo)||0));
+              const montageTabOrders = customOrders.filter(o=>o.orderType==='ΤΥΠΟΠΟΙΗΜΕΝΗ'&&(o.sasiType==='ΜΟΝΗ ΘΩΡΑΚΙΣΗ'||!o.sasiType)&&!o.lock&&o.installation==='ΝΑΙ'&&o.stdInProd&&!o.stdMontDone).sort((a,b)=>(parseInt(a.orderNo)||0)-(parseInt(b.orderNo)||0));
               const dipliOrders = customOrders.filter(o=>o.orderType==='ΤΥΠΟΠΟΙΗΜΕΝΗ'&&o.sasiType==='ΔΙΠΛΗ ΘΩΡΑΚΙΣΗ'&&(o.status==='STD_PENDING'||!o.status||o.status==='PENDING')).sort((a,b)=>(parseInt(a.orderNo)||0)-(parseInt(b.orderNo)||0));
               const readyOrders = customOrders.filter(o=>o.orderType==='ΤΥΠΟΠΟΙΗΜΕΝΗ'&&(o.sasiType==='ΜΟΝΗ ΘΩΡΑΚΙΣΗ'||!o.sasiType)&&o.status==='STD_READY').sort((a,b)=>(parseInt(a.orderNo)||0)-(parseInt(b.orderNo)||0));
               const soldOrders = customOrders.filter(o=>o.orderType==='ΤΥΠΟΠΟΙΗΜΕΝΗ'&&(o.sasiType==='ΜΟΝΗ ΘΩΡΑΚΙΣΗ'||!o.sasiType)&&o.status==='STD_SOLD').sort((a,b)=>(b.soldAt||0)-(a.soldAt||0));
@@ -2420,7 +2618,7 @@ export default function CustomScreen({ customOrders, setCustomOrders, soldOrders
               const moniCards = moniOrders.map(o=>{
                 const key=`${o.h}_${o.w}_${o.side}`;
                 const sasiStock=sasiReady.filter(s=>String(s.selectedHeight)===String(o.h)&&String(s.selectedWidth)===String(o.w)&&s.side===o.side).reduce((sum,s)=>sum+(parseInt(s.qty)||1),0);
-                const caseStock=caseReady.filter(s=>String(s.selectedHeight)===String(o.h)&&String(s.selectedWidth)===String(o.w)&&s.side===o.side).reduce((sum,s)=>sum+(parseInt(s.qty)||1),0);
+                const caseStock=caseReady.filter(s=>String(s.selectedHeight)===String(o.h)&&String(s.selectedWidth)===String(o.w)&&s.side===o.side&&!s.reservedBy).reduce((sum,s)=>sum+(parseInt(s.qty)||1),0);
                 const hasSasi=(sasiUsedM[key]||0)<sasiStock;
                 const hasCase=(caseUsedM[key]||0)<caseStock;
                 sasiUsedM[key]=(sasiUsedM[key]||0)+1;
@@ -2432,7 +2630,7 @@ export default function CustomScreen({ customOrders, setCustomOrders, soldOrders
               const caseUsedD={};
               const dipliCards = dipliOrders.map(o=>{
                 const key=`${o.h}_${o.w}_${o.side}`;
-                const caseStock=caseReady.filter(s=>String(s.selectedHeight)===String(o.h)&&String(s.selectedWidth)===String(o.w)&&s.side===o.side).reduce((sum,s)=>sum+(parseInt(s.qty)||1),0);
+                const caseStock=caseReady.filter(s=>String(s.selectedHeight)===String(o.h)&&String(s.selectedWidth)===String(o.w)&&s.side===o.side&&!s.reservedBy).reduce((sum,s)=>sum+(parseInt(s.qty)||1),0);
                 const hasCase=(caseUsedD[key]||0)<caseStock;
                 caseUsedD[key]=(caseUsedD[key]||0)+1;
                 return renderStdCard(o, false, hasCase, false);
@@ -2514,8 +2712,10 @@ export default function CustomScreen({ customOrders, setCustomOrders, soldOrders
                         {['montSasi','montDoor','stavera'].map(key=>{
                           const label = key==='montSasi'?'🔵 ΚΑΤ.ΣΑΣΙ':key==='montDoor'?'🟢 ΜΟΝΤ.':'📏 ΣΤΑΘΕΡΑ';
                           const tabOrders = key==='stavera'
-                            ? moniProdOrders.filter(o=>o.stavera&&o.stavera.length>0)
-                            : moniProdOrders.filter(o=>o.moniPhases?.[key]?.active);
+                            ? staveraTabOrders
+                            : key==='montDoor'
+                              ? [...montageTabOrders, ...moniProdOrders.filter(o=>o.moniPhases?.[key]?.active)]
+                              : moniProdOrders.filter(o=>o.moniPhases?.[key]?.active);
                           return (
                             <TouchableOpacity key={key}
                               style={{flex:1, padding:8, alignItems:'center', borderRadius:6, marginHorizontal:2, backgroundColor: moniProdTab===key?'#1565C0':'#e0e0e0'}}
@@ -2529,7 +2729,7 @@ export default function CustomScreen({ customOrders, setCustomOrders, soldOrders
                     {/* ΚΑΡΤΕΣ */}
                     {/* TAB ΣΤΑΘΕΡΑ */}
                     {expanded.moniProd&&moniProdTab==='stavera'&&(()=>{
-                      const staveraOrders = moniProdOrders.filter(o=>o.stavera&&o.stavera.length>0);
+                      const staveraOrders = staveraTabOrders;
                       return (<>
                         <TouchableOpacity
                           style={{backgroundColor:'#7b1fa2', paddingHorizontal:10, paddingVertical:7, borderRadius:6, alignSelf:'flex-start', marginBottom:8}}
@@ -2600,7 +2800,8 @@ export default function CustomScreen({ customOrders, setCustomOrders, soldOrders
                               <TouchableOpacity
                                 style={[styles.doneBtn, o.staveraDone&&styles.doneBtnActive]}
                                 onPress={async()=>{
-                                  const upd={...o, staveraDone:!o.staveraDone};
+                                  const newDone = !o.staveraDone;
+                                  const upd={...o, staveraDone:newDone, ...(newDone && {staveraPendingAtReady:false})};
                                   setCustomOrders(customOrders.map(x=>x.id===o.id?upd:x));
                                   await syncToCloud(upd);
                                 }}>
@@ -2735,7 +2936,37 @@ export default function CustomScreen({ customOrders, setCustomOrders, soldOrders
                         </View>
                       );
                     })}
-                    {expanded.moniProd&&moniProdTab!=='stavera'&&moniProdOrders.filter(o=>o.moniPhases?.[moniProdTab]?.active).length===0&&(
+                    {/* ΜΟΝΤΑΡΙΣΜΑ: παραγγελίες χωρίς κλειδαριά που περιμένουν μοντάρισμα */}
+                    {expanded.moniProd&&moniProdTab==='montDoor'&&montageTabOrders.map(o=>{
+                      const hasStaveraO = o.stavera&&o.stavera.filter(s=>s.dim).length>0;
+                      return (
+                        <View key={o.id} style={{backgroundColor:'#f3e5f5', borderRadius:8, padding:10, marginBottom:6, borderLeftWidth:4, borderLeftColor:'#7b1fa2', elevation:1}}>
+                          <View style={{flexDirection:'row', justifyContent:'space-between', alignItems:'flex-start'}}>
+                            <View style={{flex:1}}>
+                              <Text style={{fontWeight:'bold', fontSize:13}}>#{o.orderNo} {o.customer?`— ${o.customer}`:''}</Text>
+                              <Text style={{fontSize:12, color:'#555', marginTop:1}}>{o.h}x{o.w} | {o.side}</Text>
+                              {o.qty&&parseInt(o.qty)>1?<Text style={{fontSize:12,fontWeight:'bold',color:'#cc0000'}}>Τεμ: {o.qty}</Text>:null}
+                              {o.hardware?<Text style={{fontSize:11,color:'#555'}}>🎨 {o.hardware}</Text>:null}
+                              {hasStaveraO&&<View style={{backgroundColor:'#E65100',borderRadius:4,paddingHorizontal:6,paddingVertical:2,alignSelf:'flex-start',marginTop:3}}><Text style={{color:'white',fontWeight:'bold',fontSize:10}}>⏳ ΕΚΚΡΕΜΕΙ ΣΤΑΘΕΡΟ</Text></View>}
+                              {o.deliveryDate?<Text style={{fontSize:10,color:'#007AFF',marginTop:2}}>📅 {o.deliveryDate}</Text>:null}
+                            </View>
+                            <TouchableOpacity
+                              style={{backgroundColor:'#00C851',paddingHorizontal:10,paddingVertical:6,borderRadius:6,alignItems:'center',minWidth:70}}
+                              onPress={()=>Alert.alert('✅ Μοντάρισμα',`Ολοκλήρωση μοντάρίσματος #${o.orderNo};`,[
+                                {text:'ΑΚΥΡΟ',style:'cancel'},
+                                {text:'ΝΑΙ',onPress:async()=>{
+                                  const upd = {...o, stdMontDone:true, status:'STD_READY', readyAt:Date.now(), ...(hasStaveraO?{staveraPendingAtReady:true}:{})};
+                                  setCustomOrders(customOrders.map(x=>x.id===o.id?upd:x));
+                                  await syncToCloud(upd);
+                                }}
+                              ])}>
+                              <Text style={{color:'white',fontWeight:'bold',fontSize:11}}>✓ DONE</Text>
+                            </TouchableOpacity>
+                          </View>
+                        </View>
+                      );
+                    })}
+                    {expanded.moniProd&&moniProdTab!=='stavera'&&moniProdOrders.filter(o=>o.moniPhases?.[moniProdTab]?.active).length===0&&montageTabOrders.length===0&&(
                       <Text style={{textAlign:'center',color:'#999',padding:12}}>Δεν υπάρχουν παραγγελίες σε αυτή τη φάση</Text>
                     )}
                   </>)}
@@ -2983,7 +3214,7 @@ export default function CustomScreen({ customOrders, setCustomOrders, soldOrders
                             const phase = o.dipliPhases?.[dipliProdTab];
                             if(!phase) return null;
                             const key=`${o.h}_${o.w}_${o.side}`;
-                            const caseStock=caseReady.filter(s=>String(s.selectedHeight)===String(o.h)&&String(s.selectedWidth)===String(o.w)&&s.side===o.side).reduce((sum,s)=>sum+(parseInt(s.qty)||1),0);
+                            const caseStock=caseReady.filter(s=>String(s.selectedHeight)===String(o.h)&&String(s.selectedWidth)===String(o.w)&&s.side===o.side&&!s.reservedBy).reduce((sum,s)=>sum+(parseInt(s.qty)||1),0);
                             const hasCase=(caseUsedProd[key]||0)<caseStock;
                             caseUsedProd[key]=(caseUsedProd[key]||0)+1;
                             return (
@@ -3313,9 +3544,6 @@ export default function CustomScreen({ customOrders, setCustomOrders, soldOrders
   );
 }
 
-// ═══════════════════════════════════════════════════════════════
-//  VAICON DESIGN SYSTEM — vstyles (ενιαίο σε όλη την εφαρμογή)
-// ═══════════════════════════════════════════════════════════════
 const vstyles = StyleSheet.create({
   // Header φόρμας
   formHeader: { backgroundColor:'#1a1a1a', borderRadius:12, padding:14, marginBottom:10, flexDirection:'row', alignItems:'center', justifyContent:'space-between' },

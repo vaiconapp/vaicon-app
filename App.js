@@ -4,6 +4,7 @@ import {
   StatusBar, TouchableOpacity, ScrollView, Modal, TextInput,
   Animated, PanResponder, Dimensions, Alert, BackHandler
 } from 'react-native';
+import SpecialScreen from './SpecialScreen';
 import CustomScreen from './CustomScreen';
 import SasiScreen from './SasiScreen';
 import CaseScreen from './CaseScreen';
@@ -122,9 +123,9 @@ if (Platform.OS === 'android' && UIManager.setLayoutAnimationEnabledExperimental
   UIManager.setLayoutAnimationEnabledExperimental(true);
 }
 
-const TABS = ['custom', 'sasi', 'cases', 'stats'];
-const TAB_LABELS = { custom: 'ΠΑΡΑΓΓΕΛΙΕΣ', sasi: 'ΣΑΣΙ ΣΤΟΚ', cases: 'ΚΑΣΕΣ ΣΤΟΚ', stats: 'ΣΤΑΤΙΣΤΙΚΑ' };
-const NAV_TABS = ['custom', 'sasi', 'cases']; // ΣΤΑΤΙΣΤΙΚΑ → μενού
+const TABS = ['special', 'custom', 'sasi', 'cases', 'stats'];
+const TAB_LABELS = { special: 'ΕΙΔΙΚΕΣ', custom: 'ΤΥΠΟΠΟΙΗΜΕΝΕΣ', sasi: 'ΣΑΣΙ ΣΤΟΚ', cases: 'ΚΑΣΕΣ ΣΤΟΚ', stats: 'ΣΤΑΤΙΣΤΙΚΑ' };
+const NAV_TABS = ['special', 'custom', 'sasi', 'cases']; // ΣΤΑΤΙΣΤΙΚΑ → μενού
 
 export default function App() {
   const [isLoggedIn, setIsLoggedIn] = useState(isRemembered());
@@ -138,6 +139,8 @@ export default function App() {
   const [pendingCustomer, setPendingCustomer] = useState(null); // όνομα πελάτη από CustomScreen
   const [pendingCustomerCallback, setPendingCustomerCallback] = useState(null);
 
+  const [specialOrders, setSpecialOrders] = useState([]);
+  const [soldSpecialOrders, setSoldSpecialOrders] = useState([]);
   const [customOrders, setCustomOrders] = useState([]);
   const [soldOrders, setSoldOrders] = useState([]);
   const [sasiOrders, setSasiOrders] = useState([]);
@@ -168,13 +171,21 @@ export default function App() {
 
   const fetchData = async () => {
     try {
-      const res1 = await fetch(`${FIREBASE_URL}/orders.json`);
-      const data1 = await res1.json();
-      if (data1) {
-        const loaded = Object.keys(data1).map(key => ({ id: key, ...data1[key] }));
-        setCustomOrders(loaded.filter(o => o.status !== 'SOLD'));
-        setSoldOrders(loaded.filter(o => o.status === 'SOLD'));
+      const resS = await fetch(`${FIREBASE_URL}/special_orders.json`);
+      const dataS = await resS.json();
+      if (dataS) {
+        const loadedS = Object.keys(dataS).map(key => ({ id: key, ...dataS[key] }));
+        setSpecialOrders(loadedS.filter(o => o.status !== 'SOLD'));
+        setSoldSpecialOrders(loadedS.filter(o => o.status === 'SOLD'));
       }
+      const resStd = await fetch(`${FIREBASE_URL}/std_orders.json`);
+      const dataStd = await resStd.json();
+      if (dataStd) {
+        const loadedStd = Object.keys(dataStd).map(key => ({ id: key, ...dataStd[key] }));
+        setCustomOrders(loadedStd.filter(o => o.status !== 'SOLD'));
+        setSoldOrders(loadedStd.filter(o => o.status === 'SOLD'));
+      }
+      // old /orders/ path removed - using std_orders and special_orders instead
       const res2 = await fetch(`${FIREBASE_URL}/sasi_orders.json`);
       const data2 = await res2.json();
       if (data2) {
@@ -263,7 +274,8 @@ export default function App() {
 
         {/* SCREENS με swipe */}
         <View style={{ flex: 1 }} {...panResponder.panHandlers}>
-          {view === 'custom' && <CustomScreen customOrders={customOrders} setCustomOrders={setCustomOrders} soldOrders={soldOrders} setSoldOrders={setSoldOrders} customers={customers} onRequestAddCustomer={(name, cb)=>{ setPendingCustomer(name); setPendingCustomerCallback(()=>cb); setShowCustomers(true); }} sasiOrders={sasiOrders} setSasiOrders={setSasiOrders} caseOrders={caseOrders} setCaseOrders={setCaseOrders} coatings={coatings} dipliSasiStock={dipliSasiStock} setDipliSasiStock={setDipliSasiStock} locks={locks} />}
+          {view === 'special' && <SpecialScreen specialOrders={specialOrders} setSpecialOrders={setSpecialOrders} soldSpecialOrders={soldSpecialOrders} setSoldSpecialOrders={setSoldSpecialOrders} customers={customers} onRequestAddCustomer={(name, cb)=>{ setPendingCustomer(name); setPendingCustomerCallback(()=>cb); setShowCustomers(true); }} coatings={coatings} locks={locks} />}
+          {view === 'custom' && <CustomScreen customOrders={customOrders} setCustomOrders={setCustomOrders} soldOrders={soldOrders} setSoldOrders={setSoldOrders} customers={customers} onRequestAddCustomer={(name, cb)=>{ setPendingCustomer(name); setPendingCustomerCallback(()=>cb); setShowCustomers(true); }} sasiOrders={sasiOrders} setSasiOrders={setSasiOrders} caseOrders={caseOrders} setCaseOrders={setCaseOrders} coatings={coatings} dipliSasiStock={dipliSasiStock} setDipliSasiStock={setDipliSasiStock} locks={locks} specialOrders={specialOrders} />}
           {view === 'sasi'   && <SasiScreen sasiOrders={sasiOrders} setSasiOrders={setSasiOrders} soldSasiOrders={soldSasiOrders} setSoldSasiOrders={setSoldSasiOrders} />}
           {view === 'cases'  && <CaseScreen caseOrders={caseOrders} setCaseOrders={setCaseOrders} soldCaseOrders={soldCaseOrders} setSoldCaseOrders={setSoldCaseOrders} />}
           {view === 'stats'  && <StatsScreen customOrders={customOrders} soldOrders={soldOrders} sasiOrders={sasiOrders} soldSasiOrders={soldSasiOrders} caseOrders={caseOrders} soldCaseOrders={soldCaseOrders} />}
