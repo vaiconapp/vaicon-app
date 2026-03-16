@@ -204,18 +204,27 @@ export default function CaseScreen({ caseOrders=[], setCaseOrders, soldCaseOrder
           <Text style={styles.cardModel}>{order.model}{order.isAuto ? ' ⚡' : ''}</Text>
           <Text style={styles.cardDetails}>{order.size} | {order.side}</Text>
           <Text style={styles.cardSub}>Τεμ: <Text style={{ fontWeight:'bold', color:'#007AFF' }}>{order.qty}</Text>{order.remainingNote ? <Text style={{ color:'#ff6600' }}> ({order.remainingNote})</Text> : null}</Text>
-          {order.autoNote ? (()=>{
-            const totalQtyNum = parseInt(order.qty)||1;
-            const reserved = order.autoNote.split(',').reduce((sum, entry) => {
-              const match = entry.trim().match(/^(.+)\s+\((\d+)τεμ\)$/);
-              return sum + (match ? parseInt(match[2]) : 0);
-            }, 0);
-            const free = totalQtyNum - reserved;
-            return (<>
-              <Text style={{fontSize:11, color:'#E65100', fontWeight:'bold', marginTop:2}}>📌 {order.autoNote}</Text>
-              <Text style={{fontSize:11, color:'#555', marginTop:1}}>Δεσμευμένα: <Text style={{fontWeight:'bold', color:'#E65100'}}>{reserved}</Text> | Υπόλοιπο αποθήκης: <Text style={{fontWeight:'bold', fontSize:16, color:'#00796B'}}>{free}</Text></Text>
-            </>);
-          })() : null}
+          {order.autoNote ? (
+            <View style={{marginTop:4}}>
+              <Text style={{fontSize:11, color:'#E65100', fontWeight:'bold', marginBottom:2}}>📌 Χρειάζονται:</Text>
+              {order.autoNote.split(',').map((entry,i)=>{
+                const trimmed = entry.trim();
+                if(!trimmed) return null;
+                return <Text key={i} style={{fontSize:12, color:'#bf360c', fontWeight:'bold'}}>{trimmed}</Text>;
+              })}
+            </View>
+          ) : null}
+          {order.reservations && order.reservations.length > 0 ? (
+            <View style={{backgroundColor:'#fff3e0', borderRadius:5, paddingHorizontal:8, paddingVertical:4, marginTop:4, borderLeftWidth:3, borderLeftColor:'#E65100'}}>
+              <Text style={{fontSize:11, color:'#E65100', fontWeight:'bold', marginBottom:2}}>🔒 ΔΕΣΜΕΥΜΕΝΑ</Text>
+              {order.reservations.map((r,i)=>(
+                <Text key={i} style={{fontSize:12, color:'#bf360c', fontWeight:'bold'}}>#{r.orderNo} {r.customer} ({r.qty}τεμ)</Text>
+              ))}
+              <Text style={{fontSize:12, color:'#00796B', fontWeight:'bold', marginTop:3}}>
+                Διαθέσιμο: {Math.max(0,(parseInt(order.qty)||1) - order.reservations.reduce((s,r)=>s+(parseInt(r.qty)||1),0))}
+              </Text>
+            </View>
+          ) : null}
           {order.notes ? <Text style={styles.cardNotes}>Σημ: {order.notes}</Text> : null}
           <View style={styles.datesRow}>
             {fmtDate(order.createdAt) && <Text style={styles.dateChip}>📅 {fmtDate(order.createdAt)}</Text>}

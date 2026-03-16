@@ -169,7 +169,8 @@ export default function CustomScreen({ customOrders, setCustomOrders, soldOrders
       if(o.status==='STD_PENDING' && isMoniNoLock && (hasMontage || hasStavera)){
         // Έλεγχος αποθήκης κάσας READY (FIFO)
         const key=`${o.h}_${o.w}_${o.side}`;
-        const caseStock=caseReady.filter(s=>String(s.selectedHeight)===String(o.h)&&String(s.selectedWidth)===String(o.w)&&s.side===o.side).reduce((sum,s)=>sum+(parseInt(s.qty)||1),0);
+        const caseModelUE=(o.caseType||'').includes('ΑΝΟΙΧΤΟΥ')?'ΚΑΣΑ ΑΝΟΙΧΤΗ':'ΚΑΣΑ ΚΛΕΙΣΤΗ';
+        const caseStock=caseReady.filter(s=>s.model===caseModelUE&&String(s.selectedHeight)===String(o.h)&&String(s.selectedWidth)===String(o.w)&&s.side===o.side).reduce((sum,s)=>sum+(parseInt(s.qty)||1),0);
         const hasCase=(caseUsed[key]||0)<caseStock;
         caseUsed[key]=(caseUsed[key]||0)+1;
         if(!hasCase) return o;
@@ -209,7 +210,8 @@ export default function CustomScreen({ customOrders, setCustomOrders, soldOrders
       const staveraPending = hasStavera && !o.staveraDone;
       // Έλεγχος κάσας (FIFO) — μόνο μη δεσμευμένες
       const key2=`${o.h}_${o.w}_${o.side}`;
-      const caseStock2=caseReady.filter(s=>String(s.selectedHeight)===String(o.h)&&String(s.selectedWidth)===String(o.w)&&s.side===o.side&&!s.reservedBy).reduce((sum,s)=>sum+(parseInt(s.qty)||1),0);
+      const caseModelUE2=(o.caseType||'').includes('ΑΝΟΙΧΤΟΥ')?'ΚΑΣΑ ΑΝΟΙΧΤΗ':'ΚΑΣΑ ΚΛΕΙΣΤΗ';
+      const caseStock2=caseReady.filter(s=>s.model===caseModelUE2&&String(s.selectedHeight)===String(o.h)&&String(s.selectedWidth)===String(o.w)&&s.side===o.side).reduce((sum,s)=>sum+(parseInt(s.qty)||1),0);
       const hasCase2=(caseUsed[key2]||0)<caseStock2;
       caseUsed[key2]=(caseUsed[key2]||0)+1;
       if(!hasCase2) return o;
@@ -262,6 +264,44 @@ export default function CustomScreen({ customOrders, setCustomOrders, soldOrders
     setCustomOrders([newOrder,...customOrders]);
     await syncToCloud(newOrder);
     await logActivity('ΤΥΠΟΠΟΙΗΜΕΝΗ', 'Νέα παραγγελία', { orderNo: newOrder.orderNo, customer: newOrder.customer, size: `${newOrder.h}x${newOrder.w}`, qty: newOrder.qty });
+
+    // ── Δέσμευση στοκ αμέσως (ΤΥΠΟΠΟΙΗΜΕΝΗ STD_PENDING) ──
+    if (newOrder.status === 'STD_PENDING') {
+      const orderQtyR = parseInt(newOrder.qty)||1;
+      const hR=newOrder.h, wR=newOrder.w, sideR=newOrder.side;
+      const isMoniR = (newOrder.sasiType==='ΜΟΝΗ ΘΩΡΑΚΙΣΗ'||!newOrder.sasiType) && !newOrder.lock;
+      // ΣΑΣΙ (μόνο ΜΟΝΗ χωρίς κλειδαριά)
+      if (isMoniR) {
+        const sasiMatch = sasiOrders.find(s=>
+          s.status==='READY' &&
+          String(s.selectedHeight)===String(hR) &&
+          String(s.selectedWidth)===String(wR) &&
+          s.side===sideR &&
+          (parseInt(s.qty)||1) - (s.reservations||[]).reduce((sum,r)=>sum+(parseInt(r.qty)||1),0) >= orderQtyR
+        );
+        if (sasiMatch) {
+          const updSasi = {...sasiMatch, reservations:[...(sasiMatch.reservations||[]), {orderNo:newOrder.orderNo, customer:newOrder.customer||'', qty:orderQtyR}]};
+          setSasiOrders(prev=>prev.map(s=>s.id===sasiMatch.id?updSasi:s));
+          await fetch(`${FIREBASE_URL}/sasi_orders/${sasiMatch.id}.json`,{method:'PUT',body:JSON.stringify(updSasi)});
+        }
+      }
+      // ΚΑΣΑ (ΜΟΝΗ + ΔΙΠΛΗ)
+      const caseModelR = (newOrder.caseType||'').includes('ΑΝΟΙΧΤΟΥ')?'ΚΑΣΑ ΑΝΟΙΧΤΗ':'ΚΑΣΑ ΚΛΕΙΣΤΗ';
+      const caseMatch = caseOrders.find(s=>
+        s.model===caseModelR &&
+        s.status==='READY' &&
+        String(s.selectedHeight)===String(hR) &&
+        String(s.selectedWidth)===String(wR) &&
+        s.side===sideR &&
+        (parseInt(s.qty)||1) - (s.reservations||[]).reduce((sum,r)=>sum+(parseInt(r.qty)||1),0) >= orderQtyR
+      );
+      if (caseMatch) {
+        const updCase = {...caseMatch, reservations:[...(caseMatch.reservations||[]), {orderNo:newOrder.orderNo, customer:newOrder.customer||'', qty:orderQtyR}]};
+        setCaseOrders(prev=>prev.map(s=>s.id===caseMatch.id?updCase:s));
+        await fetch(`${FIREBASE_URL}/case_orders/${caseMatch.id}.json`,{method:'PUT',body:JSON.stringify(updCase)});
+      }
+    }
+
     resetForm();
 
     // Αυτόματη πρόταση παραγωγής για ΤΥΠΟΠΟΙΗΜΕΝΗ — υπολογισμός από μηδέν
@@ -304,13 +344,15 @@ export default function CustomScreen({ customOrders, setCustomOrders, soldOrders
         const totalNeededMoni = moniOrders.reduce((s,o)=>s+(parseInt(o.qty)||1),0);
         const shortfall = totalNeededMoni - sasiReady;
 
-        // Χτίζω customerMap από μηδέν βάσει ενεργών παραγγελιών
+        // Χτίζω customerMap μόνο από παραγγελίες που ΔΕΝ καλύπτονται από στοκ
         const sasiCustomerMap = {};
-        moniOrders.forEach(o=>{
-          const c = o.customer||`#${o.orderNo}`;
-          sasiCustomerMap[c] = (sasiCustomerMap[c]||0) + (parseInt(o.qty)||1);
+        const sasiNoteEntries = [];
+        moniOrders.filter(o=>
+          !sasiOrders.some(s=>s.status==='READY'&&(s.reservations||[]).some(r=>r.orderNo===o.orderNo))
+        ).forEach(o=>{
+          sasiNoteEntries.push(`#${o.orderNo} ${o.customer||''} (${parseInt(o.qty)||1}τεμ)`);
         });
-        const sasiNote = Object.entries(sasiCustomerMap).map(([n,q])=>`${n} (${q}τεμ)`).join(', ');
+        const sasiNote = sasiNoteEntries.join(',');
 
         const sasiProd = sasiOrders.filter(o=>o.status!=='SOLD'&&o.status!=='READY'&&String(o.selectedHeight)===String(h)&&String(o.selectedWidth)===String(w)&&o.side===side&&o.isAuto);
         if (shortfall > 0) {
@@ -341,13 +383,14 @@ export default function CustomScreen({ customOrders, setCustomOrders, soldOrders
       const caseModel = (newOrder.caseType||'').includes('ΑΝΟΙΧΤΟΥ') ? 'ΚΑΣΑ ΑΝΟΙΧΤΗ' : 'ΚΑΣΑ ΚΛΕΙΣΤΗ';
       const sameCase = o => o.model===caseModel && String(o.selectedHeight)===String(h) && String(o.selectedWidth)===String(w) && o.side===side;
 
-      // Χτίζω customerMap κάσας από μηδέν
-      const caseCustomerMap = {};
-      allActive.filter(o=>(o.caseType||'').includes('ΑΝΟΙΧΤΟΥ')===caseModel.includes('ΑΝΟΙΧΤΗ')).forEach(o=>{
-        const c = o.customer||`#${o.orderNo}`;
-        caseCustomerMap[c] = (caseCustomerMap[c]||0) + (parseInt(o.qty)||1);
+      // Χτίζω customerMap κάσας μόνο από παραγγελίες που ΔΕΝ καλύπτονται από στοκ
+      const caseNoteEntries = [];
+      allActive.filter(o=>(o.caseType||'').includes('ΑΝΟΙΧΤΟΥ')===caseModel.includes('ΑΝΟΙΧΤΗ')).filter(o=>
+        !caseOrders.some(s=>s.status==='READY'&&(s.reservations||[]).some(r=>r.orderNo===o.orderNo))
+      ).forEach(o=>{
+        caseNoteEntries.push(`#${o.orderNo} ${o.customer||''} (${parseInt(o.qty)||1}τεμ)`);
       });
-      const caseNote = Object.entries(caseCustomerMap).map(([n,q])=>`${n} (${q}τεμ)`).join(', ');
+      const caseNote = caseNoteEntries.join(',');
       const totalNeededCase = allActive.filter(o=>(o.caseType||'').includes('ΑΝΟΙΧΤΟΥ')===caseModel.includes('ΑΝΟΙΧΤΗ')).reduce((s,o)=>s+(parseInt(o.qty)||1),0);
 
       // Shortfall = πόσες κάσες χρειάζονται μείον όσες είναι ήδη READY στην αποθήκη
@@ -394,32 +437,19 @@ export default function CustomScreen({ customOrders, setCustomOrders, soldOrders
     setCustomOrders(customOrders.filter(o=>o.id!==order.id));
     deleteFromCloud(order.id);
 
-    // Αφαιρώ παλιά δέσμευση αν είναι ΤΥΠΟΠΟΙΗΜΕΝΗ
+    // Αφαιρώ δέσμευση από reservations[] αν είναι ΤΥΠΟΠΟΙΗΜΕΝΗ
     if (order.orderType==='ΤΥΠΟΠΟΙΗΜΕΝΗ') {
-      const customer = order.customer || `#${order.orderNo}`;
-      const orderQty = parseInt(order.qty)||1;
       const isMoni = order.sasiType==='ΜΟΝΗ ΘΩΡΑΚΙΣΗ' || !order.sasiType;
-      const removeRes = async (stockOrders, setStockOrders, firebasePath) => {
-        const sameSize = s => String(s.selectedHeight)===String(order.h) && String(s.selectedWidth)===String(order.w) && s.side===order.side;
-        let target = stockOrders.find(s=>sameSize(s)&&s.autoNote&&s.autoNote.includes(customer));
-        if (!target) target = stockOrders.find(s=>sameSize(s)&&s.status!=='SOLD');
+      const removeReservation = async (stockOrders, setStockOrders, firebasePath) => {
+        const target = stockOrders.find(s=>(s.reservations||[]).some(r=>r.orderNo===order.orderNo));
         if (!target) return;
-        const customerMap = {};
-        if (target.autoNote) {
-          target.autoNote.split(',').forEach(entry => {
-            const match = entry.trim().match(/^(.+)\s+\((\d+)τεμ\)$/);
-            if (match) customerMap[match[1].trim()] = (customerMap[match[1].trim()]||0) + parseInt(match[2]);
-          });
-        }
-        if (customerMap[customer]) { customerMap[customer] -= orderQty; if (customerMap[customer]<=0) delete customerMap[customer]; }
-        const newNote = Object.entries(customerMap).map(([n,q])=>`${n} (${q}τεμ)`).join(', ');
-        const hasRes = newNote.trim().length > 0;
-        const upd = {...target, autoNote: newNote, isAuto: hasRes};
+        const newReservations = (target.reservations||[]).filter(r=>r.orderNo!==order.orderNo);
+        const upd = {...target, reservations: newReservations};
         setStockOrders(prev=>prev.map(s=>s.id===target.id?upd:s));
         await fetch(`${FIREBASE_URL}/${firebasePath}/${upd.id}.json`,{method:'PUT',body:JSON.stringify(upd)});
       };
-      if (isMoni && setSasiOrders) await removeRes(sasiOrders, setSasiOrders, 'sasi_orders');
-      if (setCaseOrders) await removeRes(caseOrders, setCaseOrders, 'case_orders');
+      if (isMoni && setSasiOrders) await removeReservation(sasiOrders, setSasiOrders, 'sasi_orders');
+      if (setCaseOrders) await removeReservation(caseOrders, setCaseOrders, 'case_orders');
     }
   };
 
@@ -2315,7 +2345,8 @@ export default function CustomScreen({ customOrders, setCustomOrders, soldOrders
                               onPress={async()=>{
                                 if(!canMount) return;
                                 const sasiItem = sasiOrders.find(s=>s.status==='READY'&&String(s.selectedHeight)===String(o.h)&&String(s.selectedWidth)===String(o.w)&&s.side===o.side);
-                                const caseItem = caseOrders.find(s=>s.status==='READY'&&String(s.selectedHeight)===String(o.h)&&String(s.selectedWidth)===String(o.w)&&s.side===o.side);
+                                const caseModelBtn=(o.caseType||'').includes('ΑΝΟΙΧΤΟΥ')?'ΚΑΣΑ ΑΝΟΙΧΤΗ':'ΚΑΣΑ ΚΛΕΙΣΤΗ';
+                const caseItem = caseOrders.find(s=>s.model===caseModelBtn&&s.status==='READY'&&String(s.selectedHeight)===String(o.h)&&String(s.selectedWidth)===String(o.w)&&s.side===o.side);
                                 const doReady = async()=>{
                                   const label = `${o.customer||""}${o.customer?" ":""} #${o.orderNo}`;
                                   const updOrder = {...o, status:"STD_READY", readyAt:Date.now(), reservedSasiId:sasiItem?.id||null, reservedCaseId:caseItem?.id||null};
@@ -2446,9 +2477,8 @@ export default function CustomScreen({ customOrders, setCustomOrders, soldOrders
                       )}
                       <TouchableOpacity
                         style={{backgroundColor:'#555', paddingHorizontal:8, paddingVertical:5, borderRadius:5, alignItems:'center'}}
-                        onPress={()=>Alert.alert("📦 Αρχείο Πωλήσεων",`Η παραγγελία #${o.orderNo} πάει στο αρχείο πωλήσεων;`,[
-                          {text:"ΑΚΥΡΟ", style:"cancel"},
-                          {text:"ΝΑΙ", onPress:async()=>{
+                        onPress={async()=>{
+                          const doSell = async()=>{
                             const now = Date.now();
                             const updated = customOrders.map(x=>x.id===o.id?{...x,status:'STD_SOLD',soldAt:now}:x);
                             setCustomOrders(updated);
@@ -2500,11 +2530,32 @@ export default function CustomScreen({ customOrders, setCustomOrders, soldOrders
                               }
                             };
 
-                            if (isMoni && setSasiOrders) await removeFromStock(sasiOrders, setSasiOrders, 'sasi_orders', o.reservedSasiId);
-                            if (setCaseOrders) await removeFromStock(caseOrders, setCaseOrders, 'case_orders', o.reservedCaseId);
-                          }}
-                        ])}>
-                        <Text style={{color:'white', fontSize:10, fontWeight:'bold'}}>📦 ΑΡΧΕΙΟ</Text>
+                            // Αφαιρώ reservation ΚΑΙ μειώνω qty από στοκ
+                            const sellRemove = async (stockOrders, setStockOrders, firebasePath) => {
+                              const target = stockOrders.find(s=>(s.reservations||[]).some(r=>r.orderNo===o.orderNo));
+                              if (!target) return;
+                              const newReservations = (target.reservations||[]).filter(r=>r.orderNo!==o.orderNo);
+                              const currentQty = parseInt(target.qty)||1;
+                              const newQty = currentQty - orderQty;
+                              if (newQty <= 0) {
+                                setStockOrders(prev=>prev.filter(s=>s.id!==target.id));
+                                await fetch(`${FIREBASE_URL}/${firebasePath}/${target.id}.json`,{method:'DELETE'});
+                              } else {
+                                const upd = {...target, qty:String(newQty), reservations:newReservations};
+                                setStockOrders(prev=>prev.map(s=>s.id===target.id?upd:s));
+                                await fetch(`${FIREBASE_URL}/${firebasePath}/${upd.id}.json`,{method:'PUT',body:JSON.stringify(upd)});
+                              }
+                            };
+                            if (isMoni && setSasiOrders) await sellRemove(sasiOrders, setSasiOrders, 'sasi_orders');
+                            if (setCaseOrders) await sellRemove(caseOrders, setCaseOrders, 'case_orders');
+                          };
+                          if(Platform.OS==='web'){
+                            if(window.confirm(`ΠΩΛΗΣΗ\nΠαραγγελία #${o.orderNo}${o.customer?' - '+o.customer:''}\nΕπιβεβαίωση;`)) await doSell();
+                          } else {
+                            Alert.alert('📦 Πώληση',`Παραγγελία #${o.orderNo} πωλήθηκε;`,[{text:'ΑΚΥΡΟ',style:'cancel'},{text:'ΝΑΙ',onPress:doSell}]);
+                          }
+                        }}>
+                        <Text style={{color:'white', fontSize:10, fontWeight:'bold'}}>💰 ΠΩΛΗΣΗ</Text>
                       </TouchableOpacity>
 
                       {/* ΑΚΥΡΩΣΗ — για ΔΙΠΛΗ ή ΜΟΝΗ με κλειδαριά */}
@@ -2635,26 +2686,29 @@ export default function CustomScreen({ customOrders, setCustomOrders, soldOrders
               const dipliReadyOrders = customOrders.filter(o=>o.orderType==='ΤΥΠΟΠΟΙΗΜΕΝΗ'&&o.sasiType==='ΔΙΠΛΗ ΘΩΡΑΚΙΣΗ'&&o.status==='STD_READY').sort((a,b)=>(parseInt(a.orderNo)||0)-(parseInt(b.orderNo)||0));
               const dipliSoldOrders = customOrders.filter(o=>o.orderType==='ΤΥΠΟΠΟΙΗΜΕΝΗ'&&o.sasiType==='ΔΙΠΛΗ ΘΩΡΑΚΙΣΗ'&&o.status==='STD_SOLD').sort((a,b)=>(b.soldAt||0)-(a.soldAt||0));
 
-              // FIFO για ΜΟΝΗ
-              const sasiUsedM={}, caseUsedM={};
+              // ΜΟΝΗ — έλεγχος με βάση reservations[]
               const moniCards = moniOrders.map(o=>{
-                const key=`${o.h}_${o.w}_${o.side}`;
-                const sasiStock=sasiReady.filter(s=>String(s.selectedHeight)===String(o.h)&&String(s.selectedWidth)===String(o.w)&&s.side===o.side).reduce((sum,s)=>sum+(parseInt(s.qty)||1),0);
-                const caseStock=caseReady.filter(s=>String(s.selectedHeight)===String(o.h)&&String(s.selectedWidth)===String(o.w)&&s.side===o.side&&!s.reservedBy).reduce((sum,s)=>sum+(parseInt(s.qty)||1),0);
-                const hasSasi=(sasiUsedM[key]||0)<sasiStock;
-                const hasCase=(caseUsedM[key]||0)<caseStock;
-                sasiUsedM[key]=(sasiUsedM[key]||0)+1;
-                caseUsedM[key]=(caseUsedM[key]||0)+1;
+                // Αν η παραγγελία έχει ήδη δέσμευση στο σασί → hasSasi=true
+                const hasSasi = sasiReady.some(s=>
+                  String(s.selectedHeight)===String(o.h)&&String(s.selectedWidth)===String(o.w)&&s.side===o.side&&
+                  (s.reservations||[]).some(r=>r.orderNo===o.orderNo)
+                );
+                // Αν η παραγγελία έχει ήδη δέσμευση στην κάσα → hasCase=true
+                const caseModel=(o.caseType||'').includes('ΑΝΟΙΧΤΟΥ')?'ΚΑΣΑ ΑΝΟΙΧΤΗ':'ΚΑΣΑ ΚΛΕΙΣΤΗ';
+                const hasCase = caseReady.some(s=>
+                  s.model===caseModel&&String(s.selectedHeight)===String(o.h)&&String(s.selectedWidth)===String(o.w)&&s.side===o.side&&
+                  (s.reservations||[]).some(r=>r.orderNo===o.orderNo)
+                );
                 return renderStdCard(o, hasSasi, hasCase, true);
               });
 
-              // FIFO για ΔΙΠΛΗ
-              const caseUsedD={};
+              // ΔΙΠΛΗ — έλεγχος με βάση reservations[]
               const dipliCards = dipliOrders.map(o=>{
-                const key=`${o.h}_${o.w}_${o.side}`;
-                const caseStock=caseReady.filter(s=>String(s.selectedHeight)===String(o.h)&&String(s.selectedWidth)===String(o.w)&&s.side===o.side&&!s.reservedBy).reduce((sum,s)=>sum+(parseInt(s.qty)||1),0);
-                const hasCase=(caseUsedD[key]||0)<caseStock;
-                caseUsedD[key]=(caseUsedD[key]||0)+1;
+                const caseModelD=(o.caseType||'').includes('ΑΝΟΙΧΤΟΥ')?'ΚΑΣΑ ΑΝΟΙΧΤΗ':'ΚΑΣΑ ΚΛΕΙΣΤΗ';
+                const hasCase = caseReady.some(s=>
+                  s.model===caseModelD&&String(s.selectedHeight)===String(o.h)&&String(s.selectedWidth)===String(o.w)&&s.side===o.side&&
+                  (s.reservations||[]).some(r=>r.orderNo===o.orderNo)
+                );
                 return renderStdCard(o, false, hasCase, false);
               });
 

@@ -11,12 +11,15 @@ const printHTML = async (html, title) => {
   if (Platform.OS === 'web') {
     const win = window.open('', '_blank');
     if (!win) { Alert.alert("Σφάλμα", "Ο browser μπλόκαρε το παράθυρο εκτύπωσης. Επιτρέψτε τα pop-ups."); return; }
+    // Εξάγω το CSS από το html
+    const styleMatch = html.match(/<style[^>]*>([\s\S]*?)<\/style>/i);
+    const innerCSS = styleMatch ? styleMatch[1] : '';
+    const inner = html.replace(/<html[\s\S]*?<body[^>]*>/i,'').replace(/<\/body[\s\S]*?<\/html>/i,'');
     const previewHTML = `
       <!DOCTYPE html>
       <html>
       <head>
         <meta charset="utf-8">
-        <meta name="viewport" content="width=device-width, initial-scale=1.0">
         <title>${title || 'VAICON'}</title>
         <style>
           * { box-sizing: border-box; margin: 0; padding: 0; }
@@ -25,26 +28,14 @@ const printHTML = async (html, title) => {
             position: fixed; top: 0; left: 0; right: 0;
             background: #1a1a1a; padding: 10px 16px;
             display: flex; align-items: center; justify-content: space-between;
-            z-index: 999; box-shadow: 0 2px 8px rgba(0,0,0,0.3);
+            z-index: 999;
           }
           #toolbar h2 { color: white; font-size: 14px; }
-          #printBtn {
-            background: #007AFF; color: white; border: none;
-            padding: 10px 24px; border-radius: 8px; font-size: 15px;
-            font-weight: bold; cursor: pointer; letter-spacing: 1px;
-          }
-          #printBtn:hover { background: #0056b3; }
-          #closeBtn {
-            background: #555; color: white; border: none;
-            padding: 10px 16px; border-radius: 8px; font-size: 14px;
-            cursor: pointer; margin-left: 8px;
-          }
-          #content { margin-top: 56px; padding: 16px; background: white; min-height: calc(100vh - 56px); }
-          @media print {
-            #toolbar { display: none; }
-            #content { margin-top: 0; padding: 0; }
-            @page { size: A4 landscape; margin: 5mm; }
-          }
+          #printBtn { background: #007AFF; color: white; border: none; padding: 10px 24px; border-radius: 8px; font-size: 15px; font-weight: bold; cursor: pointer; }
+          #closeBtn { background: #555; color: white; border: none; padding: 10px 16px; border-radius: 8px; font-size: 14px; cursor: pointer; margin-left: 8px; }
+          #content { margin-top: 56px; padding: 16px; background: white; }
+          @media print { #toolbar { display: none; } #content { margin-top: 0; padding: 0; } }
+          ${innerCSS}
         </style>
       </head>
       <body>
@@ -55,9 +46,7 @@ const printHTML = async (html, title) => {
             <button id="closeBtn" onclick="window.close()">✕ ΚΛΕΙΣΙΜΟ</button>
           </div>
         </div>
-        <div id="content">
-          ${html.replace(/<html>.*?<body>/s,'').replace(/<\/body>.*?<\/html>/s,'')}
-        </div>
+        <div id="content">${inner}</div>
       </body>
       </html>
     `;
@@ -334,14 +323,29 @@ ${doneNames}
     const isLaser = copies.some(c => c.title && c.title.includes('LASER') || c.title.includes('ΚΑΣΣΕΣ') || c.title.includes('ΣΑΣΙ') || c.title.includes('ΠΡΟΦΙΛ') || c.title.includes('ΠΡΟΓΡΑΜΜΑ ΕΙΔΙΚΩΝ'));
     const tableCSS = `
       body{font-family:Arial,sans-serif;margin:5mm;color:#000;background:#fff;}
-      h1{font-size:22px;margin-bottom:2px;font-weight:bold;}
-      h2{font-size:13px;margin-top:0;margin-bottom:8px;}
-      table{width:100%;border-collapse:collapse;font-size:10px;}
-      th{padding:5px 4px;text-align:left;border-top:2px solid #000;border-bottom:1px solid #000;font-weight:bold;white-space:nowrap;}
-      td{padding:5px 4px;border-bottom:1px solid #000;vertical-align:top;}
-      tr:last-child td{border-bottom:2px solid #000;}
-      .page-break{page-break-after:always;}
-      @media print{@page{size:A4 landscape;margin:5mm;}*{color:#000!important;background:#fff!important;}}
+      h1{font-size:20px;margin-bottom:2px;font-weight:bold;}
+      h2{font-size:12px;margin-top:0;margin-bottom:6px;}
+      table{width:100%;border-collapse:collapse;font-size:11px;table-layout:auto;}
+      th{padding:4px 6px;text-align:left;border:1px solid #000;font-weight:bold;white-space:nowrap;font-size:9px;background:#ddd;}
+      td{padding:4px 6px;border:1px solid #000;vertical-align:middle;white-space:nowrap;}
+      td.notes{white-space:normal;min-width:120px;width:auto;}
+      .col-no{width:48px;}
+      .col-tem{width:36px;text-align:center;}
+      .col-dim{width:80px;}
+      .col-fora{width:28px;}
+      .col-thor{width:70px;}
+      .col-ment{width:28px;}
+      tr:nth-child(even) td{background:#f5f5f5;}
+      .page-break{page-break-after:always;break-after:page;}
+      @media print{
+        @page{size:A4 landscape;margin:5mm;}
+        table{border-collapse:collapse!important;table-layout:auto!important;}
+        th,td{border:1px solid #000!important;padding:3px 5px!important;-webkit-print-color-adjust:exact;print-color-adjust:exact;white-space:nowrap!important;}
+        td.notes{white-space:normal!important;}
+        th{background:#ddd!important;font-size:8px!important;}
+        tr:nth-child(even) td{background:#f5f5f5!important;}
+        .page-break{page-break-after:always!important;break-after:page!important;}
+      }
     `;
 
     const buildCasesTable = (orders) => {
@@ -459,12 +463,31 @@ ${doneNames}
     const buildLaserTable = (orders, copyTitle) => {
       const isKasses  = copyTitle && copyTitle.includes('ΚΑΣΣΕΣ');
       const isSasi    = copyTitle && copyTitle.includes('ΣΑΣΙ');
-      const isProfil  = false; // ΠΡΟΦΙΛ ίδιο με ΠΡΟΓΡΑΜΜΑ
+      const isProfil  = copyTitle && copyTitle.includes('ΠΡΟΦΙΛ');
 
-      // ΠΡΟΦΙΛ: μόνο διαστάσεις
+      // ΠΡΟΦΙΛ: χωρίς τζάμι, τ.κάσας, υλ.κάσας
       if (isProfil) {
-        const rows = orders.map(o=>`<tr><td style="font-size:18px;font-weight:900;padding:7px 6px">${dimCell(o)}</td></tr>`).join('');
-        return `<table><thead><tr><th>Διάσταση</th></tr></thead><tbody>${rows}</tbody></table>`;
+        const rows = orders.map(o => {
+          const fora = o.side==='ΑΡΙΣΤΕΡΗ'?'ΑΡ':'ΔΕ';
+          const mentesedesVal = (!o.hinges||o.hinges==='2')?'—':o.hinges;
+          const kleidaria = o.lock||'—';
+          const thorakisi = (o.armor||'ΜΟΝΗ')+' ΘΩΡ.';
+          return `<tr>
+            <td class="col-no" style="font-weight:bold">${o.orderNo||'—'}</td>
+            <td class="col-tem">${qtyDisplay(o)}</td>
+            <td class="col-dim" style="font-weight:900">${dimCell(o)}</td>
+            <td class="col-fora" style="font-weight:bold">${fora}</td>
+            <td class="col-thor" style="font-size:10px">${thorakisi}</td>
+            <td class="col-ment" style="font-size:10px">${mentesedesVal}</td>
+            <td style="font-size:10px">${kleidaria}</td>
+            <td class="notes" style="font-size:10px">${o.notes||''}</td>
+          </tr>`;
+        }).join('');
+        const total = totalQty(orders);
+        const totalRow = `<tr style="border-top:2px solid #000"><td style="font-weight:bold">ΣΥΝΟΛΟ</td><td style="text-align:center;font-weight:900;font-size:14px">${total}</td><td colspan="6"></td></tr>`;
+        return `<table><thead><tr>
+          <th>Νο</th><th>Τεμ.</th><th>Διάσταση</th><th>Φορά</th><th>Θωράκιση</th><th>Μεντ.</th><th>Κλειδ.</th><th>Παρατηρήσεις</th>
+        </tr></thead><tbody>${rows}${totalRow}</tbody></table>`;
       }
 
       // ΚΑΣΣΕΣ: χοντρή γραμμή όταν αλλάζει caseMaterial
@@ -476,20 +499,22 @@ ${doneNames}
           const borderTop = (prevMat!==null && mat!==prevMat) ? 'border-top:3px solid #000;' : '';
           prevMat = mat;
           return `<tr style="${borderTop}">
-            <td style="font-weight:bold;font-size:13px">${o.orderNo||'—'}</td>
-            <td style="text-align:center">${qtyDisplay(o)}</td>
-            <td>${dimCell(o)}</td>
-            <td style="font-weight:bold">${fora}</td>
-            <td>${(o.armor||'ΜΟΝΗ')+' ΘΩΡ.'}</td>
-            <td>${o.caseType||'—'}</td>
-            <td style="font-weight:bold">${mat}</td>
-            <td style="min-width:180px">${o.notes||''}</td>
+            <td class="col-no" style="font-weight:bold">${o.orderNo||'—'}</td>
+            <td class="col-tem">${qtyDisplay(o)}</td>
+            <td class="col-dim" style="font-weight:900">${dimCell(o)}</td>
+            <td class="col-fora" style="font-weight:bold">${fora}</td>
+            <td class="col-thor" style="font-size:10px">${(o.armor||'ΜΟΝΗ')+' ΘΩΡ.'}</td>
+            <td class="col-ment" style="font-size:10px">${(!o.hinges||o.hinges==='2')?'—':o.hinges}</td>
+            <td style="font-size:10px">${o.lock||'—'}</td>
+            <td style="font-size:10px">${o.caseType||'—'}</td>
+            <td style="font-size:10px;font-weight:bold">${mat}</td>
+            <td class="notes" style="font-size:10px">${o.notes||''}</td>
           </tr>`;
         }).join('');
         const total = totalQty(orders);
         const totalRow = `<tr style="border-top:2px solid #000;background:#f5f5f5"><td colspan="1" style="font-weight:bold">ΣΥΝΟΛΟ</td><td style="text-align:center;font-weight:900;font-size:14px">${total}</td><td colspan="6"></td></tr>`;
         return `<table><thead><tr>
-          <th>Νο</th><th>Τεμ.</th><th>Διάσταση</th><th>Φορά</th><th>Θωράκιση</th><th>Τ.Κάσας</th><th>Υλ.Κάσας</th><th>Παρατηρήσεις</th>
+          <th>Νο</th><th>Τεμ.</th><th>Διάσταση</th><th>Φορά</th><th>Θωράκιση</th><th>Μεντ.</th><th>Κλειδ.</th><th>Τ.Κάσας</th><th>Υλ.Κάσας</th><th>Παρατηρήσεις</th>
         </tr></thead><tbody>${rows}${totalRow}</tbody></table>`;
       }
 
@@ -502,18 +527,21 @@ ${doneNames}
           const borderTop = (prevArmor!==null && armor!==prevArmor) ? 'border-top:3px solid #000;' : '';
           prevArmor = armor;
           return `<tr style="${borderTop}">
-            <td style="font-weight:bold;font-size:13px">${o.orderNo||'—'}</td>
-            <td style="text-align:center">${qtyDisplay(o)}</td>
-            <td>${dimCell(o)}</td>
-            <td style="font-weight:bold">${fora}</td>
-            <td style="font-weight:bold">${armor} ΘΩΡ.</td>
-            <td style="min-width:180px">${o.notes||''}</td>
+            <td class="col-no" style="font-weight:bold">${o.orderNo||'—'}</td>
+            <td class="col-tem">${qtyDisplay(o)}</td>
+            <td class="col-dim" style="font-weight:900">${dimCell(o)}</td>
+            <td class="col-fora" style="font-weight:bold">${fora}</td>
+            <td class="col-thor" style="font-size:10px;font-weight:bold">${armor} ΘΩΡ.</td>
+            <td class="col-ment" style="font-size:10px">${(!o.hinges||o.hinges==='2')?'—':o.hinges}</td>
+            <td style="font-size:10px">${((o.glassDim||'')+(o.glassNotes?' '+o.glassNotes:''))||'—'}</td>
+            <td style="font-size:10px">${o.lock||'—'}</td>
+            <td class="notes" style="font-size:10px">${o.notes||''}</td>
           </tr>`;
         }).join('');
         const total = totalQty(orders);
         const totalRow = `<tr style="border-top:2px solid #000;background:#f5f5f5"><td colspan="1" style="font-weight:bold">ΣΥΝΟΛΟ</td><td style="text-align:center;font-weight:900;font-size:14px">${total}</td><td colspan="4"></td></tr>`;
         return `<table><thead><tr>
-          <th>Νο</th><th>Τεμ.</th><th>Διάσταση</th><th>Φορά</th><th>Θωράκιση</th><th>Παρατηρήσεις</th>
+          <th>Νο</th><th>Τεμ.</th><th>Διάσταση</th><th>Φορά</th><th>Θωράκιση</th><th>Μεντ.</th><th>Τζάμι</th><th>Κλειδ.</th><th>Παρατηρήσεις</th>
         </tr></thead><tbody>${rows}${totalRow}</tbody></table>`;
       }
 
@@ -525,17 +553,17 @@ ${doneNames}
         const thorakisi = (o.armor||'ΜΟΝΗ')+' ΘΩΡ.';
         const tzami = o.orderType==="ΤΥΠΟΠΟΙΗΜΕΝΗ"?"—":((o.glassDim||"")+(o.glassNotes?` ${o.glassNotes}`:""))||"—";
         return `<tr>
-          <td style="font-weight:bold;font-size:13px">${o.orderNo||'—'}</td>
-          <td style="text-align:center">${qtyDisplay(o)}</td>
-          <td>${dimCell(o)}</td>
-          <td style="font-weight:bold;font-size:13px">${fora}</td>
-          <td>${thorakisi}</td>
-          <td style="font-weight:bold;font-size:13px">${mentesedesVal}</td>
-          <td style="font-weight:bold;font-size:13px">${tzami}</td>
-          <td>${kleidaria}</td>
-          <td>${o.caseType||'—'}</td>
-          <td>${o.caseMaterial||'DKP'}</td>
-          <td style="min-width:180px">${o.notes||''}</td>
+          <td class="col-no" style="font-weight:bold">${o.orderNo||'—'}</td>
+          <td class="col-tem">${qtyDisplay(o)}</td>
+          <td class="col-dim" style="font-weight:900">${dimCell(o)}</td>
+          <td class="col-fora" style="font-weight:bold">${fora}</td>
+          <td class="col-thor" style="font-size:10px">${thorakisi}</td>
+          <td class="col-ment" style="font-size:10px">${mentesedesVal}</td>
+          <td style="font-size:10px">${tzami}</td>
+          <td style="font-size:10px">${kleidaria}</td>
+          <td style="font-size:10px">${o.caseType||'—'}</td>
+          <td style="font-size:10px;font-weight:bold">${o.caseMaterial||'DKP'}</td>
+          <td class="notes" style="font-size:10px">${o.notes||''}</td>
         </tr>`;
       }).join('');
       const total = totalQty(orders);
@@ -644,19 +672,28 @@ ${doneNames}
   // Άνοιγμα preview εκτύπωσης
   const handlePrint = (phaseKey) => {
     const selected = Object.keys(printSelected).filter(id => printSelected[id]);
-    if (selected.length===0) return Alert.alert("Προσοχή","Επίλεξε τουλάχιστον μία παραγγελία.");
+    if (selected.length===0) {
+      if(Platform.OS==='web') window.alert('Επίλεξε τουλάχιστον μία παραγγελία.');
+      else Alert.alert("Προσοχή","Επίλεξε τουλάχιστον μία παραγγελία.");
+      return;
+    }
     const orders = specialOrders.filter(o => selected.includes(o.id) && o.phases?.[phaseKey]?.active);
     // Για LASER ΚΟΠΕΣ → popup επιλογής αντιγράφων
     if (phaseKey==='laser') {
-      Alert.alert(
-        "Εκτύπωση LASER ΚΟΠΕΣ",
-        `Επιλέξατε ${orders.length} παραγγελίες.\nΠόσα αντίγραφα θέλετε;`,
-        [
-          { text:"ΑΚΥΡΟ", style:"cancel" },
-          { text:"1 ΑΝΤΙΓΡΑΦΟ", onPress:()=>setPrintPreview({ visible:true, phaseKey, orders, copies:1 }) },
-          { text:"4 ΑΝΤΙΓΡΑΦΑ", onPress:()=>setPrintPreview({ visible:true, phaseKey, orders, copies:4 }) },
-        ]
-      );
+      if(Platform.OS==='web'){
+        // Open preview modal directly - user selects copies there
+        setPrintPreview({ visible:true, phaseKey, orders, copies:1 });
+      } else {
+        Alert.alert(
+          "Εκτύπωση LASER ΚΟΠΕΣ",
+          `Επιλέξατε ${orders.length} παραγγελίες.\nΠόσα αντίγραφα θέλετε;`,
+          [
+            { text:"ΑΚΥΡΟ", style:"cancel" },
+            { text:"1 ΑΝΤΙΓΡΑΦΟ", onPress:()=>setPrintPreview({ visible:true, phaseKey, orders, copies:1 }) },
+            { text:"4 ΑΝΤΙΓΡΑΦΑ", onPress:()=>setPrintPreview({ visible:true, phaseKey, orders, copies:4 }) },
+          ]
+        );
+      }
     } else {
       setPrintPreview({ visible:true, phaseKey, orders, copies:1 });
     }
@@ -1022,13 +1059,28 @@ ${doneNames}
             ))}
           </ScrollView>
 
+          {/* ΕΠΙΛΟΓΗ ΑΝΤΙΓΡΑΦΩΝ — μόνο για LASER */}
+          {printPreview.phaseKey==='laser' && (
+            <View style={{flexDirection:'row', justifyContent:'center', gap:10, paddingHorizontal:16, paddingTop:10, paddingBottom:4}}>
+              <TouchableOpacity
+                style={{flex:1, padding:10, borderRadius:8, alignItems:'center', backgroundColor: printPreview.copies===1?'#1a1a1a':'#e0e0e0'}}
+                onPress={()=>setPrintPreview(p=>({...p,copies:1}))}>
+                <Text style={{fontWeight:'bold', color: printPreview.copies===1?'white':'#555'}}>1 ΑΝΤΙΓΡΑΦΟ</Text>
+              </TouchableOpacity>
+              <TouchableOpacity
+                style={{flex:1, padding:10, borderRadius:8, alignItems:'center', backgroundColor: printPreview.copies===4?'#1a1a1a':'#e0e0e0'}}
+                onPress={()=>setPrintPreview(p=>({...p,copies:4}))}>
+                <Text style={{fontWeight:'bold', color: printPreview.copies===4?'white':'#555'}}>4 ΑΝΤΙΓΡΑΦΑ</Text>
+              </TouchableOpacity>
+            </View>
+          )}
           {/* ΚΟΥΜΠΙΑ */}
           <View style={styles.previewBtns}>
             <TouchableOpacity style={styles.previewCancelBtn} onPress={()=>setPrintPreview({visible:false,phaseKey:null,orders:[],copies:1})}>
               <Text style={styles.previewCancelTxt}>ΑΚΥΡΟ</Text>
             </TouchableOpacity>
             <TouchableOpacity style={styles.previewPrintBtn} onPress={handleConfirmPrint}>
-              <Text style={styles.previewPrintTxt}>🖨️ ΕΚΤΥΠΩΣΗ {copies===4?'(4 PDF)':''}</Text>
+              <Text style={styles.previewPrintTxt}>🖨️ ΕΚΤΥΠΩΣΗ {copies===4?'(4 ΑΝΤΙΓΡΑΦΑ)':''}</Text>
             </TouchableOpacity>
           </View>
         </View>
@@ -2217,10 +2269,14 @@ ${doneNames}
 
           <TouchableOpacity style={[styles.saveBtn,{backgroundColor:'#007AFF'}]} onPress={()=>{
             Keyboard.dismiss();
-            Alert.alert("Επιβεβαίωση", "Αποθήκευση παραγγελίας προς παραγωγή;", [
-              {text:"ΟΧΙ", style:"cancel"},
-              {text:"ΝΑΙ", onPress:()=>{ saveOrder(); setTimeout(()=>customerRef.current?.focus(), 400); }}
-            ]);
+            if(Platform.OS==='web'){
+              if(window.confirm('Αποθήκευση παραγγελίας προς παραγωγή;')){ saveOrder(); setTimeout(()=>customerRef.current?.focus(), 400); }
+            } else {
+              Alert.alert("Επιβεβαίωση", "Αποθήκευση παραγγελίας προς παραγωγή;", [
+                {text:"ΟΧΙ", style:"cancel"},
+                {text:"ΝΑΙ", onPress:()=>{ saveOrder(); setTimeout(()=>customerRef.current?.focus(), 400); }}
+              ]);
+            }
           }}>
             <Text style={{color:'white',fontWeight:'bold',fontSize:15}}>ΑΠΟΘΗΚΕΥΣΗ ΠΡΟΣ ΠΑΡΑΓΩΓΗ</Text>
           </TouchableOpacity>
