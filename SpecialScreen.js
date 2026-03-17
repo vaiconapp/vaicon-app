@@ -86,33 +86,7 @@ const initPhases = () => {
   return p;
 };
 
-function SellModal({ visible, totalQty, onConfirm, onCancel }) {
-  const [qty, setQty] = useState('');
-  return (
-    <Modal visible={visible} transparent animationType="fade">
-      <View style={styles.modalOverlay}>
-        <View style={styles.modalBox}>
-          <Text style={styles.modalTitle}>ΜΕΡΙΚΗ ΠΩΛΗΣΗ</Text>
-          <Text style={styles.modalSub}>Πόσα τεμάχια θα πουληθούν;</Text>
-          <Text style={styles.modalTotal}>Σύνολο: {totalQty} τεμ.</Text>
-          <TextInput style={styles.modalInput} keyboardType="numeric" value={qty} onChangeText={setQty} placeholder="π.χ. 2" autoFocus />
-          <View style={{ flexDirection:'row', gap:10 }}>
-            <TouchableOpacity style={[styles.modalBtn,{backgroundColor:'#ccc'}]} onPress={()=>{setQty('');onCancel();}}>
-              <Text style={{fontWeight:'bold'}}>ΑΚΥΡΟ</Text>
-            </TouchableOpacity>
-            <TouchableOpacity style={[styles.modalBtn,{backgroundColor:'#8B0000'}]} onPress={()=>{
-              const n=parseInt(qty);
-              if(!n||n<1||n>totalQty) return Alert.alert("Σφάλμα",`Βάλτε αριθμό 1 έως ${totalQty}`);
-              setQty(''); onConfirm(n);
-            }}>
-              <Text style={{fontWeight:'bold',color:'white'}}>ΠΩΛΗΣΗ</Text>
-            </TouchableOpacity>
-          </View>
-        </View>
-      </View>
-    </Modal>
-  );
-}
+// SellModal αφαιρέθηκε — πώληση πλέον είναι πάντα ολική
 
 
 // ── ConfirmModal — επιβεβαίωση ολοκλήρωσης παραγωγής ──
@@ -191,6 +165,8 @@ export default function SpecialScreen({ specialOrders=[], setSpecialOrders, sold
   const [showCoatingsPicker, setShowCoatingsPicker] = useState(false);
   const [dupModal, setDupModal] = useState({ visible:false, base:'', suggested:'', onUse:null, onKeep:null, onCancel:null });
   const [confirmModal, setConfirmModal] = useState({ visible:false, title:'', message:'', confirmText:'', onConfirm:null });
+  const [archiveDeleteModal, setArchiveDeleteModal] = useState({ visible:false, orderId:null, pwd:'', error:false });
+  const [archiveReturnModal, setArchiveReturnModal] = useState({ visible:false, orderId:null });
   const [showDatePicker, setShowDatePicker] = useState(false);
   const [activeProdPhase, setActiveProdPhase] = useState('laser');
   const [customHardwareText, setCustomHardwareText] = useState('');
@@ -201,7 +177,7 @@ export default function SpecialScreen({ specialOrders=[], setSpecialOrders, sold
   const [showCustomerList, setShowCustomerList] = useState(false);
   const [selectedCustomer, setSelectedCustomer] = useState(null);
   const [showCustomerInfo, setShowCustomerInfo] = useState(false);
-  const [sellModal, setSellModal]  = useState({ visible:false, orderId:null, totalQty:1 });
+
   const [printSelected, setPrintSelected] = useState({});
   const [printPreview, setPrintPreview] = useState({ visible:false, phaseKey:null, orders:[], copies:1 });
 
@@ -330,11 +306,21 @@ export default function SpecialScreen({ specialOrders=[], setSpecialOrders, sold
     }
     if (newStatus==='SOLD') {
       const totalQty=parseInt(order.qty)||1;
-      if (totalQty<=1) {
-        const upd={...order,status:'SOLD',soldAt:now};
-        setSoldSpecialOrders([upd,...soldSpecialOrders]); setSpecialOrders(specialOrders.filter(o=>o.id!==id)); await syncToCloud(upd);
-        await logActivity('ΕΙΔΙΚΗ', 'Πώληση', { orderNo: order.orderNo, customer: order.customer, size: `${order.h}x${order.w}` });
-      } else { setSellModal({visible:true,orderId:id,totalQty}); }
+      setConfirmModal({
+        visible: true,
+        title: '💰 ΠΩΛΗΣΗ',
+        message: `Επιβεβαίωση πώλησης παραγγελίας #${order.orderNo}${order.customer?' — '+order.customer:''}?`,
+        confirmText: '💰 ΠΩΛΗΣΗ',
+        onConfirm: async () => {
+          const now2=Date.now();
+          const upd={...order,status:'SOLD',soldAt:now2};
+          setSoldSpecialOrders(prev=>[upd,...prev]);
+          setSpecialOrders(prev=>prev.filter(o=>o.id!==id));
+          await syncToCloud(upd);
+          await logActivity('ΕΙΔΙΚΗ', 'Πώληση', { orderNo: order.orderNo, customer: order.customer, size: `${order.h}x${order.w}` });
+        }
+      });
+      return;
     } else {
       let upd;
       setSpecialOrders(specialOrders.map(o=>{ if(o.id===id){upd={...o,status:newStatus,[`${newStatus.toLowerCase()}At`]:now};return upd;} return o; }));
@@ -345,51 +331,45 @@ export default function SpecialScreen({ specialOrders=[], setSpecialOrders, sold
     }
   };
 
-  const handleSellConfirm = async (sellQty) => {
-    const now=Date.now(); const {orderId,totalQty}=sellModal;
-    setSellModal({visible:false,orderId:null,totalQty:1});
-    const order=specialOrders.find(o=>o.id===orderId); if(!order) return;
-    if (sellQty===totalQty) {
-      const upd={...order,status:'SOLD',soldAt:now};
-      setSoldSpecialOrders([upd,...soldSpecialOrders]); setSpecialOrders(specialOrders.filter(o=>o.id!==orderId)); await syncToCloud(upd);
-      await logActivity('ΕΙΔΙΚΗ', 'Πώληση', { orderNo: order.orderNo, customer: order.customer, size: `${order.h}x${order.w}`, qty: String(sellQty) });
-    } else {
-      const soldEntry={...order,id:Date.now().toString(),qty:String(sellQty),status:'SOLD',soldAt:now,partialNote:`${sellQty} από ${totalQty}`};
-      const remaining={...order,qty:String(totalQty-sellQty),remainingNote:`Υπόλοιπο: ${totalQty-sellQty} από ${totalQty}`};
-      setSoldSpecialOrders([soldEntry,...soldSpecialOrders]);
-      setSpecialOrders(specialOrders.map(o=>o.id===orderId?remaining:o));
-      await syncToCloud(soldEntry); await syncToCloud(remaining);
-      await logActivity('ΕΙΔΙΚΗ', 'Πώληση (μερική)', { orderNo: order.orderNo, customer: order.customer, size: `${order.h}x${order.w}`, qty: `${sellQty}/${totalQty}` });
-    }
-  };
+
 
   const moveBack = async (id, cur) => {
     const order=specialOrders.find(o=>o.id===id);
     if (cur==='PROD') {
-      // Έλεγχος αν υπάρχουν ολοκληρωμένες φάσεις
       const donePhasesCount = order.phases ? Object.values(order.phases).filter(p=>p.done).length : 0;
-      if (donePhasesCount > 0) {
-        const doneLabels = { laser:'LASER ΚΟΠΕΣ', cases:'ΚΑΣΕΣ', montSasi:'ΚΑΤΑΣΚΕΥΗ ΣΑΣΙ', vafio:'ΒΑΦΕΙΟ', montDoor:'ΜΟΝΤΑΡΙΣΜΑ' };
-        const doneNames = Object.entries(order.phases||{}).filter(([k,v])=>v.done).map(([k])=>doneLabels[k]||k).join(', ');
-        Alert.alert(
-          '⚠️ Ανάκληση Παραγγελίας',
-          `Θα διαγραφούν οι ολοκληρωμένες φάσεις:
-${doneNames}
-
-Είσαι σίγουρος;`,
-          [
-            { text: 'ΑΚΥΡΟ', style: 'cancel' },
-            { text: 'ΝΑΙ, ΑΝΑΚΛΗΣΗ', style: 'destructive', onPress: async () => {
-              const upd={...order, status:'PENDING', phases:null, prodAt:null};
-              setSpecialOrders(specialOrders.map(o=>o.id===id?upd:o));
-              await syncToCloud(upd);
-            }}
-          ]
-        );
-        return;
-      }
+      const doneLabels = { laser:'LASER ΚΟΠΕΣ', cases:'ΚΑΣΕΣ', montSasi:'ΚΑΤΑΣΚΕΥΗ ΣΑΣΙ', vafio:'ΒΑΦΕΙΟ', montDoor:'ΜΟΝΤΑΡΙΣΜΑ' };
+      const doneNames = donePhasesCount>0 ? Object.entries(order.phases||{}).filter(([k,v])=>v.done).map(([k])=>doneLabels[k]||k).join(', ') : '';
+      const msg = donePhasesCount>0
+        ? `Θα διαγραφούν οι ολοκληρωμένες φάσεις:\n${doneNames}\n\nΕίσαι σίγουρος;`
+        : `Επιστροφή παραγγελίας #${order.orderNo} στις ΚΑΤΑΧΩΡΗΜΕΝΕΣ;`;
+      setConfirmModal({
+        visible: true,
+        title: '⚠️ Ανάκληση Παραγγελίας',
+        message: msg,
+        confirmText: 'ΝΑΙ, ΑΝΑΚΛΗΣΗ',
+        onConfirm: async () => {
+          const upd={...order, status:'PENDING', phases:null, prodAt:null};
+          setSpecialOrders(prev=>prev.map(o=>o.id===id?upd:o));
+          await syncToCloud(upd);
+        }
+      });
+      return;
     }
-    const upd={...order,status:cur==='READY'?'PROD':'PENDING', ...(cur==='PROD'?{phases:null,prodAt:null}:{})};
+    if (cur==='READY') {
+      setConfirmModal({
+        visible: true,
+        title: '⟲ Επιστροφή στην Παραγωγή',
+        message: `Η παραγγελία #${order.orderNo} θα επιστρέψει στην ΠΑΡΑΓΩΓΗ.`,
+        confirmText: '⟲ ΕΠΙΣΤΡΟΦΗ',
+        onConfirm: async () => {
+          const upd={...order, status:'PROD'};
+          setSpecialOrders(prev=>prev.map(o=>o.id===id?upd:o));
+          await syncToCloud(upd);
+        }
+      });
+      return;
+    }
+    const upd={...order,status:'PENDING'};
     setSpecialOrders(specialOrders.map(o=>o.id===id?upd:o)); await syncToCloud(upd);
   };
 
@@ -1318,7 +1298,30 @@ ${doneNames}
     };
 
   }}]);
-  const deleteFromArchive = (id) => Alert.alert("Διαγραφή","Διαγραφή από αρχείο;",[{text:"Όχι"},{text:"Ναι",style:"destructive",onPress:async()=>{setSoldSpecialOrders(soldSpecialOrders.filter(o=>o.id!==id));await deleteFromCloud(id);}}]);
+  const deleteFromArchive = (id) => setArchiveDeleteModal({ visible:true, orderId:id, pwd:'', error:false });
+  const confirmDeleteFromArchive = async (id) => {
+    setSoldSpecialOrders(soldSpecialOrders.filter(o=>o.id!==id));
+    await deleteFromCloud(id);
+  };
+  const returnToReady = async (id) => {
+    const order = soldSpecialOrders.find(o=>o.id===id);
+    if (!order) return;
+    const upd = {...order, status:'READY', soldAt:null};
+    setSoldSpecialOrders(soldSpecialOrders.filter(o=>o.id!==id));
+    setSpecialOrders([upd, ...specialOrders]);
+    await syncToCloud(upd);
+  };
+  const updateSaleNote = async (order, text) => {
+    const isArchive = order.status === 'SOLD';
+    const upd = {...order, saleNote: text};
+    if (isArchive) {
+      setSoldSpecialOrders(prev=>prev.map(o=>o.id===order.id?upd:o));
+    } else {
+      setSpecialOrders(prev=>prev.map(o=>o.id===order.id?upd:o));
+    }
+    await fetch(`${FIREBASE_URL}/special_orders/${order.id}.json`, { method:'PATCH', body:JSON.stringify({saleNote:text}) });
+  };
+
   const toggleSection = (s) => { LayoutAnimation.configureNext(LayoutAnimation.Presets.easeInEaseOut); setExpanded({...expanded,[s]:!expanded[s]}); };
 
   const renderOrderCard = (order, isArchive=false, isInPending=false) => {
@@ -1363,9 +1366,35 @@ ${doneNames}
             {fmtDate(order.readyAt)&&<Text style={styles.dateChip}>✅ {fmtDate(order.readyAt)}</Text>}
           </View>
         </View>
+        {(isArchive||order.status==='READY')&&(
+          <TextInput
+            style={{flex:1, marginHorizontal:6, marginVertical:8, backgroundColor:'#fffde7', borderRadius:8, borderWidth:1, borderColor:'#ffe082', padding:8, fontSize:12, color:'#5d4037', minHeight:60, textAlignVertical:'top'}}
+            placeholder="📝 Σημείωση..."
+            placeholderTextColor="#bbb"
+            multiline
+            value={order.saleNote||''}
+            onChangeText={text=>updateSaleNote(order, text)}
+          />
+        )}
         <View style={styles.sideBtnContainer}>
           {!isArchive&&!(isInPending&&order.status==='READY'&&order.staveraPendingAtReady&&!order.staveraDone)&&<TouchableOpacity style={[styles.upperBtn,{backgroundColor:order.status==='PENDING'?'#000':'#666'}]} onPress={()=>order.status==='PENDING'?cancelOrder(order.id):moveBack(order.id,order.status)}><Text style={[styles.upperBtnText,{color:order.status==='PENDING'?'#ff4444':'white'}]}>{order.status==='PENDING'?'ΑΚΥΡΩΣΗ':'⟲'}</Text></TouchableOpacity>}
-          {order.status!=='PROD'&&!(isInPending&&order.status==='READY'&&order.staveraPendingAtReady&&!order.staveraDone)&&<TouchableOpacity style={[styles.lowerBtn,{backgroundColor:btnC}]} onPress={()=>isArchive?deleteFromArchive(order.id):updateStatus(order.id,next)}><Text style={styles.sideBtnText}>{btn}</Text></TouchableOpacity>}
+          {isArchive&&(
+            <TouchableOpacity
+              style={[styles.upperBtn,{backgroundColor:'#555'}]}
+              onLongPress={()=>setArchiveReturnModal({visible:true, orderId:order.id})}
+              delayLongPress={2000}>
+              <Text style={[styles.upperBtnText,{color:'white'}]}>⟲</Text>
+            </TouchableOpacity>
+          )}
+          {order.status!=='PROD'&&!(isInPending&&order.status==='READY'&&order.staveraPendingAtReady&&!order.staveraDone)&&!isArchive&&<TouchableOpacity style={[styles.lowerBtn,{backgroundColor:btnC}]} onPress={()=>updateStatus(order.id,next)}><Text style={styles.sideBtnText}>{btn}</Text></TouchableOpacity>}
+          {isArchive&&(
+            <TouchableOpacity
+              style={[styles.lowerBtn,{backgroundColor:'#b71c1c'}]}
+              onLongPress={()=>deleteFromArchive(order.id)}
+              delayLongPress={2000}>
+              <Text style={styles.sideBtnText}>ΔΙΑ/ΦΗ</Text>
+            </TouchableOpacity>
+          )}
         </View>
       </TouchableOpacity>
     );
@@ -1988,7 +2017,7 @@ ${doneNames}
         </View>
       </Modal>
 
-      <SellModal visible={sellModal.visible} totalQty={sellModal.totalQty} onConfirm={handleSellConfirm} onCancel={()=>setSellModal({visible:false,orderId:null,totalQty:1})} />
+
       <DuplicateModal
         visible={dupModal.visible}
         base={dupModal.base}
@@ -2005,6 +2034,65 @@ ${doneNames}
         onConfirm={()=>{ setConfirmModal(m=>({...m,visible:false})); if(confirmModal.onConfirm) confirmModal.onConfirm(); }}
         onCancel={()=>setConfirmModal(m=>({...m,visible:false}))}
       />
+
+      {/* MODAL ΔΙΑΓΡΑΦΗΣ ΑΡΧΕΙΟΥ — με κωδικό */}
+      <Modal visible={archiveDeleteModal.visible} transparent animationType="fade">
+        <View style={{flex:1, backgroundColor:'rgba(0,0,0,0.6)', justifyContent:'center', alignItems:'center'}}>
+          <View style={{backgroundColor:'#fff', borderRadius:16, padding:24, width:'85%', maxWidth:380}}>
+            <Text style={{fontSize:17, fontWeight:'bold', color:'#b71c1c', marginBottom:8, textAlign:'center'}}>🗑️ Διαγραφή από Αρχείο</Text>
+            <Text style={{fontSize:13, color:'#555', marginBottom:16, textAlign:'center'}}>Εισάγετε τον κωδικό διαγραφής για να συνεχίσετε.</Text>
+            <TextInput
+              style={{borderWidth:2, borderColor: archiveDeleteModal.error?'#ff4444':'#ddd', borderRadius:8, padding:12, fontSize:16, letterSpacing:4, textAlign:'center', marginBottom:8}}
+              placeholder="Κωδικός..."
+              secureTextEntry
+              value={archiveDeleteModal.pwd}
+              onChangeText={v=>setArchiveDeleteModal(m=>({...m, pwd:v, error:false}))}
+              autoFocus
+            />
+            {archiveDeleteModal.error&&<Text style={{color:'#ff4444', fontSize:12, textAlign:'center', marginBottom:8}}>❌ Λάθος κωδικός</Text>}
+            <TouchableOpacity
+              style={{backgroundColor:'#b71c1c', padding:14, borderRadius:10, alignItems:'center', marginBottom:8}}
+              onPress={async ()=>{
+                if(archiveDeleteModal.pwd === 'vaicon2024'){
+                  await confirmDeleteFromArchive(archiveDeleteModal.orderId);
+                  setArchiveDeleteModal({visible:false, orderId:null, pwd:'', error:false});
+                } else {
+                  setArchiveDeleteModal(m=>({...m, error:true, pwd:''}));
+                }
+              }}>
+              <Text style={{color:'white', fontWeight:'bold', fontSize:14}}>🗑️ ΔΙΑΓΡΑΦΗ</Text>
+            </TouchableOpacity>
+            <TouchableOpacity
+              style={{backgroundColor:'#f5f5f5', padding:14, borderRadius:10, alignItems:'center', borderWidth:1, borderColor:'#ddd'}}
+              onPress={()=>setArchiveDeleteModal({visible:false, orderId:null, pwd:'', error:false})}>
+              <Text style={{color:'#555', fontWeight:'bold', fontSize:14}}>ΑΚΥΡΟ</Text>
+            </TouchableOpacity>
+          </View>
+        </View>
+      </Modal>
+
+      {/* MODAL ΕΠΙΣΤΡΟΦΗΣ ΣΤΗΝ ΑΠΟΘΗΚΗ */}
+      <Modal visible={archiveReturnModal.visible} transparent animationType="fade">
+        <View style={{flex:1, backgroundColor:'rgba(0,0,0,0.6)', justifyContent:'center', alignItems:'center'}}>
+          <View style={{backgroundColor:'#fff', borderRadius:16, padding:24, width:'85%', maxWidth:380}}>
+            <Text style={{fontSize:17, fontWeight:'bold', color:'#1a1a1a', marginBottom:12, textAlign:'center'}}>⟲ Επιστροφή στην Αποθήκη</Text>
+            <Text style={{fontSize:14, color:'#444', marginBottom:24, textAlign:'center'}}>Η παραγγελία θα επιστρέψει στα ΕΤΟΙΜΑ ΑΠΟΘΗΚΗΣ.</Text>
+            <TouchableOpacity
+              style={{backgroundColor:'#00C851', padding:14, borderRadius:10, alignItems:'center', marginBottom:8}}
+              onPress={async ()=>{
+                await returnToReady(archiveReturnModal.orderId);
+                setArchiveReturnModal({visible:false, orderId:null});
+              }}>
+              <Text style={{color:'white', fontWeight:'bold', fontSize:14}}>✅ ΕΠΙΒΕΒΑΙΩΣΗ</Text>
+            </TouchableOpacity>
+            <TouchableOpacity
+              style={{backgroundColor:'#f5f5f5', padding:14, borderRadius:10, alignItems:'center', borderWidth:1, borderColor:'#ddd'}}
+              onPress={()=>setArchiveReturnModal({visible:false, orderId:null})}>
+              <Text style={{color:'#555', fontWeight:'bold', fontSize:14}}>ΑΚΥΡΟ</Text>
+            </TouchableOpacity>
+          </View>
+        </View>
+      </Modal>
       <ScrollView style={{padding:10}} keyboardShouldPersistTaps="handled">
         <View style={{paddingBottom:120}}>
           <Text style={styles.sectionTitle}>ΚΑΤΑΧΩΡΗΣΗ ΝΕΑΣ ΠΑΡΑΓΓΕΛΙΑΣ</Text>
