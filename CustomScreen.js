@@ -108,6 +108,50 @@ function SellModal({ visible, totalQty, onConfirm, onCancel }) {
   );
 }
 
+// ── Helper: βρίσκει πρόταση για διπλότυπο νούμερο ──
+const computeSuggested = (base, allOrders, editingId) => {
+  const letters = 'ΑΒΓΔΕΖΗΘΙΚΛΜΝΞΟΠΡΣΤΥΦΧΨΩ';
+  for(let i=0; i<letters.length; i++){
+    const candidate = base+'-'+letters[i];
+    if(!allOrders.some(o=>o.orderNo===candidate && o.id!==editingId)) return candidate;
+  }
+  return base+'-?';
+};
+
+// ── DuplicateModal — 3 επιλογές ──
+function DuplicateModal({ visible, base, suggested, onUse, onKeep, onCancel }) {
+  return (
+    <Modal visible={visible} transparent animationType="fade">
+      <View style={{ flex:1, backgroundColor:'rgba(0,0,0,0.6)', justifyContent:'center', alignItems:'center' }}>
+        <View style={{ backgroundColor:'#fff', borderRadius:16, padding:24, width:'85%', maxWidth:380 }}>
+          <Text style={{ fontSize:17, fontWeight:'bold', color:'#8B0000', marginBottom:8, textAlign:'center' }}>⚠️ Διπλότυπο Νούμερο</Text>
+          <Text style={{ fontSize:14, color:'#444', marginBottom:4, textAlign:'center' }}>
+            Το νούμερο <Text style={{ fontWeight:'bold' }}>{base}</Text> υπάρχει ήδη.
+          </Text>
+          <Text style={{ fontSize:13, color:'#888', marginBottom:20, textAlign:'center' }}>
+            Πρόταση: <Text style={{ fontWeight:'bold', color:'#007AFF' }}>{suggested}</Text>
+          </Text>
+          <TouchableOpacity
+            style={{ backgroundColor:'#007AFF', padding:14, borderRadius:10, alignItems:'center', marginBottom:8 }}
+            onPress={onUse}>
+            <Text style={{ color:'white', fontWeight:'bold', fontSize:14 }}>✅ ΧΡΗΣΙΜΟΠΟΙΩ {suggested}</Text>
+          </TouchableOpacity>
+          <TouchableOpacity
+            style={{ backgroundColor:'#f5f5f5', padding:14, borderRadius:10, alignItems:'center', marginBottom:8, borderWidth:1, borderColor:'#ddd' }}
+            onPress={onKeep}>
+            <Text style={{ color:'#1a1a1a', fontWeight:'bold', fontSize:14 }}>🔒 ΚΡΑΤΩ {base}</Text>
+          </TouchableOpacity>
+          <TouchableOpacity
+            style={{ backgroundColor:'#ff4444', padding:14, borderRadius:10, alignItems:'center' }}
+            onPress={onCancel}>
+            <Text style={{ color:'white', fontWeight:'bold', fontSize:14 }}>✕ ΑΚΥΡΟ</Text>
+          </TouchableOpacity>
+        </View>
+      </View>
+    </Modal>
+  );
+}
+
 export default function CustomScreen({ customOrders, setCustomOrders, soldOrders, setSoldOrders, customers, onRequestAddCustomer, sasiOrders=[], setSasiOrders, caseOrders=[], setCaseOrders, coatings=[], dipliSasiStock=[], setDipliSasiStock, locks=[], specialOrders=[] }) {
   const [expanded, setExpanded] = useState({ pending:false, prod:false, ready:false, archive:false, stdList:true, stdMoni:true, stdDipli:true, stdReady:true, stdSold:false, stdReadyD:true, stdSoldD:false, stdMoniOpen:false, stdDipliOpen:false, dipliProd:true, dipliSasiStock:false, moniProd:true, moniSasiStock:false });
   const [showHardwarePicker, setShowHardwarePicker] = useState(false);
@@ -125,6 +169,7 @@ export default function CustomScreen({ customOrders, setCustomOrders, soldOrders
   const [showCustomerInfo, setShowCustomerInfo] = useState(false);
   const [sellModal, setSellModal]  = useState({ visible:false, orderId:null, totalQty:1 });
   const [readyConfirmModal, setReadyConfirmModal] = useState({ visible:false, order:null, sasiItem:null, caseItem:null });
+  const [dupModal, setDupModal] = useState({ visible:false, base:'', suggested:'', onUse:null, onKeep:null, onCancel:null });
 
   const customerRef=useRef(); const orderNoRef=useRef(); const hRef=useRef(); const wRef=useRef(); const qtyEidikiRef=useRef();
   const hingeRef=useRef(); const glassRef=useRef(); const glassNotesRef=useRef(); const lockRef=useRef(); const notesRef=useRef();
@@ -1845,6 +1890,14 @@ export default function CustomScreen({ customOrders, setCustomOrders, soldOrders
   return (
     <View style={{flex:1}}>
       <SellModal visible={sellModal.visible} totalQty={sellModal.totalQty} onConfirm={handleSellConfirm} onCancel={()=>setSellModal({visible:false,orderId:null,totalQty:1})} />
+      <DuplicateModal
+        visible={dupModal.visible}
+        base={dupModal.base}
+        suggested={dupModal.suggested}
+        onUse={dupModal.onUse}
+        onKeep={dupModal.onKeep}
+        onCancel={dupModal.onCancel}
+      />
 
       {/* Modal επιβεβαίωσης ΕΤΟΙΜΗ */}
       <Modal visible={readyConfirmModal.visible} transparent animationType="fade">
@@ -2004,25 +2057,14 @@ export default function CustomScreen({ customOrders, setCustomOrders, soldOrders
               const exists = [...customOrders,...specialOrders].some(o=>o.orderNo===customForm.orderNo && o.id!==editingOrder?.id);
               if (exists) {
                 const base = customForm.orderNo;
-                const letters = 'ΑΒΓΔΕΖΗΘΙΚΛΜΝΞΟΠΡΣΤΥΦΧΨΩ';
-                let suggested = base;
-                for(let i=0; i<letters.length; i++){
-                  const candidate = base+'-'+letters[i];
-                  if(![...customOrders,...specialOrders].some(o=>o.orderNo===candidate && o.id!==editingOrder?.id)){
-                    suggested = candidate;
-                    break;
-                  }
-                }
+                const suggested = computeSuggested(base, [...customOrders,...specialOrders], editingOrder?.id);
                 Keyboard.dismiss();
-                setTimeout(()=>Alert.alert(
-                  "⚠️ Διπλότυπο Νούμερο",
-                  `Το νούμερο ${customForm.orderNo} υπάρχει ήδη.\nΠρόταση: ${suggested}`,
-                  [
-                    { text:"ΑΚΥΡΟ", style:"cancel", onPress:()=>setCustomForm(f=>({...f,orderNo:''})) },
-                    { text:"ΚΡΑΤΩ "+customForm.orderNo, onPress:()=>hRef.current?.focus() },
-                    { text:"ΧΡΗΣΙΜΟΠΟΙΩ "+suggested, onPress:()=>{ setCustomForm(f=>({...f,orderNo:suggested})); hRef.current?.focus(); } }
-                  ]
-                ), 100);
+                setDupModal({
+                  visible:true, base, suggested,
+                  onUse:()=>{ setDupModal(m=>({...m,visible:false})); setCustomForm(f=>({...f,orderNo:suggested})); setTimeout(()=>hRef.current?.focus(),100); },
+                  onKeep:()=>{ setDupModal(m=>({...m,visible:false})); hRef.current?.focus(); },
+                  onCancel:()=>{ setDupModal(m=>({...m,visible:false})); setCustomForm(f=>({...f,orderNo:''})); }
+                });
               } else {
                 Keyboard.dismiss();
               }
@@ -2032,25 +2074,13 @@ export default function CustomScreen({ customOrders, setCustomOrders, soldOrders
               const exists = [...customOrders,...specialOrders].some(o=>o.orderNo===customForm.orderNo && o.id!==editingOrder?.id);
               if (exists) {
                 const base = customForm.orderNo;
-                const letters = 'ΑΒΓΔΕΖΗΘΙΚΛΜΝΞΟΠΡΣΤΥΦΧΨΩ';
-                let suggested = base;
-                for(let i=0; i<letters.length; i++){
-                  const candidate = base+'-'+letters[i];
-                  if(![...customOrders,...specialOrders].some(o=>o.orderNo===candidate && o.id!==editingOrder?.id)){
-                    suggested = candidate;
-                    break;
-                  }
-                }
-                Keyboard.dismiss();
-                Alert.alert(
-                  "⚠️ Διπλότυπο Νούμερο",
-                  `Το νούμερο ${customForm.orderNo} υπάρχει ήδη.\nΠρόταση: ${suggested}`,
-                  [
-                    { text:"ΑΚΥΡΟ", style:"cancel", onPress:()=>setCustomForm(f=>({...f,orderNo:''})) },
-                    { text:"ΚΡΑΤΩ "+customForm.orderNo },
-                    { text:"ΧΡΗΣΙΜΟΠΟΙΩ "+suggested, onPress:()=>setCustomForm(f=>({...f,orderNo:suggested})) }
-                  ]
-                );
+                const suggested = computeSuggested(base, [...customOrders,...specialOrders], editingOrder?.id);
+                setDupModal({
+                  visible:true, base, suggested,
+                  onUse:()=>{ setDupModal(m=>({...m,visible:false})); setCustomForm(f=>({...f,orderNo:suggested})); },
+                  onKeep:()=>{ setDupModal(m=>({...m,visible:false})); },
+                  onCancel:()=>{ setDupModal(m=>({...m,visible:false})); setCustomForm(f=>({...f,orderNo:''})); }
+                });
               }
             }}
             blurOnSubmit={false} />

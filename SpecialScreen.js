@@ -115,12 +115,57 @@ function SellModal({ visible, totalQty, onConfirm, onCancel }) {
 }
 
 
+// ── Helper: βρίσκει πρόταση για διπλότυπο νούμερο ──
+const computeSuggested = (base, allOrders, editingId) => {
+  const letters = 'ΑΒΓΔΕΖΗΘΙΚΛΜΝΞΟΠΡΣΤΥΦΧΨΩ';
+  for(let i=0; i<letters.length; i++){
+    const candidate = base+'-'+letters[i];
+    if(!allOrders.some(o=>o.orderNo===candidate && o.id!==editingId)) return candidate;
+  }
+  return base+'-?';
+};
+
+// ── DuplicateModal — 3 επιλογές ──
+function DuplicateModal({ visible, base, suggested, onUse, onKeep, onCancel }) {
+  return (
+    <Modal visible={visible} transparent animationType="fade">
+      <View style={{ flex:1, backgroundColor:'rgba(0,0,0,0.6)', justifyContent:'center', alignItems:'center' }}>
+        <View style={{ backgroundColor:'#fff', borderRadius:16, padding:24, width:'85%', maxWidth:380 }}>
+          <Text style={{ fontSize:17, fontWeight:'bold', color:'#8B0000', marginBottom:8, textAlign:'center' }}>⚠️ Διπλότυπο Νούμερο</Text>
+          <Text style={{ fontSize:14, color:'#444', marginBottom:4, textAlign:'center' }}>
+            Το νούμερο <Text style={{ fontWeight:'bold' }}>{base}</Text> υπάρχει ήδη.
+          </Text>
+          <Text style={{ fontSize:13, color:'#888', marginBottom:20, textAlign:'center' }}>
+            Πρόταση: <Text style={{ fontWeight:'bold', color:'#007AFF' }}>{suggested}</Text>
+          </Text>
+          <TouchableOpacity
+            style={{ backgroundColor:'#007AFF', padding:14, borderRadius:10, alignItems:'center', marginBottom:8 }}
+            onPress={onUse}>
+            <Text style={{ color:'white', fontWeight:'bold', fontSize:14 }}>✅ ΧΡΗΣΙΜΟΠΟΙΩ {suggested}</Text>
+          </TouchableOpacity>
+          <TouchableOpacity
+            style={{ backgroundColor:'#f5f5f5', padding:14, borderRadius:10, alignItems:'center', marginBottom:8, borderWidth:1, borderColor:'#ddd' }}
+            onPress={onKeep}>
+            <Text style={{ color:'#1a1a1a', fontWeight:'bold', fontSize:14 }}>🔒 ΚΡΑΤΩ {base}</Text>
+          </TouchableOpacity>
+          <TouchableOpacity
+            style={{ backgroundColor:'#ff4444', padding:14, borderRadius:10, alignItems:'center' }}
+            onPress={onCancel}>
+            <Text style={{ color:'white', fontWeight:'bold', fontSize:14 }}>✕ ΑΚΥΡΟ</Text>
+          </TouchableOpacity>
+        </View>
+      </View>
+    </Modal>
+  );
+}
+
 export default function SpecialScreen({ specialOrders=[], setSpecialOrders, soldSpecialOrders=[], setSoldSpecialOrders, customers=[], onRequestAddCustomer, coatings=[], locks=[] }) {
   const [expanded, setExpanded] = useState({ pending:true, prod:true, ready:true, archive:false });
   const [pendingSort, setPendingSort] = useState('no');
   const [showHardwarePicker, setShowHardwarePicker] = useState(false);
   const [showLockPicker, setShowLockPicker] = useState(false);
   const [showCoatingsPicker, setShowCoatingsPicker] = useState(false);
+  const [dupModal, setDupModal] = useState({ visible:false, base:'', suggested:'', onUse:null, onKeep:null, onCancel:null });
   const [showDatePicker, setShowDatePicker] = useState(false);
   const [activeProdPhase, setActiveProdPhase] = useState('laser');
   const [customHardwareText, setCustomHardwareText] = useState('');
@@ -176,6 +221,12 @@ export default function SpecialScreen({ specialOrders=[], setSpecialOrders, sold
   const saveOrder = async () => {
     if (!customForm.orderNo) return Alert.alert("Προσοχή","Το Νούμερο Παραγγελίας είναι υποχρεωτικό.");
     if (!customForm.h||!customForm.w) return Alert.alert("Προσοχή","Βάλτε Ύψος και Πλάτος.");
+    // Έλεγχος διπλότυπου αριθμού (failsafe κατά αποθήκευση)
+    const isDuplicate = specialOrders.some(o=>o.orderNo===customForm.orderNo && o.id!==editingOrder?.id);
+    if (isDuplicate) {
+      Alert.alert("⚠️ Διπλότυπο", `Το νούμερο ${customForm.orderNo} υπάρχει ήδη.\nΑλλάξτε τον αριθμό παραγγελίας.`);
+      return;
+    }
 
     // Έλεγχος αν ο πελάτης είναι καταχωρημένος
     if (customForm.customer && !selectedCustomer) {
@@ -335,6 +386,10 @@ ${doneNames}
       .col-fora{width:28px;}
       .col-thor{width:70px;}
       .col-ment{width:28px;}
+      .col-type{width:90px;}
+      .col-lock{width:90px;}
+      .col-mat{width:90px;}
+      .col-glass{width:150px;}
       tr:nth-child(even) td{background:#f5f5f5;}
       .page-break{page-break-after:always;break-after:page;}
       @media print{
@@ -479,7 +534,7 @@ ${doneNames}
             <td class="col-fora" style="font-weight:bold">${fora}</td>
             <td class="col-thor" style="font-size:10px">${thorakisi}</td>
             <td class="col-ment" style="font-size:10px">${mentesedesVal}</td>
-            <td style="font-size:10px">${kleidaria}</td>
+            <td class="col-lock" style="font-size:10px">${kleidaria}</td>
             <td class="notes" style="font-size:10px">${o.notes||''}</td>
           </tr>`;
         }).join('');
@@ -505,9 +560,9 @@ ${doneNames}
             <td class="col-fora" style="font-weight:bold">${fora}</td>
             <td class="col-thor" style="font-size:10px">${(o.armor||'ΜΟΝΗ')+' ΘΩΡ.'}</td>
             <td class="col-ment" style="font-size:10px">${(!o.hinges||o.hinges==='2')?'—':o.hinges}</td>
-            <td style="font-size:10px">${o.lock||'—'}</td>
-            <td style="font-size:10px">${o.caseType||'—'}</td>
-            <td style="font-size:10px;font-weight:bold">${mat}</td>
+            <td class="col-lock" style="font-size:10px">${o.lock||'—'}</td>
+            <td class="col-type" style="font-size:10px">${o.caseType||'—'}</td>
+            <td class="col-mat" style="font-size:10px;font-weight:bold">${mat}</td>
             <td class="notes" style="font-size:10px">${o.notes||''}</td>
           </tr>`;
         }).join('');
@@ -533,8 +588,8 @@ ${doneNames}
             <td class="col-fora" style="font-weight:bold">${fora}</td>
             <td class="col-thor" style="font-size:10px;font-weight:bold">${armor} ΘΩΡ.</td>
             <td class="col-ment" style="font-size:10px">${(!o.hinges||o.hinges==='2')?'—':o.hinges}</td>
-            <td style="font-size:10px">${((o.glassDim||'')+(o.glassNotes?' '+o.glassNotes:''))||'—'}</td>
-            <td style="font-size:10px">${o.lock||'—'}</td>
+            <td class="col-glass" style="font-size:10px">${((o.glassDim||'')+(o.glassNotes?' '+o.glassNotes:''))||'—'}</td>
+            <td class="col-lock" style="font-size:10px">${o.lock||'—'}</td>
             <td class="notes" style="font-size:10px">${o.notes||''}</td>
           </tr>`;
         }).join('');
@@ -559,10 +614,10 @@ ${doneNames}
           <td class="col-fora" style="font-weight:bold">${fora}</td>
           <td class="col-thor" style="font-size:10px">${thorakisi}</td>
           <td class="col-ment" style="font-size:10px">${mentesedesVal}</td>
-          <td style="font-size:10px">${tzami}</td>
-          <td style="font-size:10px">${kleidaria}</td>
-          <td style="font-size:10px">${o.caseType||'—'}</td>
-          <td style="font-size:10px;font-weight:bold">${o.caseMaterial||'DKP'}</td>
+          <td class="col-glass" style="font-size:10px">${tzami}</td>
+          <td class="col-lock" style="font-size:10px">${kleidaria}</td>
+          <td class="col-type" style="font-size:10px">${o.caseType||'—'}</td>
+          <td class="col-mat" style="font-size:10px;font-weight:bold">${o.caseMaterial||'DKP'}</td>
           <td class="notes" style="font-size:10px">${o.notes||''}</td>
         </tr>`;
       }).join('');
@@ -1315,18 +1370,10 @@ ${doneNames}
           {isStd&&<Text style={styles.cardSubDetails}>{order.hardware||''}</Text>}
           {isStd&&order.installation==='ΝΑΙ'&&<View style={{flexDirection:'row',marginTop:2}}><View style={{backgroundColor:'#1565C0',borderRadius:5,paddingHorizontal:8,paddingVertical:2,alignSelf:'flex-start'}}><Text style={{color:'white',fontWeight:'bold',fontSize:13}}>🪛 ΜΟΝΤΑΡΙΣΜΑ</Text></View></View>}
           {order.qty&&parseInt(order.qty)>1?<Text style={[styles.cardSubDetails,{color:'#007AFF',fontWeight:'bold'}]}>Τεμ: {order.qty}</Text>:null}
-          {phase.printed&&!phase.done&&<Text style={styles.printedTxt}>🖨️ Εκτυπώθηκε</Text>}
           {phase.done&&<Text style={styles.doneTxt}>✅ Ολοκληρώθηκε</Text>}
-          {/* ΗΜΕΡΟΜΗΝΙΑ ΕΙΣΟΔΟΥ + ΙΣΤΟΡΙΚΟ ΕΚΤΥΠΩΣΕΩΝ */}
-          <View style={{marginTop:4, gap:2}}>
+          {/* ΗΜΕΡΟΜΗΝΙΑ ΕΙΣΟΔΟΥ ΜΟΝΟ */}
+          <View style={{marginTop:4}}>
             {order.prodAt&&<Text style={{fontSize:10,color:'#666'}}>📥 Είσοδος: {fmtDateTime(order.prodAt)}</Text>}
-            {(phase.printHistory||[]).map((entry,i)=>{
-              const ts = typeof entry==='object' ? entry.ts : entry;
-              const copies = typeof entry==='object' ? entry.copies : 1;
-              return (
-                <Text key={i} style={{fontSize:10,color:'#856404'}}>🖨️ Εκτύπωση {i+1}: {fmtDateTime(ts)} ({copies})</Text>
-              );
-            })}
           </View>
         </View>
 
@@ -1907,6 +1954,14 @@ ${doneNames}
       </Modal>
 
       <SellModal visible={sellModal.visible} totalQty={sellModal.totalQty} onConfirm={handleSellConfirm} onCancel={()=>setSellModal({visible:false,orderId:null,totalQty:1})} />
+      <DuplicateModal
+        visible={dupModal.visible}
+        base={dupModal.base}
+        suggested={dupModal.suggested}
+        onUse={dupModal.onUse}
+        onKeep={dupModal.onKeep}
+        onCancel={dupModal.onCancel}
+      />
       <ScrollView style={{padding:10}} keyboardShouldPersistTaps="handled">
         <View style={{paddingBottom:120}}>
           <Text style={styles.sectionTitle}>ΚΑΤΑΧΩΡΗΣΗ ΝΕΑΣ ΠΑΡΑΓΓΕΛΙΑΣ</Text>
@@ -2021,24 +2076,14 @@ ${doneNames}
               const exists = specialOrders.some(o=>o.orderNo===customForm.orderNo && o.id!==editingOrder?.id);
               if (exists) {
                 const base = customForm.orderNo;
-                const letters = 'ΑΒΓΔΕΖΗΘΙΚΛΜΝΞΟΠΡΣΤΥΦΧΨΩ';
-                let suggested = base;
-                for(let i=0; i<letters.length; i++){
-                  const candidate = base+'-'+letters[i];
-                  if(!specialOrders.some(o=>o.orderNo===candidate && o.id!==editingOrder?.id)){
-                    suggested = candidate;
-                    break;
-                  }
-                }
-                Alert.alert(
-                  "⚠️ Διπλότυπο Νούμερο",
-                  `Το νούμερο ${customForm.orderNo} υπάρχει ήδη.\nΠρόταση: ${suggested}`,
-                  [
-                    { text:"ΑΚΥΡΟ", style:"cancel", onPress:()=>setCustomForm(f=>({...f,orderNo:''})) },
-                    { text:"ΚΡΑΤΩ "+customForm.orderNo, onPress:()=>hRef.current?.focus() },
-                    { text:"ΧΡΗΣΙΜΟΠΟΙΩ "+suggested, onPress:()=>{ setCustomForm(f=>({...f,orderNo:suggested})); hRef.current?.focus(); } }
-                  ]
-                );
+                const suggested = computeSuggested(base, specialOrders, editingOrder?.id);
+                Keyboard.dismiss();
+                setDupModal({
+                  visible:true, base, suggested,
+                  onUse:()=>{ setDupModal(m=>({...m,visible:false})); setCustomForm(f=>({...f,orderNo:suggested})); setTimeout(()=>hRef.current?.focus(),100); },
+                  onKeep:()=>{ setDupModal(m=>({...m,visible:false})); hRef.current?.focus(); },
+                  onCancel:()=>{ setDupModal(m=>({...m,visible:false})); setCustomForm(f=>({...f,orderNo:''})); }
+                });
               } else {
                 hRef.current?.focus();
               }
@@ -2048,24 +2093,13 @@ ${doneNames}
               const exists = specialOrders.some(o=>o.orderNo===customForm.orderNo && o.id!==editingOrder?.id);
               if (exists) {
                 const base = customForm.orderNo;
-                const letters = 'ΑΒΓΔΕΖΗΘΙΚΛΜΝΞΟΠΡΣΤΥΦΧΨΩ';
-                let suggested = base;
-                for(let i=0; i<letters.length; i++){
-                  const candidate = base+'-'+letters[i];
-                  if(!specialOrders.some(o=>o.orderNo===candidate && o.id!==editingOrder?.id)){
-                    suggested = candidate;
-                    break;
-                  }
-                }
-                Alert.alert(
-                  "⚠️ Διπλότυπο Νούμερο",
-                  `Το νούμερο ${customForm.orderNo} υπάρχει ήδη.\nΠρόταση: ${suggested}`,
-                  [
-                    { text:"ΑΚΥΡΟ", style:"cancel", onPress:()=>setCustomForm(f=>({...f,orderNo:''})) },
-                    { text:"ΚΡΑΤΩ "+customForm.orderNo },
-                    { text:"ΧΡΗΣΙΜΟΠΟΙΩ "+suggested, onPress:()=>setCustomForm(f=>({...f,orderNo:suggested})) }
-                  ]
-                );
+                const suggested = computeSuggested(base, specialOrders, editingOrder?.id);
+                setDupModal({
+                  visible:true, base, suggested,
+                  onUse:()=>{ setDupModal(m=>({...m,visible:false})); setCustomForm(f=>({...f,orderNo:suggested})); },
+                  onKeep:()=>{ setDupModal(m=>({...m,visible:false})); },
+                  onCancel:()=>{ setDupModal(m=>({...m,visible:false})); setCustomForm(f=>({...f,orderNo:''})); }
+                });
               }
             }}
             blurOnSubmit={false} />
