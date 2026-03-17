@@ -115,6 +115,30 @@ function SellModal({ visible, totalQty, onConfirm, onCancel }) {
 }
 
 
+// ── ConfirmModal — επιβεβαίωση ολοκλήρωσης παραγωγής ──
+function ConfirmModal({ visible, title, message, confirmText, onConfirm, onCancel }) {
+  return (
+    <Modal visible={visible} transparent animationType="fade">
+      <View style={{ flex:1, backgroundColor:'rgba(0,0,0,0.6)', justifyContent:'center', alignItems:'center' }}>
+        <View style={{ backgroundColor:'#fff', borderRadius:16, padding:24, width:'85%', maxWidth:380 }}>
+          <Text style={{ fontSize:17, fontWeight:'bold', color:'#1a1a1a', marginBottom:12, textAlign:'center' }}>{title}</Text>
+          <Text style={{ fontSize:14, color:'#444', marginBottom:24, textAlign:'center', lineHeight:20 }}>{message}</Text>
+          <TouchableOpacity
+            style={{ backgroundColor:'#00C851', padding:14, borderRadius:10, alignItems:'center', marginBottom:8 }}
+            onPress={onConfirm}>
+            <Text style={{ color:'white', fontWeight:'bold', fontSize:14 }}>{confirmText}</Text>
+          </TouchableOpacity>
+          <TouchableOpacity
+            style={{ backgroundColor:'#f5f5f5', padding:14, borderRadius:10, alignItems:'center', borderWidth:1, borderColor:'#ddd' }}
+            onPress={onCancel}>
+            <Text style={{ color:'#555', fontWeight:'bold', fontSize:14 }}>ΑΚΥΡΟ</Text>
+          </TouchableOpacity>
+        </View>
+      </View>
+    </Modal>
+  );
+}
+
 // ── Helper: βρίσκει πρόταση για διπλότυπο νούμερο ──
 const computeSuggested = (base, allOrders, editingId) => {
   const letters = 'ΑΒΓΔΕΖΗΘΙΚΛΜΝΞΟΠΡΣΤΥΦΧΨΩ';
@@ -166,6 +190,7 @@ export default function SpecialScreen({ specialOrders=[], setSpecialOrders, sold
   const [showLockPicker, setShowLockPicker] = useState(false);
   const [showCoatingsPicker, setShowCoatingsPicker] = useState(false);
   const [dupModal, setDupModal] = useState({ visible:false, base:'', suggested:'', onUse:null, onKeep:null, onCancel:null });
+  const [confirmModal, setConfirmModal] = useState({ visible:false, title:'', message:'', confirmText:'', onConfirm:null });
   const [showDatePicker, setShowDatePicker] = useState(false);
   const [activeProdPhase, setActiveProdPhase] = useState('laser');
   const [customHardwareText, setCustomHardwareText] = useState('');
@@ -293,7 +318,13 @@ export default function SpecialScreen({ specialOrders=[], setSpecialOrders, sold
     if (newStatus==='READY') {
       const hasStavera = order.stavera && order.stavera.filter(s=>s.dim).length > 0;
       if (hasStavera && !order.staveraDone) {
-        Alert.alert('⚠️ Προσοχή', 'Τα σταθερά δεν έχουν ολοκληρωθεί (DONE). Δεν μπορεί να πάει ΕΤΟΙΜΗ.');
+        setConfirmModal({
+          visible: true,
+          title: '⚠️ Εκκρεμεί Σταθερό',
+          message: 'Τα σταθερά δεν έχουν ολοκληρωθεί.\nΗ παραγγελία δεν μπορεί να πάει ΕΤΟΙΜΗ.',
+          confirmText: 'ΟΚ',
+          onConfirm: null
+        });
         return;
       }
     }
@@ -1152,7 +1183,13 @@ ${doneNames}
       if (notDone.length > 0) {
         const labels = { laser:'LASER ΚΟΠΕΣ', cases:'ΚΑΣΕΣ', montSasi:'ΚΑΤΑΣΚΕΥΗ ΣΑΣΙ', vafio:'ΒΑΦΕΙΟ' };
         const names = notDone.map(k=>labels[k]).join(', ');
-        Alert.alert('⚠️ Προσοχή', `Δεν έχουν ολοκληρωθεί: ${names}. Δεν μπορεί να γίνει DONE το Μοντάρισμα.`);
+        setConfirmModal({
+          visible: true,
+          title: '⚠️ Δεν μπορεί να γίνει DONE',
+          message: `Δεν έχουν ολοκληρωθεί:\n${names}\n\nΟλοκλήρωσε πρώτα αυτές τις φάσεις.`,
+          confirmText: 'ΟΚ',
+          onConfirm: null
+        });
         return;
       }
     }
@@ -1164,33 +1201,31 @@ ${doneNames}
 
     if (allDone) {
       if (staveraPending) {
-        Alert.alert(
-          "⚠️ ΠΡΟΣΟΧΗ",
-          "Όλες οι φάσεις παραγωγής ολοκληρώθηκαν.\n\n⚠️ ΕΚΚΡΕΜΕΙ ΣΤΑΘΕΡΟ — η παραγγελία μπορεί να κατέβει στην αποθήκη αλλά το σταθερό θα παραμείνει σε εξέλιξη.",
-          [
-            { text:"ΑΚΥΡΟ", style:"cancel" },
-            { text:"ΚΑΤΕΒΑΣΗ ΣΤΗΝ ΑΠΟΘΗΚΗ", onPress: async () => {
-              const upd = {...order, phases:newPhases, status:'READY', readyAt:Date.now(), staveraPendingAtReady:true};
-              setSpecialOrders(specialOrders.map(o=>o.id===orderId?upd:o));
-              await syncToCloud(upd);
-              await logActivity('ΕΙΔΙΚΗ', 'Φάση → ΕΤΟΙΜΟ (εκκρεμές σταθερό)', { orderNo: order.orderNo, customer: order.customer, size: `${order.h}x${order.w}` });
-            }}
-          ]
-        );
+        setConfirmModal({
+          visible: true,
+          title: '⚠️ ΕΚΚΡΕΜΕΙ ΣΤΑΘΕΡΟ',
+          message: 'Όλες οι φάσεις παραγωγής ολοκληρώθηκαν.\n\nΕκκρεμεί σταθερό — η παραγγελία θα κατέβει στην αποθήκη και το σταθερό θα παραμείνει σε εξέλιξη.',
+          confirmText: '📦 ΚΑΤΕΒΑΣΗ ΣΤΗΝ ΑΠΟΘΗΚΗ',
+          onConfirm: async () => {
+            const upd = {...order, phases:newPhases, status:'READY', readyAt:Date.now(), staveraPendingAtReady:true};
+            setSpecialOrders(specialOrders.map(o=>o.id===orderId?upd:o));
+            await syncToCloud(upd);
+            await logActivity('ΕΙΔΙΚΗ', 'Φάση → ΕΤΟΙΜΟ (εκκρεμές σταθερό)', { orderNo: order.orderNo, customer: order.customer, size: `${order.h}x${order.w}` });
+          }
+        });
       } else {
-        Alert.alert(
-          "⚠️ ΠΡΟΣΟΧΗ",
-          "Ολοκληρώνεται η διαδικασία παραγωγής.\nΗ πόρτα μεταφέρεται στην ΑΠΟΘΗΚΗ.",
-          [
-            { text:"ΑΚΥΡΟ", style:"cancel", onPress: ()=>{} },
-            { text:"ΕΠΙΒΕΒΑΙΩΣΗ", style:"default", onPress: async () => {
-              const upd = {...order, phases:newPhases, status:'READY', readyAt:Date.now()};
-              setSpecialOrders(specialOrders.map(o=>o.id===orderId?upd:o));
-              await syncToCloud(upd);
-              await logActivity('ΕΙΔΙΚΗ', 'Φάση → ΕΤΟΙΜΟ (όλες done)', { orderNo: order.orderNo, customer: order.customer, size: `${order.h}x${order.w}` });
-            }}
-          ]
-        );
+        setConfirmModal({
+          visible: true,
+          title: '✅ ΟΛΟΚΛΗΡΩΣΗ ΠΑΡΑΓΩΓΗΣ',
+          message: `Ολοκληρώνεται η διαδικασία παραγωγής.\nΗ παραγγελία #${order.orderNo} μεταφέρεται στην ΑΠΟΘΗΚΗ.`,
+          confirmText: '📦 ΕΠΙΒΕΒΑΙΩΣΗ',
+          onConfirm: async () => {
+            const upd = {...order, phases:newPhases, status:'READY', readyAt:Date.now()};
+            setSpecialOrders(specialOrders.map(o=>o.id===orderId?upd:o));
+            await syncToCloud(upd);
+            await logActivity('ΕΙΔΙΚΗ', 'Φάση → ΕΤΟΙΜΟ (όλες done)', { orderNo: order.orderNo, customer: order.customer, size: `${order.h}x${order.w}` });
+          }
+        });
       }
     } else {
       const upd = {...order, phases:newPhases};
@@ -1961,6 +1996,14 @@ ${doneNames}
         onUse={dupModal.onUse}
         onKeep={dupModal.onKeep}
         onCancel={dupModal.onCancel}
+      />
+      <ConfirmModal
+        visible={confirmModal.visible}
+        title={confirmModal.title}
+        message={confirmModal.message}
+        confirmText={confirmModal.confirmText}
+        onConfirm={()=>{ setConfirmModal(m=>({...m,visible:false})); if(confirmModal.onConfirm) confirmModal.onConfirm(); }}
+        onCancel={()=>setConfirmModal(m=>({...m,visible:false}))}
       />
       <ScrollView style={{padding:10}} keyboardShouldPersistTaps="handled">
         <View style={{paddingBottom:120}}>
