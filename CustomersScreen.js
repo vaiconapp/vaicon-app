@@ -10,11 +10,12 @@ const fmtDate = (ts) => {
 
 const INIT = { name: '', phone: '', identifier: '' };
 
-export default function CustomersScreen({ customers, setCustomers, onClose, prefillName, onCustomerAdded, customOrders=[], allOrders=[], setCustomOrders, setSoldOrders }) {
+export default function CustomersScreen({ customers, setCustomers, onClose, prefillName, onCustomerAdded, customOrders=[], allOrders=[], setCustomOrders, setSoldOrders, specialOrders=[] }) {
   const [form, setForm] = useState(prefillName ? { name: prefillName, phone: '', identifier: '' } : INIT);
   const [editingId, setEditingId] = useState(null);
   const [search, setSearch] = useState('');
   const [selectedCustomerOrders, setSelectedCustomerOrders] = useState(null); // πελάτης για εμφάνιση παραγγελιών
+  const [deleteCustomerModal, setDeleteCustomerModal] = useState({ visible:false, customerId:null, customerName:'' });
 
   const getStatusLabel = (order) => {
     if (order.status==='PENDING') return { label:'📋 Καταχωρημένη', color:'#ff4444' };
@@ -84,28 +85,20 @@ export default function CustomersScreen({ customers, setCustomers, onClose, pref
   };
 
   const deleteCustomer = (id) => {
-    const activeOrders = allOrders.filter(o => o.customerId === id && o.status !== 'SOLD');
-    const soldOrders = allOrders.filter(o => o.customerId === id && o.status === 'SOLD');
-
-    if (activeOrders.length > 0) {
-      return Alert.alert(
-        "⛔ Αδύνατη Διαγραφή",
-        `Ο πελάτης έχει ${activeOrders.length} ενεργή/ές παραγγελία/ές στην παραγωγή.\n\nΔεν επιτρέπεται διαγραφή.`,
-        [{ text: "ΟΚ" }]
-      );
+    const customer = customers.find(c => c.id === id);
+    if (!customer) return;
+    // Ελέγχουμε με όνομα — όχι customerId
+    const hasAnyOrders = allOrders.some(o => o.customer === customer.name);
+    if (hasAnyOrders) {
+      setDeleteCustomerModal({ visible:true, customerId:null, customerName:customer.name, blocked:true });
+      return;
     }
+    setDeleteCustomerModal({ visible:true, customerId:id, customerName:customer.name, blocked:false });
+  };
 
-    const msg = soldOrders.length > 0
-      ? `Ο πελάτης έχει ${soldOrders.length} παραγγελία/ές στο αρχείο πωλήσεων.\n\nΑν τον διαγράψεις, αυτές οι κινήσεις θα εμφανίζονται χωρίς πελάτη. Συνέχεια;`
-      : "Είσαι σίγουρος; Η ενέργεια δεν αναιρείται!";
-
-    Alert.alert("⚠️ Διαγραφή Πελάτη", msg, [
-      { text: "ΑΚΥΡΟ", style: "cancel" },
-      { text: "ΔΙΑΓΡΑΦΗ", style: "destructive", onPress: async () => {
-        setCustomers(customers.filter(c => c.id !== id));
-        await deleteFromCloud(id);
-      }}
-    ]);
+  const confirmDeleteCustomer = async (id) => {
+    setCustomers(customers.filter(c => c.id !== id));
+    await deleteFromCloud(id);
   };
 
   const filtered = customers.filter(c =>
@@ -170,21 +163,17 @@ export default function CustomersScreen({ customers, setCustomers, onClose, pref
                 <Text style={styles.customerDate}>📅 {fmtDate(c.createdAt)}</Text>
               </View>
               <View style={{gap:6}}>
-                {(()=>{
-                  const hasOrders = customOrders.some(o=>o.customer===c.name && o.status!=='SOLD');
-                  return (
-                    <TouchableOpacity
-                      style={{backgroundColor: hasOrders ? '#007AFF' : '#ccc', paddingHorizontal:10, paddingVertical:6, borderRadius:6, alignItems:'center'}}
-                      onPress={()=>{ if(hasOrders) setSelectedCustomerOrders(c); }}>
-                      <Text style={{color:'white', fontSize:11, fontWeight:'bold'}}>📦 ΠΑΡΑΓΓΕΛΙΕΣ</Text>
-                    </TouchableOpacity>
-                  );
-                })()}
+                <TouchableOpacity
+                  style={{backgroundColor:'#007AFF', paddingHorizontal:10, paddingVertical:6, borderRadius:6, alignItems:'center'}}
+                  onPress={()=>setSelectedCustomerOrders(c)}>
+                  <Text style={{color:'white', fontSize:11, fontWeight:'bold'}}>📦 ΠΑΡΑΓΓΕΛΙΕΣ</Text>
+                </TouchableOpacity>
                 <TouchableOpacity
                   style={styles.deleteBtn}
                   onLongPress={() => deleteCustomer(c.id)}
                   delayLongPress={2000}
                   activeOpacity={0.6}
+                  onPress={()=>{}}
                 >
                   <Text style={styles.deleteTxt}>✕</Text>
                 </TouchableOpacity>
@@ -199,9 +188,10 @@ export default function CustomersScreen({ customers, setCustomers, onClose, pref
       </ScrollView>
 
       {/* MODAL ΠΑΡΑΓΓΕΛΙΩΝ ΠΕΛΑΤΗ — έξω από ScrollView */}
+      {/* MODAL ΠΑΡΑΓΓΕΛΙΩΝ ΠΕΛΑΤΗ — ΟΛΑ */}
       <Modal visible={!!selectedCustomerOrders} transparent animationType="slide" onRequestClose={()=>setSelectedCustomerOrders(null)}>
         <View style={{flex:1, backgroundColor:'rgba(0,0,0,0.5)', justifyContent:'flex-end'}}>
-          <View style={{backgroundColor:'#fff', borderTopLeftRadius:16, borderTopRightRadius:16, maxHeight:'75%'}}>
+          <View style={{backgroundColor:'#fff', borderTopLeftRadius:16, borderTopRightRadius:16, maxHeight:'80%'}}>
             <View style={{backgroundColor:'#8B0000', padding:16, borderTopLeftRadius:16, borderTopRightRadius:16, flexDirection:'row', justifyContent:'space-between', alignItems:'center'}}>
               <Text style={{color:'white', fontWeight:'bold', fontSize:16}}>📦 {selectedCustomerOrders?.name}</Text>
               <TouchableOpacity onPress={()=>setSelectedCustomerOrders(null)}>
@@ -209,27 +199,70 @@ export default function CustomersScreen({ customers, setCustomers, onClose, pref
               </TouchableOpacity>
             </View>
             <ScrollView style={{padding:12}}>
-              {customOrders.filter(o=>o.customer===selectedCustomerOrders?.name && o.status!=='SOLD').length === 0 ? (
-                <Text style={{textAlign:'center', color:'#999', padding:20}}>Δεν υπάρχουν ενεργές παραγγελίες</Text>
-              ) : (
-                customOrders.filter(o=>o.customer===selectedCustomerOrders?.name && o.status!=='SOLD')
-                  .sort((a,b)=>(parseInt(a.orderNo)||0)-(parseInt(b.orderNo)||0))
-                  .map(o=>{
-                    const st = getStatusLabel(o);
-                    return (
-                      <View key={o.id} style={{backgroundColor:'#f9f9f9', borderRadius:8, padding:12, marginBottom:8, borderLeftWidth:4, borderLeftColor:st.color}}>
-                        <Text style={{fontWeight:'bold', fontSize:14}}>#{o.orderNo} — {o.h}x{o.w}</Text>
-                        <Text style={{fontSize:12, color:'#555', marginTop:2}}>{o.orderType==='ΤΥΠΟΠΟΙΗΜΕΝΗ'?'📐 Τυποποιημένη':'✏️ Ειδική'} | {o.side}</Text>
-                        {o.notes?<Text style={{fontSize:11, color:'#888', marginTop:2}}>Σημ: {o.notes}</Text>:null}
-                        <View style={{marginTop:6, backgroundColor:st.color+'22', paddingHorizontal:8, paddingVertical:4, borderRadius:6, alignSelf:'flex-start'}}>
-                          <Text style={{fontSize:12, fontWeight:'bold', color:st.color}}>{st.label}</Text>
-                        </View>
+              {(()=>{
+                const allCustomerOrders = [...allOrders, ...specialOrders]
+                  .filter(o=>o.customer===selectedCustomerOrders?.name)
+                  .sort((a,b)=>(parseInt(a.orderNo)||0)-(parseInt(b.orderNo)||0));
+                if (allCustomerOrders.length === 0) return (
+                  <Text style={{textAlign:'center', color:'#999', padding:20}}>Δεν υπάρχουν παραγγελίες</Text>
+                );
+                return allCustomerOrders.map(o=>{
+                  const st = getStatusLabel(o);
+                  return (
+                    <View key={o.id} style={{backgroundColor:'#f9f9f9', borderRadius:8, padding:12, marginBottom:8, borderLeftWidth:4, borderLeftColor:st.color}}>
+                      <Text style={{fontWeight:'bold', fontSize:14}}>#{o.orderNo} — {o.h}x{o.w}</Text>
+                      <Text style={{fontSize:12, color:'#555', marginTop:2}}>{o.orderType==='ΤΥΠΟΠΟΙΗΜΕΝΗ'?'📐 Τυποποιημένη':'✏️ Ειδική'} | {o.side||''}</Text>
+                      {o.notes?<Text style={{fontSize:11, color:'#888', marginTop:2}}>Σημ: {o.notes}</Text>:null}
+                      <View style={{marginTop:6, backgroundColor:st.color+'22', paddingHorizontal:8, paddingVertical:4, borderRadius:6, alignSelf:'flex-start'}}>
+                        <Text style={{fontSize:12, fontWeight:'bold', color:st.color}}>{st.label}</Text>
                       </View>
-                    );
-                  })
-              )}
+                    </View>
+                  );
+                });
+              })()}
               <View style={{height:20}}/>
             </ScrollView>
+          </View>
+        </View>
+      </Modal>
+
+      {/* MODAL ΔΙΑΓΡΑΦΗΣ ΠΕΛΑΤΗ */}
+      <Modal visible={!!deleteCustomerModal.visible} transparent animationType="fade">
+        <View style={{flex:1, backgroundColor:'rgba(0,0,0,0.6)', justifyContent:'center', alignItems:'center'}}>
+          <View style={{backgroundColor:'#fff', borderRadius:16, padding:24, width:'85%', maxWidth:380}}>
+            {deleteCustomerModal.blocked ? (
+              <>
+                <Text style={{fontSize:17, fontWeight:'bold', color:'#b71c1c', marginBottom:12, textAlign:'center'}}>⛔ Αδύνατη Διαγραφή</Text>
+                <Text style={{fontSize:14, color:'#444', marginBottom:24, textAlign:'center'}}>
+                  Ο πελάτης <Text style={{fontWeight:'bold'}}>{deleteCustomerModal.customerName}</Text> έχει παραγγελίες στο σύστημα και δεν μπορεί να διαγραφεί.
+                </Text>
+                <TouchableOpacity
+                  style={{backgroundColor:'#8B0000', padding:14, borderRadius:10, alignItems:'center'}}
+                  onPress={()=>setDeleteCustomerModal({visible:false, customerId:null, customerName:'', blocked:false})}>
+                  <Text style={{color:'white', fontWeight:'bold', fontSize:14}}>ΟΚ</Text>
+                </TouchableOpacity>
+              </>
+            ) : (
+              <>
+                <Text style={{fontSize:17, fontWeight:'bold', color:'#b71c1c', marginBottom:8, textAlign:'center'}}>⚠️ Διαγραφή Πελάτη</Text>
+                <Text style={{fontSize:14, color:'#444', marginBottom:24, textAlign:'center'}}>
+                  Διαγραφή του <Text style={{fontWeight:'bold'}}>{deleteCustomerModal.customerName}</Text>; Η ενέργεια δεν αναιρείται.
+                </Text>
+                <TouchableOpacity
+                  style={{backgroundColor:'#b71c1c', padding:14, borderRadius:10, alignItems:'center', marginBottom:8}}
+                  onPress={async()=>{
+                    await confirmDeleteCustomer(deleteCustomerModal.customerId);
+                    setDeleteCustomerModal({visible:false, customerId:null, customerName:'', blocked:false});
+                  }}>
+                  <Text style={{color:'white', fontWeight:'bold', fontSize:14}}>🗑️ ΔΙΑΓΡΑΦΗ</Text>
+                </TouchableOpacity>
+                <TouchableOpacity
+                  style={{backgroundColor:'#f5f5f5', padding:14, borderRadius:10, alignItems:'center', borderWidth:1, borderColor:'#ddd'}}
+                  onPress={()=>setDeleteCustomerModal({visible:false, customerId:null, customerName:'', blocked:false})}>
+                  <Text style={{color:'#555', fontWeight:'bold', fontSize:14}}>ΑΚΥΡΟ</Text>
+                </TouchableOpacity>
+              </>
+            )}
           </View>
         </View>
       </Modal>

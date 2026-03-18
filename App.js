@@ -151,6 +151,8 @@ export default function App() {
   const [coatings, setCoatings] = useState([]);
   const [locks, setLocks] = useState([]);
   const [dipliSasiStock, setDipliSasiStock] = useState([]);
+  const [sasiStock, setSasiStock] = useState({});
+  const [caseStock, setCaseStock] = useState({});
 
   useEffect(() => { fetchData(); }, []);
 
@@ -224,6 +226,15 @@ export default function App() {
         const loaded7 = Object.keys(data7).map(key => ({ id: key, ...data7[key] }));
         setLocks(loaded7);
       }
+      // Φόρτωση νέου stock
+      const resSasiStock = await fetch(`${FIREBASE_URL}/sasi_stock.json`);
+      const dataSasiStock = await resSasiStock.json();
+      if (dataSasiStock) setSasiStock(dataSasiStock);
+
+      const resCaseStock = await fetch(`${FIREBASE_URL}/case_stock.json`);
+      const dataCaseStock = await resCaseStock.json();
+      if (dataCaseStock) setCaseStock(dataCaseStock);
+
     } catch (error) {
       console.error(error);
     } finally {
@@ -275,9 +286,9 @@ export default function App() {
         {/* SCREENS με swipe */}
         <View style={{ flex: 1 }} {...panResponder.panHandlers}>
           {view === 'special' && <SpecialScreen specialOrders={specialOrders} setSpecialOrders={setSpecialOrders} soldSpecialOrders={soldSpecialOrders} setSoldSpecialOrders={setSoldSpecialOrders} customers={customers} onRequestAddCustomer={(name, cb)=>{ setPendingCustomer(name); setPendingCustomerCallback(()=>cb); setShowCustomers(true); }} coatings={coatings} locks={locks} />}
-          {view === 'custom' && <CustomScreen customOrders={customOrders} setCustomOrders={setCustomOrders} soldOrders={soldOrders} setSoldOrders={setSoldOrders} customers={customers} onRequestAddCustomer={(name, cb)=>{ setPendingCustomer(name); setPendingCustomerCallback(()=>cb); setShowCustomers(true); }} sasiOrders={sasiOrders} setSasiOrders={setSasiOrders} caseOrders={caseOrders} setCaseOrders={setCaseOrders} coatings={coatings} dipliSasiStock={dipliSasiStock} setDipliSasiStock={setDipliSasiStock} locks={locks} specialOrders={specialOrders} />}
-          {view === 'sasi'   && <SasiScreen sasiOrders={sasiOrders} setSasiOrders={setSasiOrders} soldSasiOrders={soldSasiOrders} setSoldSasiOrders={setSoldSasiOrders} />}
-          {view === 'cases'  && <CaseScreen caseOrders={caseOrders} setCaseOrders={setCaseOrders} soldCaseOrders={soldCaseOrders} setSoldCaseOrders={setSoldCaseOrders} />}
+          {view === 'custom' && <CustomScreen customOrders={customOrders} setCustomOrders={setCustomOrders} soldOrders={soldOrders} setSoldOrders={setSoldOrders} customers={customers} onRequestAddCustomer={(name, cb)=>{ setPendingCustomer(name); setPendingCustomerCallback(()=>cb); setShowCustomers(true); }} sasiStock={sasiStock} setSasiStock={setSasiStock} caseStock={caseStock} setCaseStock={setCaseStock} sasiOrders={sasiOrders} setSasiOrders={setSasiOrders} caseOrders={caseOrders} setCaseOrders={setCaseOrders} coatings={coatings} dipliSasiStock={dipliSasiStock} setDipliSasiStock={setDipliSasiStock} locks={locks} specialOrders={specialOrders} />}
+          {view === 'sasi'   && <SasiScreen sasiStock={sasiStock} setSasiStock={setSasiStock} />}
+          {view === 'cases'  && <CaseScreen caseStock={caseStock} setCaseStock={setCaseStock} />}
           {view === 'stats'  && <StatsScreen customOrders={customOrders} soldOrders={soldOrders} sasiOrders={sasiOrders} soldSasiOrders={soldSasiOrders} caseOrders={caseOrders} soldCaseOrders={soldCaseOrders} />}
         </View>
 
@@ -340,9 +351,10 @@ export default function App() {
             customers={customers}
             setCustomers={setCustomers}
             customOrders={[...customOrders, ...soldOrders]}
-            allOrders={[...customOrders, ...soldOrders]}
+            allOrders={[...customOrders, ...soldOrders, ...specialOrders, ...soldSpecialOrders]}
             setCustomOrders={setCustomOrders}
             setSoldOrders={setSoldOrders}
+            specialOrders={[...specialOrders, ...soldSpecialOrders]}
             onClose={() => { setShowCustomers(false); setPendingCustomer(null); setPendingCustomerCallback(null); }}
             prefillName={pendingCustomer}
             onCustomerAdded={(newCustomer) => {
