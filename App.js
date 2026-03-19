@@ -4,7 +4,6 @@ import {
   StatusBar, TouchableOpacity, ScrollView, Modal, TextInput,
   Animated, PanResponder, Dimensions, Alert, BackHandler
 } from 'react-native';
-import SpecialScreen from './SpecialScreen';
 import CustomScreen from './CustomScreen';
 import SasiScreen from './SasiScreen';
 import CaseScreen from './CaseScreen';
@@ -123,9 +122,9 @@ if (Platform.OS === 'android' && UIManager.setLayoutAnimationEnabledExperimental
   UIManager.setLayoutAnimationEnabledExperimental(true);
 }
 
-const TABS = ['special', 'custom', 'sasi', 'cases', 'stats'];
-const TAB_LABELS = { special: 'ΕΙΔΙΚΕΣ', custom: 'ΤΥΠΟΠΟΙΗΜΕΝΕΣ', sasi: 'ΣΑΣΙ ΣΤΟΚ', cases: 'ΚΑΣΕΣ ΣΤΟΚ', stats: 'ΣΤΑΤΙΣΤΙΚΑ' };
-const NAV_TABS = ['special', 'custom', 'sasi', 'cases']; // ΣΤΑΤΙΣΤΙΚΑ → μενού
+const TABS = ['custom', 'sasi', 'cases', 'stats'];
+const TAB_LABELS = { custom: 'ΤΥΠΟΠΟΙΗΜΕΝΕΣ', sasi: 'ΣΑΣΙ ΣΤΟΚ', cases: 'ΚΑΣΕΣ ΣΤΟΚ', stats: 'ΣΤΑΤΙΣΤΙΚΑ' };
+const NAV_TABS = ['custom', 'sasi', 'cases']; // ΣΤΑΤΙΣΤΙΚΑ → μενού
 
 export default function App() {
   const [isLoggedIn, setIsLoggedIn] = useState(isRemembered());
@@ -139,8 +138,6 @@ export default function App() {
   const [pendingCustomer, setPendingCustomer] = useState(null); // όνομα πελάτη από CustomScreen
   const [pendingCustomerCallback, setPendingCustomerCallback] = useState(null);
 
-  const [specialOrders, setSpecialOrders] = useState([]);
-  const [soldSpecialOrders, setSoldSpecialOrders] = useState([]);
   const [customOrders, setCustomOrders] = useState([]);
   const [soldOrders, setSoldOrders] = useState([]);
   const [sasiOrders, setSasiOrders] = useState([]);
@@ -155,6 +152,12 @@ export default function App() {
   const [caseStock, setCaseStock] = useState({});
 
   useEffect(() => { fetchData(); }, []);
+
+  // Αυτόματη ανανέωση κάθε 5 δευτερόλεπτα
+  useEffect(() => {
+    const interval = setInterval(() => { fetchData(true); }, 5000);
+    return () => clearInterval(interval);
+  }, []);
 
   // Back button handler
   useEffect(() => {
@@ -171,15 +174,10 @@ export default function App() {
     return () => sub.remove();
   }, [menuOpen, showActivity, showCoatings, showLocks, showCustomers, tabIndex]);
 
-  const fetchData = async () => {
+  const fetchData = async (silent=false) => {
+    if (!silent) setLoading(true);
     try {
-      const resS = await fetch(`${FIREBASE_URL}/special_orders.json`);
-      const dataS = await resS.json();
-      if (dataS) {
-        const loadedS = Object.keys(dataS).map(key => ({ id: key, ...dataS[key] }));
-        setSpecialOrders(loadedS.filter(o => o.status !== 'SOLD'));
-        setSoldSpecialOrders(loadedS.filter(o => o.status === 'SOLD'));
-      }
+
       const resStd = await fetch(`${FIREBASE_URL}/std_orders.json`);
       const dataStd = await resStd.json();
       if (dataStd) {
@@ -187,7 +185,6 @@ export default function App() {
         setCustomOrders(loadedStd.filter(o => o.status !== 'SOLD'));
         setSoldOrders(loadedStd.filter(o => o.status === 'SOLD'));
       }
-      // old /orders/ path removed - using std_orders and special_orders instead
       const res2 = await fetch(`${FIREBASE_URL}/sasi_orders.json`);
       const data2 = await res2.json();
       if (data2) {
@@ -285,8 +282,7 @@ export default function App() {
 
         {/* SCREENS με swipe */}
         <View style={{ flex: 1 }} {...panResponder.panHandlers}>
-          {view === 'special' && <SpecialScreen specialOrders={specialOrders} setSpecialOrders={setSpecialOrders} soldSpecialOrders={soldSpecialOrders} setSoldSpecialOrders={setSoldSpecialOrders} customers={customers} onRequestAddCustomer={(name, cb)=>{ setPendingCustomer(name); setPendingCustomerCallback(()=>cb); setShowCustomers(true); }} coatings={coatings} locks={locks} />}
-          {view === 'custom' && <CustomScreen customOrders={customOrders} setCustomOrders={setCustomOrders} soldOrders={soldOrders} setSoldOrders={setSoldOrders} customers={customers} onRequestAddCustomer={(name, cb)=>{ setPendingCustomer(name); setPendingCustomerCallback(()=>cb); setShowCustomers(true); }} sasiStock={sasiStock} setSasiStock={setSasiStock} caseStock={caseStock} setCaseStock={setCaseStock} sasiOrders={sasiOrders} setSasiOrders={setSasiOrders} caseOrders={caseOrders} setCaseOrders={setCaseOrders} coatings={coatings} dipliSasiStock={dipliSasiStock} setDipliSasiStock={setDipliSasiStock} locks={locks} specialOrders={specialOrders} />}
+          {view === 'custom' && <CustomScreen customOrders={customOrders} setCustomOrders={setCustomOrders} soldOrders={soldOrders} setSoldOrders={setSoldOrders} customers={customers} onRequestAddCustomer={(name, cb)=>{ setPendingCustomer(name); setPendingCustomerCallback(()=>cb); setShowCustomers(true); }} sasiStock={sasiStock} setSasiStock={setSasiStock} caseStock={caseStock} setCaseStock={setCaseStock} sasiOrders={sasiOrders} setSasiOrders={setSasiOrders} caseOrders={caseOrders} setCaseOrders={setCaseOrders} coatings={coatings} dipliSasiStock={dipliSasiStock} setDipliSasiStock={setDipliSasiStock} locks={locks} />}
           {view === 'sasi'   && <SasiScreen sasiStock={sasiStock} setSasiStock={setSasiStock} />}
           {view === 'cases'  && <CaseScreen caseStock={caseStock} setCaseStock={setCaseStock} />}
           {view === 'stats'  && <StatsScreen customOrders={customOrders} soldOrders={soldOrders} sasiOrders={sasiOrders} soldSasiOrders={soldSasiOrders} caseOrders={caseOrders} soldCaseOrders={soldCaseOrders} />}
@@ -351,10 +347,10 @@ export default function App() {
             customers={customers}
             setCustomers={setCustomers}
             customOrders={[...customOrders, ...soldOrders]}
-            allOrders={[...customOrders, ...soldOrders, ...specialOrders, ...soldSpecialOrders]}
+            allOrders={[...customOrders, ...soldOrders]}
             setCustomOrders={setCustomOrders}
             setSoldOrders={setSoldOrders}
-            specialOrders={[...specialOrders, ...soldSpecialOrders]}
+            specialOrders={[]}
             onClose={() => { setShowCustomers(false); setPendingCustomer(null); setPendingCustomerCallback(null); }}
             prefillName={pendingCustomer}
             onCustomerAdded={(newCustomer) => {
