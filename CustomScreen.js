@@ -186,7 +186,7 @@ function DuplicateModal({ visible, base, suggested, onUse, onKeep, onCancel }) {
   );
 }
 
-export default function CustomScreen({ customOrders, setCustomOrders, soldOrders, setSoldOrders, customers, onRequestAddCustomer, sasiStock={}, setSasiStock, caseStock={}, setCaseStock, sasiOrders=[], setSasiOrders, caseOrders=[], setCaseOrders, coatings=[], dipliSasiStock=[], setDipliSasiStock, locks=[], specialOrders=[] }) {
+export default function CustomScreen({ customOrders, setCustomOrders, soldOrders, setSoldOrders, customers, onRequestAddCustomer, sasiStock={}, setSasiStock, caseStock={}, setCaseStock, sasiOrders=[], setSasiOrders, caseOrders=[], setCaseOrders, coatings=[], dipliSasiStock=[], setDipliSasiStock, locks=[] }) {
   const [expanded, setExpanded] = useState({ pending:false, prod:false, ready:false, archive:false, stdList:true, stdMoni:true, stdDipli:true, stdReady:true, stdSold:false, stdReadyD:true, stdSoldD:false, stdMoniOpen:false, stdDipliOpen:false, dipliProd:true, dipliSasiStock:false, moniProd:true, moniSasiStock:false });
   const [showHardwarePicker, setShowHardwarePicker] = useState(false);
   const [showLockPicker, setShowLockPicker] = useState(false);
@@ -1920,10 +1920,10 @@ export default function CustomScreen({ customOrders, setCustomOrders, soldOrders
             onChangeText={v=>setCustomForm({...customForm,orderNo:v})}
             onSubmitEditing={()=>{
               if (!customForm.orderNo) { hRef.current?.focus(); return; }
-              const exists = [...customOrders,...specialOrders].some(o=>o.orderNo===customForm.orderNo && o.id!==editingOrder?.id);
+              const exists = customOrders.some(o=>o.orderNo===customForm.orderNo && o.id!==editingOrder?.id);
               if (exists) {
                 const base = customForm.orderNo;
-                const suggested = computeSuggested(base, [...customOrders,...specialOrders], editingOrder?.id);
+                const suggested = computeSuggested(base, customOrders, editingOrder?.id);
                 Keyboard.dismiss();
                 setDupModal({
                   visible:true, base, suggested,
@@ -1937,10 +1937,10 @@ export default function CustomScreen({ customOrders, setCustomOrders, soldOrders
             }}
             onBlur={()=>{
               if (!customForm.orderNo) return;
-              const exists = [...customOrders,...specialOrders].some(o=>o.orderNo===customForm.orderNo && o.id!==editingOrder?.id);
+              const exists = customOrders.some(o=>o.orderNo===customForm.orderNo && o.id!==editingOrder?.id);
               if (exists) {
                 const base = customForm.orderNo;
-                const suggested = computeSuggested(base, [...customOrders,...specialOrders], editingOrder?.id);
+                const suggested = computeSuggested(base, customOrders, editingOrder?.id);
                 setDupModal({
                   visible:true, base, suggested,
                   onUse:()=>{ setDupModal(m=>({...m,visible:false})); setCustomForm(f=>({...f,orderNo:suggested})); },
@@ -3252,7 +3252,7 @@ export default function CustomScreen({ customOrders, setCustomOrders, soldOrders
                 </>)}
               </>);
             })()}
-          </>)}
+          </>)
         </View>
       </ScrollView>
 
