@@ -1275,14 +1275,14 @@ export default function CustomScreen({ customOrders, setCustomOrders, soldOrders
     ]);
   };
 
-  const cancelOrder = (id) => Alert.alert("Ακύρωση","Οριστική διαγραφή;",[{text:"Όχι"},{text:"Ναι",style:"destructive",onPress:async()=>{
+  const cancelOrder = async (id) => { if (!window.confirm('Ακύρωση — Οριστική διαγραφή;')) return; await (async()=>{
     const order = customOrders.find(o=>o.id===id);
     setCustomOrders(customOrders.filter(o=>o.id!==id));
     await deleteFromCloud(id);
     if (!order || order.orderType!=='ΤΥΠΟΠΟΙΗΜΕΝΗ') return;
     const isMoni = (order.sasiType==='ΜΟΝΗ ΘΩΡΑΚΙΣΗ'||!order.sasiType) && !order.lock;
     await removeStockReservation(order.orderNo, order.h, order.w, order.side, order.caseType, isMoni);
-  }}]);
+  })(); };
   const deleteFromArchive = (id) => Alert.alert("Διαγραφή","Διαγραφή από αρχείο;",[{text:"Όχι"},{text:"Ναι",style:"destructive",onPress:async()=>{setSoldOrders(soldOrders.filter(o=>o.id!==id));await deleteFromCloud(id);}}]);
   const toggleSection = (s) => { LayoutAnimation.configureNext(LayoutAnimation.Presets.easeInEaseOut); setExpanded({...expanded,[s]:!expanded[s]}); };
 
@@ -2541,16 +2541,16 @@ export default function CustomScreen({ customOrders, setCustomOrders, soldOrders
               const moniCards = moniOrders.map(o=>{
                 const sk = sasiKey(String(o.h), String(o.w), o.side);
                 const ck = caseKey(String(o.h), String(o.w), o.side, o.caseType);
-                // ✅ μόνο αν υπάρχει φυσικό διαθέσιμο απόθεμα (qty > reservations)
-                const hasSasi = stockAvailable(sasiStock, sk) > 0;
-                const hasCase = stockAvailable(caseStock, ck) > 0;
+                // ✅ πράσινο αν: υπάρχει διαθέσιμο stock ή έχει δέσμευση για αυτή την παραγγελία
+                const hasSasi = stockAvailable(sasiStock, sk) > 0 || (sasiStock[sk]?.reservations||[]).some(r=>r.orderNo===o.orderNo);
+                const hasCase = stockAvailable(caseStock, ck) > 0 || (caseStock[ck]?.reservations||[]).some(r=>r.orderNo===o.orderNo);
                 return renderStdCard(o, hasSasi, hasCase, true);
               });
 
               // ΔΙΠΛΗ — έλεγχος με νέο stock
               const dipliCards = dipliOrders.map(o=>{
                 const ckD = caseKey(String(o.h), String(o.w), o.side, o.caseType);
-                const hasCase = stockAvailable(caseStock, ckD) > 0;
+                const hasCase = stockAvailable(caseStock, ckD) > 0 || (caseStock[ckD]?.reservations||[]).some(r=>r.orderNo===o.orderNo);
                 return renderStdCard(o, false, hasCase, false);
               });
 

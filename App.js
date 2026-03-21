@@ -153,12 +153,6 @@ export default function App() {
 
   useEffect(() => { fetchData(); }, []);
 
-  // Αυτόματη ανανέωση κάθε 5 δευτερόλεπτα
-  useEffect(() => {
-    const interval = setInterval(() => { fetchData(true); }, 5000);
-    return () => clearInterval(interval);
-  }, []);
-
   // Back button handler
   useEffect(() => {
     if (Platform.OS === 'web') return;
@@ -174,8 +168,7 @@ export default function App() {
     return () => sub.remove();
   }, [menuOpen, showActivity, showCoatings, showLocks, showCustomers, tabIndex]);
 
-  const fetchData = async (silent=false) => {
-    if (!silent) setLoading(true);
+  const fetchData = async () => {
     try {
 
       const resStd = await fetch(`${FIREBASE_URL}/std_orders.json`);
@@ -370,15 +363,15 @@ const styles = StyleSheet.create({
   container: { flex: 1, backgroundColor: '#f5f5f5' },
   loading: { flex: 1, justifyContent: 'center', alignItems: 'center', gap: 12 },
   loadingText: { color: '#555', fontSize: 14 },
-  header: { backgroundColor: '#8B0000', paddingVertical: 8, paddingHorizontal: 10, borderRadius: 18, marginHorizontal: 8, marginTop: (StatusBar.currentHeight || 0) + 6, flexDirection: 'row', alignItems: 'center', gap: 6 },
-  headerTitle: { color: 'white', fontSize: 13, fontWeight: '800', fontStyle: 'italic', letterSpacing: 2 },
+  header: { backgroundColor: '#F9A825', paddingVertical: 8, paddingHorizontal: 10, borderRadius: 18, marginHorizontal: 8, marginTop: (StatusBar.currentHeight || 0) + 6, flexDirection: 'row', alignItems: 'center', gap: 6 },
+  headerTitle: { color: '#1a1a1a', fontSize: 13, fontWeight: '800', fontStyle: 'italic', letterSpacing: 2 },
   headerTabs: { flex: 1, flexDirection: 'row', gap: 4 },
-  headerTabBtn: { flex: 1, paddingVertical: 6, paddingHorizontal: 2, borderRadius: 6, backgroundColor: 'rgba(255,255,255,0.15)', alignItems: 'center' },
-  headerTabActive: { backgroundColor: 'white' },
-  headerTabTxt: { color: 'rgba(255,255,255,0.8)', fontSize: 9, fontWeight: '700' },
-  headerTabTxtActive: { color: '#8B0000' },
+  headerTabBtn: { flex: 1, paddingVertical: 6, paddingHorizontal: 2, borderRadius: 6, backgroundColor: 'rgba(0,0,0,0.1)', alignItems: 'center' },
+  headerTabActive: { backgroundColor: '#1a1a1a' },
+  headerTabTxt: { color: 'rgba(0,0,0,0.6)', fontSize: 9, fontWeight: '700' },
+  headerTabTxtActive: { color: 'white' },
   menuBtn: { padding: 4 },
-  menuIcon: { color: 'white', fontSize: 22 },
+  menuIcon: { color: '#1a1a1a', fontSize: 22 },
   nav: { flexDirection: 'row', backgroundColor: '#fff', borderBottomWidth: 1, borderColor: '#ddd' },
   navBtn: { flex: 1, paddingVertical: 14, alignItems: 'center' },
   activeNav: { borderBottomWidth: 3, borderBottomColor: '#8B0000' },
