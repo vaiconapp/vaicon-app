@@ -1734,6 +1734,10 @@ export default function CustomScreen({ customOrders, setCustomOrders, soldOrders
                                 {text:"ΔΙΑΓΡΑΦΗ",style:"destructive",onPress:async()=>{
                                   setCustomOrders(customOrders.filter(x=>x.id!==o.id));
                                   await deleteFromCloud(o.id);
+                                  if (o.orderType === 'ΤΥΠΟΠΟΙΗΜΕΝΗ') {
+                                    const isMoni = (o.sasiType === 'ΜΟΝΗ ΘΩΡΑΚΙΣΗ' || !o.sasiType) && !o.lock;
+                                    await removeStockReservation(o.orderNo, o.h, o.w, o.side, o.caseType, isMoni);
+                                  }
                                 }}
                               ])}>
                               <Text style={{color:'white', fontSize:10, fontWeight:'bold'}}>✕ ΔΙΑ/ΦΗ</Text>
@@ -2227,6 +2231,10 @@ export default function CustomScreen({ customOrders, setCustomOrders, soldOrders
                             {text:"ΔΙΑΓΡΑΦΗ",style:"destructive",onPress:async()=>{
                               setCustomOrders(customOrders.filter(x=>x.id!==o.id));
                               await deleteFromCloud(o.id);
+                              if (o.orderType === 'ΤΥΠΟΠΟΙΗΜΕΝΗ') {
+                                const isMoni = (o.sasiType === 'ΜΟΝΗ ΘΩΡΑΚΙΣΗ' || !o.sasiType) && !o.lock;
+                                await removeStockReservation(o.orderNo, o.h, o.w, o.side, o.caseType, isMoni);
+                              }
                             }}
                           ])}>
                           <Text style={{color:'white', fontSize:10, fontWeight:'bold'}}>✕ ΔΙΑ/ΦΗ</Text>
