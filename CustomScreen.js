@@ -1730,13 +1730,11 @@ export default function CustomScreen({ customOrders, setCustomOrders, soldOrders
                             </TouchableOpacity>
                             <TouchableOpacity
                               style={{backgroundColor:'#ff4444', paddingHorizontal:8, paddingVertical:3, borderRadius:5, alignSelf:'stretch', alignItems:'center'}}
-                              onPress={()=>Alert.alert("⚠️ Διαγραφή",`Διαγραφή παραγγελίας #${o.orderNo};`,[
-                                {text:"ΑΚΥΡΟ",style:"cancel"},
-                                {text:"ΔΙΑΓΡΑΦΗ",style:"destructive",onPress:async()=>{
-                                  setCustomOrders(customOrders.filter(x=>x.id!==o.id));
-                                  await deleteFromCloud(o.id);
-                                }}
-                              ])}>
+                              onPress={async()=>{
+                                if(!window.confirm(`Διαγραφή παραγγελίας #${o.orderNo};`)) return;
+                                setCustomOrders(customOrders.filter(x=>x.id!==o.id));
+                                await deleteFromCloud(o.id);
+                              }}>
                               <Text style={{color:'white', fontSize:10, fontWeight:'bold'}}>✕ ΔΙΑ/ΦΗ</Text>
                             </TouchableOpacity>
                           </View>
@@ -2223,13 +2221,11 @@ export default function CustomScreen({ customOrders, setCustomOrders, soldOrders
                         {/* ΔΙΑΓΡΑΦΗ */}
                         <TouchableOpacity
                           style={{backgroundColor:'#ff4444', paddingHorizontal:8, paddingVertical:3, borderRadius:5, alignSelf:'stretch', alignItems:'center'}}
-                          onPress={()=>Alert.alert("⚠️ Διαγραφή",`Διαγραφή παραγγελίας #${o.orderNo};`,[
-                            {text:"ΑΚΥΡΟ",style:"cancel"},
-                            {text:"ΔΙΑΓΡΑΦΗ",style:"destructive",onPress:async()=>{
-                              setCustomOrders(customOrders.filter(x=>x.id!==o.id));
-                              await deleteFromCloud(o.id);
-                            }}
-                          ])}>
+                          onPress={async()=>{
+                            if(!window.confirm(`Διαγραφή παραγγελίας #${o.orderNo};`)) return;
+                            setCustomOrders(customOrders.filter(x=>x.id!==o.id));
+                            await deleteFromCloud(o.id);
+                          }}>
                           <Text style={{color:'white', fontSize:10, fontWeight:'bold'}}>✕ ΔΙΑ/ΦΗ</Text>
                         </TouchableOpacity>
 
