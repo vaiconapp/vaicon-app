@@ -350,7 +350,6 @@ export default function App() {
             allOrders={[...customOrders, ...soldOrders]}
             setCustomOrders={setCustomOrders}
             setSoldOrders={setSoldOrders}
-            specialOrders={[]}
             onClose={() => { setShowCustomers(false); setPendingCustomer(null); setPendingCustomerCallback(null); }}
             prefillName={pendingCustomer}
             onCustomerAdded={(newCustomer) => {
@@ -370,13 +369,13 @@ const styles = StyleSheet.create({
   container: { flex: 1, backgroundColor: '#f5f5f5' },
   loading: { flex: 1, justifyContent: 'center', alignItems: 'center', gap: 12 },
   loadingText: { color: '#555', fontSize: 14 },
-  header: { backgroundColor: '#8B0000', paddingVertical: 8, paddingHorizontal: 10, borderRadius: 18, marginHorizontal: 8, marginTop: (StatusBar.currentHeight || 0) + 6, flexDirection: 'row', alignItems: 'center', gap: 6 },
+  header: { backgroundColor: '#1565C0', paddingVertical: 8, paddingHorizontal: 10, borderRadius: 18, marginHorizontal: 8, marginTop: (StatusBar.currentHeight || 0) + 6, flexDirection: 'row', alignItems: 'center', gap: 6 },
   headerTitle: { color: 'white', fontSize: 13, fontWeight: '800', fontStyle: 'italic', letterSpacing: 2 },
   headerTabs: { flex: 1, flexDirection: 'row', gap: 4 },
   headerTabBtn: { flex: 1, paddingVertical: 6, paddingHorizontal: 2, borderRadius: 6, backgroundColor: 'rgba(255,255,255,0.15)', alignItems: 'center' },
   headerTabActive: { backgroundColor: 'white' },
   headerTabTxt: { color: 'rgba(255,255,255,0.8)', fontSize: 9, fontWeight: '700' },
-  headerTabTxtActive: { color: '#8B0000' },
+  headerTabTxtActive: { color: '#1565C0' },
   menuBtn: { padding: 4 },
   menuIcon: { color: 'white', fontSize: 22 },
   nav: { flexDirection: 'row', backgroundColor: '#fff', borderBottomWidth: 1, borderColor: '#ddd' },

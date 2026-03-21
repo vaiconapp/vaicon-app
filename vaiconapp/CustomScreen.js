@@ -1264,26 +1264,26 @@ export default function CustomScreen({ customOrders, setCustomOrders, soldOrders
 
                 const cardBorder = '#8B0000';
                 return (
-                  <TouchableOpacity key={o.id}
-                    onLongPress={()=>{
-                      setCustomForm(o);
-                      setOrderType('ΤΥΠΟΠΟΙΗΜΕΝΗ');
-                      setCustomerSearch(o.customer||'');
-                      setEditingOrder(o);
-                      setCustomOrders(customOrders.filter(x=>x.id!==o.id));
-                      deleteFromCloud(o.id);
-                    }}
-                    delayLongPress={1000}
-                    activeOpacity={0.8}
+                  <View key={o.id}
                     style={{backgroundColor:'#fff', borderRadius:8, padding:10, marginBottom:8, borderLeftWidth:5, borderLeftColor:cardBorder, elevation:2}}>
                     <View style={{flexDirection:'row', justifyContent:'space-between', alignItems:'flex-start'}}>
-                      <View style={{flex:1}}>
+                      <TouchableOpacity style={{flex:1}}
+                        onLongPress={()=>{
+                          setCustomForm(o);
+                          setOrderType('ΤΥΠΟΠΟΙΗΜΕΝΗ');
+                          setCustomerSearch(o.customer||'');
+                          setEditingOrder(o);
+                          setCustomOrders(customOrders.filter(x=>x.id!==o.id));
+                          deleteFromCloud(o.id);
+                        }}
+                        delayLongPress={1000}
+                        activeOpacity={0.8}>
                         <Text style={{fontWeight:'bold', fontSize:13}}>#{o.orderNo} {o.customer?`— ${o.customer}`:''}</Text>
                         <Text style={{fontSize:12, color:'#555', marginTop:1}}>{o.h}x{o.w} | {o.side}</Text>
                         {o.notes?<Text style={{fontSize:11, color:'#888'}}>Σημ: {o.notes}</Text>:null}
                         {o.deliveryDate?<Text style={{fontSize:10, color:'#007AFF'}}>📅 Παράδοση: {o.deliveryDate}</Text>:null}
                         <Text style={{fontSize:10, color:'#999'}}>📋 {fmtDate(o.createdAt)}</Text>
-                      </View>
+                      </TouchableOpacity>
                       <View style={{alignItems:'flex-end', gap:4, marginLeft:8}}>
                         <View style={{flexDirection:'row', gap:4}}>
                           {/* ΚΑΣΑ */}
@@ -1300,12 +1300,16 @@ export default function CustomScreen({ customOrders, setCustomOrders, soldOrders
 
                         {/* ΔΙΑΓΡΑΦΗ */}
                         <TouchableOpacity
-                          style={{backgroundColor:'#ff4444', paddingHorizontal:8, paddingVertical:3, borderRadius:5, alignSelf:'stretch', alignItems:'center'}}
+                          style={{backgroundColor:'#ff4444', paddingHorizontal:8, paddingVertical:3, borderRadius:5, alignSelf:'stretch', alignItems:'center', zIndex: 10, elevation: 10}}
                           onPress={()=>Alert.alert("⚠️ Διαγραφή",`Διαγραφή παραγγελίας #${o.orderNo};`,[
                             {text:"ΑΚΥΡΟ",style:"cancel"},
                             {text:"ΔΙΑΓΡΑΦΗ",style:"destructive",onPress:async()=>{
                               setCustomOrders(customOrders.filter(x=>x.id!==o.id));
                               await deleteFromCloud(o.id);
+                              if (o.orderType === 'ΤΥΠΟΠΟΙΗΜΕΝΗ') {
+                                const isMoni = (o.sasiType === 'ΜΟΝΗ ΘΩΡΑΚΙΣΗ' || !o.sasiType) && !o.lock;
+                                await removeStockReservation(o.orderNo, o.h, o.w, o.side, o.caseType, isMoni);
+                              }
                             }}
                           ])}>
                           <Text style={{color:'white', fontSize:10, fontWeight:'bold'}}>✕ ΔΙΑ/ΦΗ</Text>
@@ -1352,7 +1356,7 @@ export default function CustomScreen({ customOrders, setCustomOrders, soldOrders
                         </>)}
                       </View>
                     </View>
-                  </TouchableOpacity>
+                  </View>
                 );
               };
 
