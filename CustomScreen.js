@@ -2177,13 +2177,15 @@ export default function CustomScreen({ customOrders, setCustomOrders, soldOrders
                 const cardBorder = '#8B0000';
                 return (
                   <TouchableOpacity key={o.id}
-                    onLongPress={()=>{
+                    onLongPress={async()=>{
+                      const isMoni = (o.sasiType==='ΜΟΝΗ ΘΩΡΑΚΙΣΗ'||!o.sasiType) && !o.lock;
                       setCustomForm(o);
                       setOrderType('ΤΥΠΟΠΟΙΗΜΕΝΗ');
                       setCustomerSearch(o.customer||'');
                       setEditingOrder(o);
                       setCustomOrders(customOrders.filter(x=>x.id!==o.id));
                       deleteFromCloud(o.id);
+                      await removeStockReservation(o.orderNo, o.h, o.w, o.side, o.caseType, isMoni);
                       setTimeout(()=>{
                         if(Platform.OS==='web') window.scrollTo({top:0, behavior:'smooth'});
                         else mainScrollRef.current?.scrollTo({y:0, animated:true});
