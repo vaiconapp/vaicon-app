@@ -2176,31 +2176,14 @@ export default function CustomScreen({ customOrders, setCustomOrders, soldOrders
 
                 const cardBorder = '#8B0000';
                 return (
-                  <TouchableOpacity key={o.id}
-                    onLongPress={async()=>{
-                      const isMoni = (o.sasiType==='ΜΟΝΗ ΘΩΡΑΚΙΣΗ'||!o.sasiType) && !o.lock;
-                      setCustomForm(o);
-                      setOrderType('ΤΥΠΟΠΟΙΗΜΕΝΗ');
-                      setCustomerSearch(o.customer||'');
-                      setEditingOrder(o);
-                      setCustomOrders(customOrders.filter(x=>x.id!==o.id));
-                      deleteFromCloud(o.id);
-                      await removeStockReservation(o.orderNo, o.h, o.w, o.side, o.caseType, isMoni);
-                      setTimeout(()=>{
-                        if(Platform.OS==='web') window.scrollTo({top:0, behavior:'smooth'});
-                        else mainScrollRef.current?.scrollTo({y:0, animated:true});
-                      }, 150);
-                    }}
-                    delayLongPress={600}
-                    activeOpacity={0.8}
+                  <View key={o.id}
                     style={{backgroundColor:'#fff', borderRadius:8, padding:10, marginBottom:8, borderLeftWidth:5, borderLeftColor:cardBorder, elevation:2}}>
                     <View style={{flexDirection:'row', justifyContent:'space-between', alignItems:'flex-start'}}>
                       <View style={{flex:1}}>
                         <View style={{flexDirection:'row', alignItems:'center', gap:6}}>
                           <Text style={{fontWeight:'bold', fontSize:13}}>#{o.orderNo} {o.customer?`— ${o.customer}`:''}</Text>
-                          <View
-                            onClick={async(e)=>{
-                              e.stopPropagation();
+                          <TouchableOpacity
+                            onPress={async()=>{
                               const isMoni = (o.sasiType==='ΜΟΝΗ ΘΩΡΑΚΙΣΗ'||!o.sasiType) && !o.lock;
                               setCustomForm(o);
                               setOrderType('ΤΥΠΟΠΟΙΗΜΕΝΗ');
@@ -2211,9 +2194,9 @@ export default function CustomScreen({ customOrders, setCustomOrders, soldOrders
                               await removeStockReservation(o.orderNo, o.h, o.w, o.side, o.caseType, isMoni);
                               window.scrollTo({top:0, behavior:'smooth'});
                             }}
-                            style={{backgroundColor:'#1565C0', borderRadius:4, paddingHorizontal:6, paddingVertical:2, cursor:'pointer'}}>
+                            style={{backgroundColor:'#1565C0', borderRadius:4, paddingHorizontal:6, paddingVertical:2}}>
                             <Text style={{color:'white', fontSize:10, fontWeight:'bold'}}>✏️ ΕΠΕΞ</Text>
-                          </View>
+                          </TouchableOpacity>
                         </View>
                         <Text style={{fontSize:12, color:'#555', marginTop:1}}>{o.h}x{o.w} | {o.side}</Text>
                         {o.qty&&parseInt(o.qty)>1?<Text style={{fontSize:13,fontWeight:'900',color:'#cc0000'}}>Τεμ: {o.qty}</Text>:null}
@@ -2324,7 +2307,7 @@ export default function CustomScreen({ customOrders, setCustomOrders, soldOrders
                         </>)}
                       </View>
                     </View>
-                  </TouchableOpacity>
+                  </View>
                 );
               };
 
