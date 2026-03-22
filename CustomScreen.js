@@ -2191,8 +2191,24 @@ export default function CustomScreen({ customOrders, setCustomOrders, soldOrders
                         else mainScrollRef.current?.scrollTo({y:0, animated:true});
                       }, 150);
                     }}
-                    delayLongPress={1000}
+                    delayLongPress={600}
                     activeOpacity={0.8}
+                    onStartShouldSetResponder={()=>true}
+                    {...(Platform.OS==='web' ? {
+                      onContextMenu: async(e)=>{
+                        e.preventDefault();
+                        if(!window.confirm(`✏️ Επεξεργασία παραγγελίας #${o.orderNo};`)) return;
+                        const isMoni = (o.sasiType==='ΜΟΝΗ ΘΩΡΑΚΙΣΗ'||!o.sasiType) && !o.lock;
+                        setCustomForm(o);
+                        setOrderType('ΤΥΠΟΠΟΙΗΜΕΝΗ');
+                        setCustomerSearch(o.customer||'');
+                        setEditingOrder(o);
+                        setCustomOrders(customOrders.filter(x=>x.id!==o.id));
+                        deleteFromCloud(o.id);
+                        await removeStockReservation(o.orderNo, o.h, o.w, o.side, o.caseType, isMoni);
+                        window.scrollTo({top:0, behavior:'smooth'});
+                      }
+                    } : {})}
                     style={{backgroundColor:'#fff', borderRadius:8, padding:10, marginBottom:8, borderLeftWidth:5, borderLeftColor:cardBorder, elevation:2}}>
                     <View style={{flexDirection:'row', justifyContent:'space-between', alignItems:'flex-start'}}>
                       <View style={{flex:1}}>
