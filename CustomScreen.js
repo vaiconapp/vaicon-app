@@ -2193,26 +2193,28 @@ export default function CustomScreen({ customOrders, setCustomOrders, soldOrders
                     }}
                     delayLongPress={600}
                     activeOpacity={0.8}
-                    onStartShouldSetResponder={()=>true}
-                    {...(Platform.OS==='web' ? {
-                      onContextMenu: async(e)=>{
-                        e.preventDefault();
-                        if(!window.confirm(`✏️ Επεξεργασία παραγγελίας #${o.orderNo};`)) return;
-                        const isMoni = (o.sasiType==='ΜΟΝΗ ΘΩΡΑΚΙΣΗ'||!o.sasiType) && !o.lock;
-                        setCustomForm(o);
-                        setOrderType('ΤΥΠΟΠΟΙΗΜΕΝΗ');
-                        setCustomerSearch(o.customer||'');
-                        setEditingOrder(o);
-                        setCustomOrders(customOrders.filter(x=>x.id!==o.id));
-                        deleteFromCloud(o.id);
-                        await removeStockReservation(o.orderNo, o.h, o.w, o.side, o.caseType, isMoni);
-                        window.scrollTo({top:0, behavior:'smooth'});
-                      }
-                    } : {})}
                     style={{backgroundColor:'#fff', borderRadius:8, padding:10, marginBottom:8, borderLeftWidth:5, borderLeftColor:cardBorder, elevation:2}}>
                     <View style={{flexDirection:'row', justifyContent:'space-between', alignItems:'flex-start'}}>
                       <View style={{flex:1}}>
-                        <Text style={{fontWeight:'bold', fontSize:13}}>#{o.orderNo} {o.customer?`— ${o.customer}`:''}</Text>
+                        <View style={{flexDirection:'row', alignItems:'center', gap:6}}>
+                          <Text style={{fontWeight:'bold', fontSize:13}}>#{o.orderNo} {o.customer?`— ${o.customer}`:''}</Text>
+                          <View
+                            onClick={async(e)=>{
+                              e.stopPropagation();
+                              const isMoni = (o.sasiType==='ΜΟΝΗ ΘΩΡΑΚΙΣΗ'||!o.sasiType) && !o.lock;
+                              setCustomForm(o);
+                              setOrderType('ΤΥΠΟΠΟΙΗΜΕΝΗ');
+                              setCustomerSearch(o.customer||'');
+                              setEditingOrder(o);
+                              setCustomOrders(customOrders.filter(x=>x.id!==o.id));
+                              deleteFromCloud(o.id);
+                              await removeStockReservation(o.orderNo, o.h, o.w, o.side, o.caseType, isMoni);
+                              window.scrollTo({top:0, behavior:'smooth'});
+                            }}
+                            style={{backgroundColor:'#1565C0', borderRadius:4, paddingHorizontal:6, paddingVertical:2, cursor:'pointer'}}>
+                            <Text style={{color:'white', fontSize:10, fontWeight:'bold'}}>✏️ ΕΠΕΞ</Text>
+                          </View>
+                        </View>
                         <Text style={{fontSize:12, color:'#555', marginTop:1}}>{o.h}x{o.w} | {o.side}</Text>
                         {o.qty&&parseInt(o.qty)>1?<Text style={{fontSize:13,fontWeight:'900',color:'#cc0000'}}>Τεμ: {o.qty}</Text>:null}
                         {o.hardware?<Text style={{fontSize:11, color:'#555'}}>🎨 {o.hardware}</Text>:null}
