@@ -163,7 +163,7 @@ const styles = StyleSheet.create({
   container: { flex: 1, backgroundColor: '#f5f5f5' },
   loading: { flex: 1, justifyContent: 'center', alignItems: 'center', gap: 12 },
   loadingText: { color: '#555', fontSize: 14 },
-  header: { backgroundColor: '#1565C0', paddingVertical: 14, alignItems: 'center', borderRadius: 18, marginHorizontal: 8, marginTop: (StatusBar.currentHeight || 0) + 6, flexDirection: 'row', justifyContent: 'center' },
+  header: { backgroundColor: '#8B0000', paddingVertical: 14, alignItems: 'center', borderRadius: 18, marginHorizontal: 8, marginTop: (StatusBar.currentHeight || 0) + 6, flexDirection: 'row', justifyContent: 'center' },
   headerTitle: { color: 'white', fontSize: 32, fontWeight: '300', letterSpacing: 18 },
   menuBtn: { position: 'absolute', right: 16, padding: 8 },
   menuIcon: { color: 'white', fontSize: 24 },

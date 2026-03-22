@@ -10,7 +10,7 @@ const fmtDate = (ts) => {
 
 const INIT = { name: '', phone: '', identifier: '' };
 
-export default function CustomersScreen({ customers, setCustomers, onClose, prefillName, onCustomerAdded, customOrders=[], allOrders=[], setCustomOrders, setSoldOrders }) {
+export default function CustomersScreen({ customers, setCustomers, onClose, prefillName, onCustomerAdded, customOrders=[], allOrders=[], setCustomOrders, setSoldOrders, specialOrders=[] }) {
   const [form, setForm] = useState(prefillName ? { name: prefillName, phone: '', identifier: '' } : INIT);
   const [editingId, setEditingId] = useState(null);
   const [search, setSearch] = useState('');
@@ -200,7 +200,7 @@ export default function CustomersScreen({ customers, setCustomers, onClose, pref
             </View>
             <ScrollView style={{padding:12}}>
               {(()=>{
-                const allCustomerOrders = allOrders
+                const allCustomerOrders = [...allOrders, ...specialOrders]
                   .filter(o=>o.customer===selectedCustomerOrders?.name)
                   .sort((a,b)=>(parseInt(a.orderNo)||0)-(parseInt(b.orderNo)||0));
                 if (allCustomerOrders.length === 0) return (

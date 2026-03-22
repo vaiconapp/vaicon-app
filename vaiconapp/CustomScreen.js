@@ -84,6 +84,7 @@ export default function CustomScreen({ customOrders, setCustomOrders, soldOrders
   const hingeRef=useRef(); const glassRef=useRef(); const lockRef=useRef(); const notesRef=useRef();
   const customerSelectedRef = useRef(false);
   const prodScrollRef = useRef(null);
+  const mainScrollRef = useRef(null);
   const [pageWidth, setPageWidth] = useState(SCREEN_WIDTH);
 
   const syncToCloud = async (o) => { try { await fetch(`${FIREBASE_URL}/orders/${o.id}.json`,{method:'PUT',body:JSON.stringify(o)}); } catch { Alert.alert("Σφάλμα","Δεν αποθηκεύτηκε."); } };
@@ -171,12 +172,17 @@ export default function CustomScreen({ customOrders, setCustomOrders, soldOrders
     Alert.alert("VAICON", orderType==='ΤΥΠΟΠΟΙΗΜΕΝΗ' ? "Η τυποποιημένη παραγγελία αποθηκεύτηκε!" : "Η παραγγελία αποθηκεύτηκε!");
   };
 
-  const editOrder = (order) => {
+  const editOrder = async (order) => {
     setCustomForm(order); setOrderType(order.orderType||'ΕΙΔΙΚΗ');
     setCustomerSearch(order.customer||'');
     setEditingOrder(order); // αποθηκεύω αναφορά για επαναφορά αν αλλάξει tab
     setCustomOrders(customOrders.filter(o=>o.id!==order.id));
     deleteFromCloud(order.id);
+
+    if (order.orderType==='ΤΥΠΟΠΟΙΗΜΕΝΗ') {
+      const isMoni = (order.sasiType==='ΜΟΝΗ ΘΩΡΑΚΙΣΗ'||!order.sasiType) && !order.lock;
+      await removeStockReservation(order.orderNo, order.h, order.w, order.side, order.caseType, isMoni);
+    }
   };
 
   // Μεταφορά PENDING → PROD: αρχικοποιεί τις φάσεις παραγωγής
@@ -921,7 +927,7 @@ export default function CustomScreen({ customOrders, setCustomOrders, soldOrders
     <View style={{flex:1}}>
       {renderPrintPreview()}
       <SellModal visible={sellModal.visible} totalQty={sellModal.totalQty} onConfirm={handleSellConfirm} onCancel={()=>setSellModal({visible:false,orderId:null,totalQty:1})} />
-      <ScrollView style={{padding:10}}>
+      <ScrollView ref={mainScrollRef} style={{padding:10}} keyboardShouldPersistTaps="handled">
         <View style={{paddingBottom:120}}>
           <Text style={styles.sectionTitle}>ΚΑΤΑΧΩΡΗΣΗ ΝΕΑΣ ΠΑΡΑΓΓΕΛΙΑΣ</Text>
 
@@ -1264,26 +1270,25 @@ export default function CustomScreen({ customOrders, setCustomOrders, soldOrders
 
                 const cardBorder = '#8B0000';
                 return (
-                  <View key={o.id}
+                  <TouchableOpacity key={o.id}
+                    onLongPress={()=>{
+                      editOrder(o);
+                      setTimeout(()=>{
+                        if(Platform.OS==='web') window.scrollTo({top:0, behavior:'smooth'});
+                        else mainScrollRef.current?.scrollTo({y:0, animated:true});
+                      }, 150);
+                    }}
+                    delayLongPress={1000}
+                    activeOpacity={0.8}
                     style={{backgroundColor:'#fff', borderRadius:8, padding:10, marginBottom:8, borderLeftWidth:5, borderLeftColor:cardBorder, elevation:2}}>
                     <View style={{flexDirection:'row', justifyContent:'space-between', alignItems:'flex-start'}}>
-                      <TouchableOpacity style={{flex:1}}
-                        onLongPress={()=>{
-                          setCustomForm(o);
-                          setOrderType('ΤΥΠΟΠΟΙΗΜΕΝΗ');
-                          setCustomerSearch(o.customer||'');
-                          setEditingOrder(o);
-                          setCustomOrders(customOrders.filter(x=>x.id!==o.id));
-                          deleteFromCloud(o.id);
-                        }}
-                        delayLongPress={1000}
-                        activeOpacity={0.8}>
+                      <View style={{flex:1}}>
                         <Text style={{fontWeight:'bold', fontSize:13}}>#{o.orderNo} {o.customer?`— ${o.customer}`:''}</Text>
                         <Text style={{fontSize:12, color:'#555', marginTop:1}}>{o.h}x{o.w} | {o.side}</Text>
                         {o.notes?<Text style={{fontSize:11, color:'#888'}}>Σημ: {o.notes}</Text>:null}
                         {o.deliveryDate?<Text style={{fontSize:10, color:'#007AFF'}}>📅 Παράδοση: {o.deliveryDate}</Text>:null}
                         <Text style={{fontSize:10, color:'#999'}}>📋 {fmtDate(o.createdAt)}</Text>
-                      </TouchableOpacity>
+                      </View>
                       <View style={{alignItems:'flex-end', gap:4, marginLeft:8}}>
                         <View style={{flexDirection:'row', gap:4}}>
                           {/* ΚΑΣΑ */}
@@ -1300,16 +1305,12 @@ export default function CustomScreen({ customOrders, setCustomOrders, soldOrders
 
                         {/* ΔΙΑΓΡΑΦΗ */}
                         <TouchableOpacity
-                          style={{backgroundColor:'#ff4444', paddingHorizontal:8, paddingVertical:3, borderRadius:5, alignSelf:'stretch', alignItems:'center', zIndex: 10, elevation: 10}}
+                          style={{backgroundColor:'#ff4444', paddingHorizontal:8, paddingVertical:3, borderRadius:5, alignSelf:'stretch', alignItems:'center'}}
                           onPress={()=>Alert.alert("⚠️ Διαγραφή",`Διαγραφή παραγγελίας #${o.orderNo};`,[
                             {text:"ΑΚΥΡΟ",style:"cancel"},
                             {text:"ΔΙΑΓΡΑΦΗ",style:"destructive",onPress:async()=>{
                               setCustomOrders(customOrders.filter(x=>x.id!==o.id));
                               await deleteFromCloud(o.id);
-                              if (o.orderType === 'ΤΥΠΟΠΟΙΗΜΕΝΗ') {
-                                const isMoni = (o.sasiType === 'ΜΟΝΗ ΘΩΡΑΚΙΣΗ' || !o.sasiType) && !o.lock;
-                                await removeStockReservation(o.orderNo, o.h, o.w, o.side, o.caseType, isMoni);
-                              }
                             }}
                           ])}>
                           <Text style={{color:'white', fontSize:10, fontWeight:'bold'}}>✕ ΔΙΑ/ΦΗ</Text>
@@ -1356,7 +1357,7 @@ export default function CustomScreen({ customOrders, setCustomOrders, soldOrders
                         </>)}
                       </View>
                     </View>
-                  </View>
+                  </TouchableOpacity>
                 );
               };
 
