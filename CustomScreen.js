@@ -242,6 +242,9 @@ export default function CustomScreen({ customOrders, setCustomOrders, soldOrders
       const sasiAvail = stockAvailable(sasiStock, sk);
       const caseAvail = stockAvailable(caseStock, ck);
 
+      // GUARD CLAUSE: Αν είναι ήδη STD_READY ή stdInProd===true, το κλειδώνουμε
+      if (o.status === 'STD_READY' || o.stdInProd) return o;
+
       if(o.status==='STD_PENDING' && isMoniNoLock && (hasMontage || hasStavera)){
         const hasSasiOk = sasiAvail > 0 || (sasiStock[sk]?.reservations||[]).some(r=>r.orderNo===o.orderNo);
         const hasCaseOk = caseAvail > 0 || (caseStock[ck]?.reservations||[]).some(r=>r.orderNo===o.orderNo);
@@ -362,16 +365,22 @@ export default function CustomScreen({ customOrders, setCustomOrders, soldOrders
     if (!setSasiStock || !setCaseStock) return;
     const sk = sasiKey(String(h), String(w), side);
     const ck = caseKey(String(h), String(w), side, caseType);
-    if (isMoni && sasiStock[sk]) {
-      const updEntry = {...sasiStock[sk], reservations: (sasiStock[sk].reservations||[]).filter(r=>r.orderNo!==orderNo)};
-      setSasiStock(prev=>({...prev, [sk]: updEntry}));
-      await fetch(`${FIREBASE_URL}/sasi_stock/${sk}.json`,{method:'PUT',body:JSON.stringify(updEntry)});
+
+    if (isMoni) {
+      setSasiStock(prev => {
+        if (!prev[sk]) return prev;
+        const updEntry = { ...prev[sk], reservations: (prev[sk].reservations || []).filter(r => r.orderNo !== orderNo) };
+        fetch(`${FIREBASE_URL}/sasi_stock/${sk}.json`, { method: 'PUT', body: JSON.stringify(updEntry) }).catch(console.error);
+        return { ...prev, [sk]: updEntry };
+      });
     }
-    if (caseStock[ck]) {
-      const updEntry = {...caseStock[ck], reservations: (caseStock[ck].reservations||[]).filter(r=>r.orderNo!==orderNo)};
-      setCaseStock(prev=>({...prev, [ck]: updEntry}));
-      await fetch(`${FIREBASE_URL}/case_stock/${ck}.json`,{method:'PUT',body:JSON.stringify(updEntry)});
-    }
+
+    setCaseStock(prev => {
+      if (!prev[ck]) return prev;
+      const updEntry = { ...prev[ck], reservations: (prev[ck].reservations || []).filter(r => r.orderNo !== orderNo) };
+      fetch(`${FIREBASE_URL}/case_stock/${ck}.json`, { method: 'PUT', body: JSON.stringify(updEntry) }).catch(console.error);
+      return { ...prev, [ck]: updEntry };
+    });
   };
 
   const editOrder = async (order) => {
@@ -1275,14 +1284,23 @@ export default function CustomScreen({ customOrders, setCustomOrders, soldOrders
     ]);
   };
 
+    const handleDeleteAndRelease = async (order) => {
+    // Διαγραφή από το UI
+    setCustomOrders(prev => prev.filter(o => o.id !== order.id));
+    // Διαγραφή από το Firebase
+    await deleteFromCloud(order.id);
+    
+    // Αν είναι τυποποιημένη, απελευθερώνουμε το στοκ
+    if (order.orderType === 'ΤΥΠΟΠΟΙΗΜΕΝΗ') {
+      const isMoni = (order.sasiType === 'ΜΟΝΗ ΘΩΡΑΚΙΣΗ' || !order.sasiType) && !order.lock;
+      await removeStockReservation(order.orderNo, order.h, order.w, order.side, order.caseType, isMoni);
+    }
+  };
+
   const cancelOrder = async (id) => {
     if (!window.confirm('Ακύρωση — Οριστική διαγραφή;')) return;
     const order = customOrders.find(o=>o.id===id);
-    setCustomOrders(customOrders.filter(o=>o.id!==id));
-    await deleteFromCloud(id);
-    if (!order || order.orderType!=='ΤΥΠΟΠΟΙΗΜΕΝΗ') return;
-    const isMoni = (order.sasiType==='ΜΟΝΗ ΘΩΡΑΚΙΣΗ'||!order.sasiType) && !order.lock;
-    await removeStockReservation(order.orderNo, order.h, order.w, order.side, order.caseType, isMoni);
+    if(order) await handleDeleteAndRelease(order);
   };
   const deleteFromArchive = (id) => Alert.alert("Διαγραφή","Διαγραφή από αρχείο;",[{text:"Όχι"},{text:"Ναι",style:"destructive",onPress:async()=>{setSoldOrders(soldOrders.filter(o=>o.id!==id));await deleteFromCloud(id);}}]);
   const toggleSection = (s) => { LayoutAnimation.configureNext(LayoutAnimation.Presets.easeInEaseOut); setExpanded({...expanded,[s]:!expanded[s]}); };
@@ -1732,12 +1750,7 @@ export default function CustomScreen({ customOrders, setCustomOrders, soldOrders
                               style={{backgroundColor:'#ff4444', paddingHorizontal:8, paddingVertical:3, borderRadius:5, alignSelf:'stretch', alignItems:'center'}}
                               onPress={async()=>{
                                 if(!window.confirm(`Διαγραφή παραγγελίας #${o.orderNo};`)) return;
-                                setCustomOrders(customOrders.filter(x=>x.id!==o.id));
-                                await deleteFromCloud(o.id);
-                                if (o.orderType === 'ΤΥΠΟΠΟΙΗΜΕΝΗ') {
-                                  const isMoni = (o.sasiType === 'ΜΟΝΗ ΘΩΡΑΚΙΣΗ' || !o.sasiType) && !o.lock;
-                                  await removeStockReservation(o.orderNo, o.h, o.w, o.side, o.caseType, isMoni);
-                                }
+                                await handleDeleteAndRelease(o);
                               }}>
                               <Text style={{color:'white', fontSize:10, fontWeight:'bold'}}>✕ ΔΙΑ/ΦΗ</Text>
                             </TouchableOpacity>
@@ -2226,12 +2239,7 @@ export default function CustomScreen({ customOrders, setCustomOrders, soldOrders
                           style={{backgroundColor:'#ff4444', paddingHorizontal:8, paddingVertical:3, borderRadius:5, alignSelf:'stretch', alignItems:'center'}}
                           onPress={async()=>{
                             if(!window.confirm(`Διαγραφή παραγγελίας #${o.orderNo};`)) return;
-                                setCustomOrders(customOrders.filter(x=>x.id!==o.id));
-                                await deleteFromCloud(o.id);
-                                if (o.orderType === 'ΤΥΠΟΠΟΙΗΜΕΝΗ') {
-                                  const isMoni = (o.sasiType === 'ΜΟΝΗ ΘΩΡΑΚΙΣΗ' || !o.sasiType) && !o.lock;
-                                  await removeStockReservation(o.orderNo, o.h, o.w, o.side, o.caseType, isMoni);
-                                }
+                                await handleDeleteAndRelease(o);
                           }}>
                           <Text style={{color:'white', fontSize:10, fontWeight:'bold'}}>✕ ΔΙΑ/ΦΗ</Text>
                         </TouchableOpacity>
@@ -2849,12 +2857,7 @@ export default function CustomScreen({ customOrders, setCustomOrders, soldOrders
                                       Alert.alert("🗑️ Επιβεβαίωση","Σίγουρα διαγραφή της #"+o.orderNo+";",[
                                         {text:"ΑΚΥΡΟ", style:"cancel"},
                                         {text:"ΔΙΑΓΡΑΦΗ", style:"destructive", onPress:async()=>{
-                                          setCustomOrders(customOrders.filter(x=>x.id!==o.id));
-                                          await deleteFromCloud(o.id);
-                                          if (o.orderType === 'ΤΥΠΟΠΟΙΗΜΕΝΗ') {
-                                            const isMoni = (o.sasiType === 'ΜΟΝΗ ΘΩΡΑΚΙΣΗ' || !o.sasiType) && !o.lock;
-                                            await removeStockReservation(o.orderNo, o.h, o.w, o.side, o.caseType, isMoni);
-                                          }
+                                          await handleDeleteAndRelease(o);
                                         }}
                                       ]);
                                     }}
