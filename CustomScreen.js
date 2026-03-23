@@ -265,7 +265,7 @@ export default function CustomScreen({ customOrders, setCustomOrders, soldOrders
         if (!allTasksDone) return o;
         const isMoniB = (o.sasiType==='ΜΟΝΗ ΘΩΡΑΚΙΣΗ'||!o.sasiType);
         const isDipliB = o.sasiType==='ΔΙΠΛΗ ΘΩΡΑΚΙΣΗ';
-        const hasSasiB = isMoniB && (o.buildTasks?.stavera===true || o.buildTasks?.montage===true);
+        const hasSasiB = isMoniB && (('stavera' in (o.buildTasks||{})) || ('montage' in (o.buildTasks||{})));
         const hasCaseOkB = checkStockFIFO(caseStock, ck, o.orderNo);
         const hasSasiOkB = !hasSasiB || checkStockFIFO(sasiStock, sk, o.orderNo);
         if (!hasCaseOkB || !hasSasiOkB) return o;
@@ -2691,11 +2691,11 @@ export default function CustomScreen({ customOrders, setCustomOrders, soldOrders
                           }
                           return false;
                         };
-                        const hasSasiReserved = !!(o.buildTasks?.stavera!==undefined || o.buildTasks?.montage!==undefined);
+                        const hasSasiReserved = ('stavera' in (o.buildTasks||{})) || ('montage' in (o.buildTasks||{}));
                         const hasSasiOk = !hasSasiReserved || checkStock(sasiStock, sk);
                         const hasCaseOk = checkStock(caseStock, ck);
                         const tasks = o.buildTasks||{};
-                        const taskLabels = {stavera:'📐 Σταθερό', lock:'🔒 Κλειδαριά', heightReduction:'📏 Μείωση Ύψους', montage:'🪛 Μοντάρισμα'};
+                        const taskLabels = {stavera:'📐 Σταθερό', lock:'🔒 Κλειδαριά', heightReduction:'📏 Μείωση', montage:'🪛 Μοντάρ.'};
                         const allDone = Object.keys(tasks).length>0 && Object.values(tasks).every(v=>v===true);
                         return (
                           <View key={o.id} style={{backgroundColor:'#fff', borderRadius:8, marginBottom:6, borderLeftWidth:5, borderLeftColor: allDone?'#00C851':'#e65100', elevation:2, padding:10}}>
@@ -2705,30 +2705,30 @@ export default function CustomScreen({ customOrders, setCustomOrders, soldOrders
                                 <Text style={{fontSize:12, color:'#555'}}>{o.h}x{o.w} | {o.side}</Text>
                                 {o.heightReduction?<Text style={{fontSize:11,color:'#e65100',fontWeight:'bold'}}>📏 Μείωση: {o.heightReduction}</Text>:null}
                                 {o.notes?<Text style={{fontSize:11,color:'#888'}}>Σημ: {o.notes}</Text>:null}
-                                <View style={{marginTop:6, gap:4}}>
+                                {/* CHECKBOXES ΟΡΙΖΟΝΤΙΑ + ΣΑΣΙ */}
+                                <View style={{marginTop:6, flexDirection:'row', flexWrap:'wrap', gap:6, alignItems:'center'}}>
                                   {Object.entries(tasks).map(([key, done])=>(
-                                    <TouchableOpacity key={key} style={{flexDirection:'row', alignItems:'center', gap:8}}
+                                    <TouchableOpacity key={key} style={{flexDirection:'row', alignItems:'center', gap:4, backgroundColor: done?'#e8f5e9':'#fff3e0', borderRadius:6, paddingHorizontal:8, paddingVertical:5, borderWidth:1, borderColor: done?'#00C851':'#e65100'}}
                                       onPress={()=>handleBuildTaskToggle(o, key)}>
-                                      <View style={{width:22, height:22, borderRadius:5, borderWidth:2, borderColor: done?'#00C851':'#e65100', backgroundColor: done?'#00C851':'white', alignItems:'center', justifyContent:'center'}}>
-                                        {done&&<Text style={{color:'white',fontWeight:'bold',fontSize:12}}>✓</Text>}
+                                      <View style={{width:18, height:18, borderRadius:4, borderWidth:2, borderColor: done?'#00C851':'#e65100', backgroundColor: done?'#00C851':'white', alignItems:'center', justifyContent:'center'}}>
+                                        {done&&<Text style={{color:'white',fontWeight:'bold',fontSize:10}}>✓</Text>}
                                       </View>
-                                      <Text style={{fontSize:12, color: done?'#888':'#333', fontWeight:'bold', textDecorationLine: done?'line-through':'none'}}>{taskLabels[key]||key}</Text>
+                                      <Text style={{fontSize:11, color: done?'#00C851':'#e65100', fontWeight:'bold'}}>{taskLabels[key]||key}</Text>
                                     </TouchableOpacity>
                                   ))}
-                                </View>
-                              </View>
-                              <View style={{alignItems:'flex-end', gap:4, marginLeft:8}}>
-                                <View style={{flexDirection:'row', gap:4}}>
-                                  <View style={{alignItems:'center', backgroundColor: hasCaseOk?'#e8f5e9':'#ffeaea', borderRadius:5, padding:4, borderWidth:1, borderColor: hasCaseOk?'#00C851':'#ff4444', minWidth:44}}>
-                                    <Text style={{fontSize:9, fontWeight:'bold', color:'#555'}}>ΚΑΣΑ</Text>
-                                    <Text style={{fontSize:14}}>{hasCaseOk?'✅':'❌'}</Text>
-                                  </View>
+                                  {/* ΣΑΣΙ indicator δίπλα στα checkboxes — μόνο αν δεσμεύεται */}
                                   {hasSasiReserved&&(
-                                    <View style={{alignItems:'center', backgroundColor: hasSasiOk?'#e8f5e9':'#ffeaea', borderRadius:5, padding:4, borderWidth:1, borderColor: hasSasiOk?'#00C851':'#ff4444', minWidth:44}}>
-                                      <Text style={{fontSize:9, fontWeight:'bold', color:'#555'}}>ΣΑΣΙ</Text>
-                                      <Text style={{fontSize:14}}>{hasSasiOk?'✅':'❌'}</Text>
+                                    <View style={{flexDirection:'row', alignItems:'center', gap:4, backgroundColor: hasSasiOk?'#e8f5e9':'#ffeaea', borderRadius:6, paddingHorizontal:8, paddingVertical:5, borderWidth:1, borderColor: hasSasiOk?'#00C851':'#ff4444'}}>
+                                      <Text style={{fontSize:11, fontWeight:'bold', color: hasSasiOk?'#00C851':'#ff4444'}}>ΣΑΣΙ {hasSasiOk?'✅':'❌'}</Text>
                                     </View>
                                   )}
+                                </View>
+                              </View>
+                              {/* ΚΑΣΑ + ΔΙΑΓΡΑΦΗ — δεξιά */}
+                              <View style={{alignItems:'flex-end', gap:4, marginLeft:8}}>
+                                <View style={{alignItems:'center', backgroundColor: hasCaseOk?'#e8f5e9':'#ffeaea', borderRadius:5, padding:4, borderWidth:1, borderColor: hasCaseOk?'#00C851':'#ff4444', minWidth:44}}>
+                                  <Text style={{fontSize:9, fontWeight:'bold', color:'#555'}}>ΚΑΣΑ</Text>
+                                  <Text style={{fontSize:14}}>{hasCaseOk?'✅':'❌'}</Text>
                                 </View>
                                 <TouchableOpacity
                                   style={{backgroundColor:'#ff4444', paddingHorizontal:8, paddingVertical:3, borderRadius:5, alignItems:'center'}}
@@ -3153,7 +3153,7 @@ export default function CustomScreen({ customOrders, setCustomOrders, soldOrders
                         };
                         const hasCaseOk = checkStock(caseStock, ckD);
                         const tasks = o.buildTasks||{};
-                        const taskLabels = {stavera:'📐 Σταθερό', lock:'🔒 Κλειδαριά', heightReduction:'📏 Μείωση Ύψους', montage:'🪛 Μοντάρισμα'};
+                        const taskLabels = {stavera:'📐 Σταθερό', lock:'🔒 Κλειδαριά', heightReduction:'📏 Μείωση', montage:'🪛 Μοντάρ.'};
                         const allDone = Object.keys(tasks).length>0 && Object.values(tasks).every(v=>v===true);
                         return (
                           <View key={o.id} style={{backgroundColor:'#fff', borderRadius:8, marginBottom:6, borderLeftWidth:5, borderLeftColor: allDone?'#00C851':'#e65100', elevation:2, padding:10}}>
@@ -3163,14 +3163,15 @@ export default function CustomScreen({ customOrders, setCustomOrders, soldOrders
                                 <Text style={{fontSize:12, color:'#555'}}>{o.h}x{o.w} | {o.side} | ΔΙΠΛΗ</Text>
                                 {o.heightReduction?<Text style={{fontSize:11,color:'#e65100',fontWeight:'bold'}}>📏 Μείωση: {o.heightReduction}</Text>:null}
                                 {o.notes?<Text style={{fontSize:11,color:'#888'}}>Σημ: {o.notes}</Text>:null}
-                                <View style={{marginTop:6, gap:4}}>
+                                {/* CHECKBOXES ΟΡΙΖΟΝΤΙΑ */}
+                                <View style={{marginTop:6, flexDirection:'row', flexWrap:'wrap', gap:6, alignItems:'center'}}>
                                   {Object.entries(tasks).map(([key, done])=>(
-                                    <TouchableOpacity key={key} style={{flexDirection:'row', alignItems:'center', gap:8}}
+                                    <TouchableOpacity key={key} style={{flexDirection:'row', alignItems:'center', gap:4, backgroundColor: done?'#e8f5e9':'#fff3e0', borderRadius:6, paddingHorizontal:8, paddingVertical:5, borderWidth:1, borderColor: done?'#00C851':'#e65100'}}
                                       onPress={()=>handleBuildTaskToggle(o, key)}>
-                                      <View style={{width:22, height:22, borderRadius:5, borderWidth:2, borderColor: done?'#00C851':'#e65100', backgroundColor: done?'#00C851':'white', alignItems:'center', justifyContent:'center'}}>
-                                        {done&&<Text style={{color:'white',fontWeight:'bold',fontSize:12}}>✓</Text>}
+                                      <View style={{width:18, height:18, borderRadius:4, borderWidth:2, borderColor: done?'#00C851':'#e65100', backgroundColor: done?'#00C851':'white', alignItems:'center', justifyContent:'center'}}>
+                                        {done&&<Text style={{color:'white',fontWeight:'bold',fontSize:10}}>✓</Text>}
                                       </View>
-                                      <Text style={{fontSize:12, color: done?'#888':'#333', fontWeight:'bold', textDecorationLine: done?'line-through':'none'}}>{taskLabels[key]||key}</Text>
+                                      <Text style={{fontSize:11, color: done?'#00C851':'#e65100', fontWeight:'bold'}}>{taskLabels[key]||key}</Text>
                                     </TouchableOpacity>
                                   ))}
                                 </View>
