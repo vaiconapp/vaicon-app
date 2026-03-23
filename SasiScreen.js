@@ -176,7 +176,28 @@ export default function SasiScreen({ sasiStock={}, setSasiStock }) {
 
   const reservationEntry = showReservations ? stockMap[showReservations] : null;
 
-  const handlePrint = () => {
+  const handlePrintProd = () => {
+    const today = new Date();
+    const dateStr = `${String(today.getDate()).padStart(2,'0')}/${String(today.getMonth()+1).padStart(2,'0')}/${today.getFullYear()}`;
+    const buildRows = (side) => HEIGHTS.flatMap(h => WIDTHS.map(w => {
+      const key = stockKey(h, w, side);
+      const entry = stockMap[key] || { qty:0, reservations:[], pending:0 };
+      const pending = entry.pending || 0;
+      return `<tr>
+        <td style="width:45px;font-weight:bold;text-align:center;color:${pending>0?'#e65100':'#aaa'}">${pending>0?pending:'—'}</td>
+        <td style="width:60px;font-weight:bold">${h}x${w}</td>
+        <td></td>
+      </tr>`;
+    })).join('');
+    const colHeader = `<tr style="background:#1a1a1a"><th style="color:white;padding:4px 6px;width:45px;text-align:center">PEND.</th><th style="color:white;padding:4px 6px;width:60px">ΔΙΑΣΤΑΣΗ</th><th style="color:white;padding:4px 6px">ΠΑΡΑΤΗΡΗΣΕΙΣ</th></tr>`;
+    const html = `<!DOCTYPE html><html><head><meta charset="utf-8"><style>body{font-family:Arial,sans-serif;margin:6mm;color:#000;}h1{font-size:16px;margin-bottom:2px;font-weight:bold;}h2{font-size:11px;color:#555;margin-top:0;margin-bottom:8px;}.wrapper{display:flex;gap:8mm;}.half{flex:1;}.half h3{font-size:13px;font-weight:bold;background:#333;color:white;padding:5px 8px;margin-bottom:0;}table{width:100%;border-collapse:collapse;font-size:12px;table-layout:fixed;}th{padding:5px 6px;text-align:left;border-bottom:2px solid #000;}td{padding:10px 6px;border-bottom:1px solid #ccc;}@media print{@page{size:A4 landscape;margin:6mm;}}</style></head><body><h1>ΠΑΡΑΓΩΓΗ ΣΑΣΙ</h1><h2>📅 ${dateStr}</h2><div class="wrapper"><div class="half"><h3>◄ ΑΡΙΣΤΕΡΗ</h3><table><thead>${colHeader}</thead><tbody>${buildRows('ΑΡΙΣΤΕΡΗ')}</tbody></table></div><div class="half"><h3>ΔΕΞΙΑ ►</h3><table><thead>${colHeader}</thead><tbody>${buildRows('ΔΕΞΙΑ')}</tbody></table></div></div><script>window.onload=()=>window.print();<\/script></body></html>`;
+    if (Platform.OS === 'web') {
+      const win = window.open('', '_blank');
+      if (!win) return Alert.alert('Σφάλμα','Επιτρέψτε τα pop-ups.');
+      win.document.write(html);
+      win.document.close();
+    }
+  };
     const today = new Date();
     const dateStr = `${String(today.getDate()).padStart(2,'0')}/${String(today.getMonth()+1).padStart(2,'0')}/${today.getFullYear()}`;
     const buildRows = (side) => HEIGHTS.flatMap(h => WIDTHS.map(w => {
@@ -211,11 +232,18 @@ export default function SasiScreen({ sasiStock={}, setSasiStock }) {
         {/* ΑΡΙΣΤΕΡΗ — με κουμπί εκτύπωσης */}
         <View style={[styles.sectionHeader, {flexDirection:'row', alignItems:'center', justifyContent:'space-between'}]}>
           <Text style={styles.sectionTitle}>◄ ΑΡΙΣΤΕΡΗ</Text>
-          <TouchableOpacity
-            style={{backgroundColor:'white', paddingHorizontal:10, paddingVertical:5, borderRadius:6}}
-            onPress={handlePrint}>
-            <Text style={{color:'#1a1a1a', fontWeight:'bold', fontSize:11}}>🖨️ ΕΚΤΥΠΩΣΗ</Text>
-          </TouchableOpacity>
+          <View style={{flexDirection:'row', gap:6}}>
+            <TouchableOpacity
+              style={{backgroundColor:'#e65100', paddingHorizontal:8, paddingVertical:5, borderRadius:6}}
+              onPress={handlePrintProd}>
+              <Text style={{color:'white', fontWeight:'bold', fontSize:11}}>🖨️ ΠΑΡΑΓΩΓΗ</Text>
+            </TouchableOpacity>
+            <TouchableOpacity
+              style={{backgroundColor:'white', paddingHorizontal:8, paddingVertical:5, borderRadius:6}}
+              onPress={handlePrint}>
+              <Text style={{color:'#1a1a1a', fontWeight:'bold', fontSize:11}}>🖨️ ΑΠΟΘΗΚΗ</Text>
+            </TouchableOpacity>
+          </View>
         </View>
         {renderTable('ΑΡΙΣΤΕΡΗ')}
 
