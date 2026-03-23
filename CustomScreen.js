@@ -2560,13 +2560,17 @@ export default function CustomScreen({ customOrders, setCustomOrders, soldOrders
               const moniCards = moniOrders.map(o=>{
                 const sk = sasiKey(String(o.h), String(o.w), o.side);
                 const ck = caseKey(String(o.h), String(o.w), o.side, o.caseType);
-                // ✅ μόνο αν υπάρχει φυσικό διαθέσιμο απόθεμα (qty > reservations)
+                // ✅ FIFO: η παραγγελία καλύπτεται αν το αθροιστικό ως αυτήν <= stock
                 const checkStock = (stockMap, key, orderNo) => {
                   const entry = stockMap?.[key];
                   if (!entry) return false;
-                  const isReserved = (entry.reservations||[]).some(r=>r.orderNo===orderNo);
-                  const available = stockAvailable(stockMap, key);
-                  return isReserved ? available >= 0 : available > 0;
+                  const totalQty = parseInt(entry.qty) || 0;
+                  let cumulative = 0;
+                  for (const r of (entry.reservations || [])) {
+                    cumulative += (parseInt(r.qty) || 1);
+                    if (r.orderNo === orderNo) return cumulative <= totalQty;
+                  }
+                  return false;
                 };
                 const hasSasi = checkStock(sasiStock, sk, o.orderNo);
                 const hasCase = checkStock(caseStock, ck, o.orderNo);
@@ -2576,12 +2580,17 @@ export default function CustomScreen({ customOrders, setCustomOrders, soldOrders
               // ΔΙΠΛΗ — έλεγχος με νέο stock
               const dipliCards = dipliOrders.map(o=>{
                 const ckD = caseKey(String(o.h), String(o.w), o.side, o.caseType);
+                // ✅ FIFO: η παραγγελία καλύπτεται αν το αθροιστικό ως αυτήν <= stock
                 const checkStock = (stockMap, key, orderNo) => {
                   const entry = stockMap?.[key];
                   if (!entry) return false;
-                  const isReserved = (entry.reservations||[]).some(r=>r.orderNo===orderNo);
-                  const available = stockAvailable(stockMap, key);
-                  return isReserved ? available >= 0 : available > 0;
+                  const totalQty = parseInt(entry.qty) || 0;
+                  let cumulative = 0;
+                  for (const r of (entry.reservations || [])) {
+                    cumulative += (parseInt(r.qty) || 1);
+                    if (r.orderNo === orderNo) return cumulative <= totalQty;
+                  }
+                  return false;
                 };
                 const hasCase = checkStock(caseStock, ckD, o.orderNo);
                 return renderStdCard(o, false, hasCase, false);
