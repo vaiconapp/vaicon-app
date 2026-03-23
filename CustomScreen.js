@@ -265,7 +265,7 @@ export default function CustomScreen({ customOrders, setCustomOrders, soldOrders
         if (!allTasksDone) return o;
         const isMoniB = (o.sasiType==='ΜΟΝΗ ΘΩΡΑΚΙΣΗ'||!o.sasiType);
         const isDipliB = o.sasiType==='ΔΙΠΛΗ ΘΩΡΑΚΙΣΗ';
-        const hasSasiB = isMoniB && (('stavera' in (o.buildTasks||{})) || ('montage' in (o.buildTasks||{})));
+        const hasSasiB = isMoniB && (('stavera' in (o.buildTasks||{})) || ('montage' in (o.buildTasks||{}))) && !('sasi' in (o.buildTasks||{}));
         const hasCaseOkB = checkStockFIFO(caseStock, ck, o.orderNo);
         const hasSasiOkB = !hasSasiB || checkStockFIFO(sasiStock, sk, o.orderNo);
         if (!hasCaseOkB || !hasSasiOkB) return o;
@@ -346,11 +346,15 @@ export default function CustomScreen({ customOrders, setCustomOrders, soldOrders
     const needsBuild = isDipli || isMoniWithLock || (isMoni && (hasStaveraForm || hasMontageForm || hasHeightReductionForm));
 
     // Checklist για STD_BUILD
+    // Σασί: παραγωγή αν έχει κλειδαριά ή μείωση (ανεξάρτητα από ό,τι άλλο)
+    //        stock αν έχει ΜΟΝΟ σταθερό ή/και μοντάρισμα
+    const sasiNeedsProduction = isMoni && (isMoniWithLock || hasHeightReductionForm);
     const buildTasks = needsBuild ? {
       ...(hasStaveraForm ? {stavera: false} : {}),
       ...(isMoniWithLock ? {lock: false} : {}),
       ...(hasHeightReductionForm ? {heightReduction: false} : {}),
       ...(hasMontageForm ? {montage: false} : {}),
+      ...(sasiNeedsProduction || isDipli ? {sasi: false} : {}),
     } : null;
 
     const moniPhases = isMoniWithLock ? {
@@ -2253,10 +2257,13 @@ export default function CustomScreen({ customOrders, setCustomOrders, soldOrders
                     style={{backgroundColor:'#fff', borderRadius:8, padding:10, marginBottom:8, borderLeftWidth:5, borderLeftColor:cardBorder, elevation:2}}>
                     <View style={{flexDirection:'row', justifyContent:'space-between', alignItems:'flex-start'}}>
                       <View style={{flex:1}}>
-                        <View style={{flexDirection:'row', alignItems:'center', gap:6}}>
-                          <Text style={{fontWeight:'bold', fontSize:13}}>#{o.orderNo} {o.customer?`— ${o.customer}`:''}</Text>
+                        {/* ΓΡΑΜΜΗ 1: #νούμερο — πελάτης — τεμάχια */}
+                        <View style={{flexDirection:'row', alignItems:'center', gap:6, flexWrap:'wrap'}}>
+                          <Text style={{fontWeight:'900', fontSize:16, color:'#1a1a1a'}}>#{o.orderNo}</Text>
+                          {o.customer?<Text style={{fontSize:14, fontWeight:'bold', color:'#333'}}>{o.customer}</Text>:null}
+                          {o.qty&&parseInt(o.qty)>1?<Text style={{fontSize:16,fontWeight:'900',color:'#cc0000'}}>{o.qty}τεμ</Text>:null}
                           <TouchableOpacity
-                                                        onPress={async()=>{
+                            onPress={async()=>{
                               editOrder(o);
                               setTimeout(()=>{
                                 if(Platform.OS==='web') window.scrollTo({top:0, behavior:'smooth'});
@@ -2267,14 +2274,19 @@ export default function CustomScreen({ customOrders, setCustomOrders, soldOrders
                             <Text style={{color:'white', fontSize:10, fontWeight:'bold'}}>✏️ ΕΠΕΞ</Text>
                           </TouchableOpacity>
                         </View>
-                        <Text style={{fontSize:12, color:'#555', marginTop:1}}>{o.h}x{o.w} | {o.side}</Text>
-                        {o.qty&&parseInt(o.qty)>1?<Text style={{fontSize:13,fontWeight:'900',color:'#cc0000'}}>Τεμ: {o.qty}</Text>:null}
-                        {o.hardware?<Text style={{fontSize:11, color:'#555'}}>🎨 {o.hardware}</Text>:null}
-                        {o.installation==='ΝΑΙ'&&<View style={{backgroundColor:'#E65100',borderRadius:5,paddingHorizontal:6,paddingVertical:2,alignSelf:'flex-start',marginTop:2}}><Text style={{color:'white',fontWeight:'bold',fontSize:11}}>🪛 ΜΟΝΤΑΡΙΣΜΑ</Text></View>}
+                        {/* ΓΡΑΜΜΗ 2: διάσταση — φορά — χρώμα εξαρτημάτων */}
+                        <View style={{flexDirection:'row', alignItems:'center', gap:10, marginTop:3}}>
+                          <Text style={{fontSize:15, fontWeight:'900', color:'#1a1a1a'}}>{o.h}x{o.w}</Text>
+                          <Text style={{fontSize:15, fontWeight:'900', color:'#1a1a1a'}}>{o.side==='ΑΡΙΣΤΕΡΗ'?'◄ ΑΡ':'ΔΕΞ ►'}</Text>
+                          {o.hardware?<Text style={{fontSize:13, fontWeight:'bold', color:'#555'}}>🎨 {o.hardware}</Text>:null}
+                        </View>
+                        {/* ΓΡΑΜΜΗ 3-4: υπόλοιπα */}
+                        {o.installation==='ΝΑΙ'&&<View style={{flexDirection:'row',marginTop:3}}><View style={{backgroundColor:'#E65100',borderRadius:5,paddingHorizontal:6,paddingVertical:2,alignSelf:'flex-start'}}><Text style={{color:'white',fontWeight:'bold',fontSize:11}}>🪛 ΜΟΝΤΑΡΙΣΜΑ</Text></View></View>}
                         {o.stavera&&o.stavera.filter(s=>s.dim).length>0&&<Text style={{fontSize:11,color:'#555',marginTop:2}}>📐 Σταθ: {o.stavera.filter(s=>s.dim).map(s=>s.dim+(s.note?' '+s.note:'')).join(' | ')}</Text>}
-                        {o.notes?<Text style={{fontSize:11, color:'#888'}}>Σημ: {o.notes}</Text>:null}
-                        {o.deliveryDate?<Text style={{fontSize:10, color:'#007AFF'}}>📅 Παράδοση: {o.deliveryDate}</Text>:null}
-                        <Text style={{fontSize:10, color:'#999'}}>📋 {fmtDate(o.createdAt)}</Text>
+                        {o.heightReduction?<Text style={{fontSize:11,color:'#e65100',fontWeight:'bold',marginTop:2}}>📏 Μείωση: {o.heightReduction}</Text>:null}
+                        {o.lock?<Text style={{fontSize:11,color:'#555',marginTop:2}}>🔒 {o.lock}</Text>:null}
+                        {o.notes?<Text style={{fontSize:11, color:'#888', marginTop:2}}>Σημ: {o.notes}</Text>:null}
+                        {o.deliveryDate?<Text style={{fontSize:10, color:'#007AFF', marginTop:2}}>📅 Παράδοση: {o.deliveryDate}</Text>:null}
                       </View>
                       <View style={{alignItems:'flex-end', gap:4, marginLeft:8}}>
                         <View style={{flexDirection:'row', gap:4}}>
@@ -2647,6 +2659,10 @@ export default function CustomScreen({ customOrders, setCustomOrders, soldOrders
                 return renderStdCard(o, false, hasCase, false);
               });
 
+              // Counters για tabs — STD_PENDING + STD_BUILD
+              const moniTotal = customOrders.filter(o=>o.orderType==='ΤΥΠΟΠΟΙΗΜΕΝΗ'&&(o.sasiType==='ΜΟΝΗ ΘΩΡΑΚΙΣΗ'||!o.sasiType)&&(o.status==='STD_PENDING'||o.status==='STD_BUILD'||!o.status)).length;
+              const dipliTotal = customOrders.filter(o=>o.orderType==='ΤΥΠΟΠΟΙΗΜΕΝΗ'&&o.sasiType==='ΔΙΠΛΗ ΘΩΡΑΚΙΣΗ'&&(o.status==='STD_PENDING'||o.status==='STD_BUILD'||!o.status)).length;
+
               return (<>
                 {/* TABS ΜΟΝΗ / ΔΙΠΛΗ */}
                 <View style={{flexDirection:'row', marginTop:8, marginBottom:4}}>
@@ -2654,14 +2670,14 @@ export default function CustomScreen({ customOrders, setCustomOrders, soldOrders
                     style={{flex:1, padding:12, alignItems:'center', borderRadius:8, marginRight:4, backgroundColor: stdTab==='ΜΟΝΗ'?'#5c6bc0':'#e0e0e0'}}
                     onPress={()=>stdTab==='ΜΟΝΗ'?toggleSection('stdMoniOpen'):setStdTab('ΜΟΝΗ')}>
                     <Text style={{fontWeight:'bold', color: stdTab==='ΜΟΝΗ'?'white':'#555'}}>
-                      ΜΟΝΗ ΘΩΡΑΚΙΣΗ ({moniOrders.length}) {stdTab==='ΜΟΝΗ'?(expanded.stdMoniOpen?'▲':'▼'):''}
+                      ΜΟΝΗ ΘΩΡΑΚΙΣΗ ({moniTotal}) {stdTab==='ΜΟΝΗ'?(expanded.stdMoniOpen?'▲':'▼'):''}
                     </Text>
                   </TouchableOpacity>
                   <TouchableOpacity
                     style={{flex:1, padding:12, alignItems:'center', borderRadius:8, marginLeft:4, backgroundColor: stdTab==='ΔΙΠΛΗ'?'#8B0000':'#e0e0e0'}}
                     onPress={()=>stdTab==='ΔΙΠΛΗ'?toggleSection('stdDipliOpen'):setStdTab('ΔΙΠΛΗ')}>
                     <Text style={{fontWeight:'bold', color: stdTab==='ΔΙΠΛΗ'?'white':'#555'}}>
-                      ΔΙΠΛΗ ΘΩΡΑΚΙΣΗ ({dipliOrders.length}) {stdTab==='ΔΙΠΛΗ'?(expanded.stdDipliOpen?'▲':'▼'):''}
+                      ΔΙΠΛΗ ΘΩΡΑΚΙΣΗ ({dipliTotal}) {stdTab==='ΔΙΠΛΗ'?(expanded.stdDipliOpen?'▲':'▼'):''}
                     </Text>
                   </TouchableOpacity>
                 </View>
@@ -2691,21 +2707,43 @@ export default function CustomScreen({ customOrders, setCustomOrders, soldOrders
                           }
                           return false;
                         };
-                        const hasSasiReserved = ('stavera' in (o.buildTasks||{})) || ('montage' in (o.buildTasks||{}));
+                        const hasSasiReserved = (('stavera' in (o.buildTasks||{})) || ('montage' in (o.buildTasks||{}))) && !('sasi' in (o.buildTasks||{}));
                         const hasSasiOk = !hasSasiReserved || checkStock(sasiStock, sk);
                         const hasCaseOk = checkStock(caseStock, ck);
                         const tasks = o.buildTasks||{};
-                        const taskLabels = {stavera:'📐 Σταθερό', lock:'🔒 Κλειδαριά', heightReduction:'📏 Μείωση', montage:'🪛 Μοντάρ.'};
+                        const taskLabels = {stavera:'📐 Σταθερό', lock:'🔒 Κλειδαριά', heightReduction:'📏 Μείωση', montage:'🪛 Μοντάρ.', sasi:'🔧 Σασί'};
                         const allDone = Object.keys(tasks).length>0 && Object.values(tasks).every(v=>v===true);
                         return (
                           <View key={o.id} style={{backgroundColor:'#fff', borderRadius:8, marginBottom:6, borderLeftWidth:5, borderLeftColor: allDone?'#00C851':'#e65100', elevation:2, padding:10}}>
                             <View style={{flexDirection:'row', justifyContent:'space-between', alignItems:'flex-start'}}>
                               <View style={{flex:1}}>
-                                <Text style={{fontWeight:'bold', fontSize:13}}>#{o.orderNo} {o.customer?`— ${o.customer}`:''}</Text>
-                                <Text style={{fontSize:12, color:'#555'}}>{o.h}x{o.w} | {o.side}</Text>
-                                {o.heightReduction?<Text style={{fontSize:11,color:'#e65100',fontWeight:'bold'}}>📏 Μείωση: {o.heightReduction}</Text>:null}
-                                {o.notes?<Text style={{fontSize:11,color:'#888'}}>Σημ: {o.notes}</Text>:null}
-                                {/* CHECKBOXES ΟΡΙΖΟΝΤΙΑ + ΣΑΣΙ */}
+                                {/* ΓΡΑΜΜΗ 1: #νούμερο — πελάτης — τεμάχια */}
+                                <View style={{flexDirection:'row', alignItems:'center', gap:6, flexWrap:'wrap'}}>
+                                  <Text style={{fontWeight:'900', fontSize:16, color:'#1a1a1a'}}>#{o.orderNo}</Text>
+                                  {o.customer?<Text style={{fontSize:14, fontWeight:'bold', color:'#333'}}>{o.customer}</Text>:null}
+                                  {o.qty&&parseInt(o.qty)>1?<Text style={{fontSize:16,fontWeight:'900',color:'#cc0000'}}>{o.qty}τεμ</Text>:null}
+                                  <TouchableOpacity
+                                    onPress={async()=>{
+                                      editOrder(o);
+                                      setTimeout(()=>{
+                                        if(Platform.OS==='web') window.scrollTo({top:0, behavior:'smooth'});
+                                        else mainScrollRef.current?.scrollTo({y:0, animated:true});
+                                      }, 150);
+                                    }}
+                                    style={{backgroundColor:'#1565C0', borderRadius:4, paddingHorizontal:6, paddingVertical:2}}>
+                                    <Text style={{color:'white', fontSize:10, fontWeight:'bold'}}>✏️ ΕΠΕΞ</Text>
+                                  </TouchableOpacity>
+                                </View>
+                                {/* ΓΡΑΜΜΗ 2: διάσταση — φορά — χρώμα */}
+                                <View style={{flexDirection:'row', alignItems:'center', gap:10, marginTop:3}}>
+                                  <Text style={{fontSize:15, fontWeight:'900', color:'#1a1a1a'}}>{o.h}x{o.w}</Text>
+                                  <Text style={{fontSize:15, fontWeight:'900', color:'#1a1a1a'}}>{o.side==='ΑΡΙΣΤΕΡΗ'?'◄ ΑΡ':'ΔΕΞ ►'}</Text>
+                                  {o.hardware?<Text style={{fontSize:13, fontWeight:'bold', color:'#555'}}>🎨 {o.hardware}</Text>:null}
+                                </View>
+                                {/* ΓΡΑΜΜΗ 3-4: υπόλοιπα */}
+                                {o.lock?<Text style={{fontSize:11,color:'#555',marginTop:2}}>🔒 {o.lock}</Text>:null}
+                                {o.notes?<Text style={{fontSize:11,color:'#888',marginTop:2}}>Σημ: {o.notes}</Text>:null}
+                                {/* CHECKBOXES ΟΡΙΖΟΝΤΙΑ */}
                                 <View style={{marginTop:6, flexDirection:'row', flexWrap:'wrap', gap:6, alignItems:'center'}}>
                                   {Object.entries(tasks).map(([key, done])=>(
                                     <TouchableOpacity key={key} style={{flexDirection:'row', alignItems:'center', gap:4, backgroundColor: done?'#e8f5e9':'#fff3e0', borderRadius:6, paddingHorizontal:8, paddingVertical:5, borderWidth:1, borderColor: done?'#00C851':'#e65100'}}
@@ -2716,19 +2754,21 @@ export default function CustomScreen({ customOrders, setCustomOrders, soldOrders
                                       <Text style={{fontSize:11, color: done?'#00C851':'#e65100', fontWeight:'bold'}}>{taskLabels[key]||key}</Text>
                                     </TouchableOpacity>
                                   ))}
-                                  {/* ΣΑΣΙ indicator δίπλα στα checkboxes — μόνο αν δεσμεύεται */}
-                                  {hasSasiReserved&&(
-                                    <View style={{flexDirection:'row', alignItems:'center', gap:4, backgroundColor: hasSasiOk?'#e8f5e9':'#ffeaea', borderRadius:6, paddingHorizontal:8, paddingVertical:5, borderWidth:1, borderColor: hasSasiOk?'#00C851':'#ff4444'}}>
-                                      <Text style={{fontSize:11, fontWeight:'bold', color: hasSasiOk?'#00C851':'#ff4444'}}>ΣΑΣΙ {hasSasiOk?'✅':'❌'}</Text>
-                                    </View>
-                                  )}
                                 </View>
                               </View>
-                              {/* ΚΑΣΑ + ΔΙΑΓΡΑΦΗ — δεξιά */}
+                              {/* ΚΑΣΑ + ΣΑΣΙ + ΔΙΑΓΡΑΦΗ — δεξιά */}
                               <View style={{alignItems:'flex-end', gap:4, marginLeft:8}}>
-                                <View style={{alignItems:'center', backgroundColor: hasCaseOk?'#e8f5e9':'#ffeaea', borderRadius:5, padding:4, borderWidth:1, borderColor: hasCaseOk?'#00C851':'#ff4444', minWidth:44}}>
-                                  <Text style={{fontSize:9, fontWeight:'bold', color:'#555'}}>ΚΑΣΑ</Text>
-                                  <Text style={{fontSize:14}}>{hasCaseOk?'✅':'❌'}</Text>
+                                <View style={{flexDirection:'row', gap:4}}>
+                                  <View style={{alignItems:'center', backgroundColor: hasCaseOk?'#e8f5e9':'#ffeaea', borderRadius:5, padding:4, borderWidth:1, borderColor: hasCaseOk?'#00C851':'#ff4444', minWidth:44}}>
+                                    <Text style={{fontSize:9, fontWeight:'bold', color:'#555'}}>ΚΑΣΑ</Text>
+                                    <Text style={{fontSize:14}}>{hasCaseOk?'✅':'❌'}</Text>
+                                  </View>
+                                  {hasSasiReserved&&(
+                                    <View style={{alignItems:'center', backgroundColor: hasSasiOk?'#e8f5e9':'#ffeaea', borderRadius:5, padding:4, borderWidth:1, borderColor: hasSasiOk?'#00C851':'#ff4444', minWidth:44}}>
+                                      <Text style={{fontSize:9, fontWeight:'bold', color:'#555'}}>ΣΑΣΙ</Text>
+                                      <Text style={{fontSize:14}}>{hasSasiOk?'✅':'❌'}</Text>
+                                    </View>
+                                  )}
                                 </View>
                                 <TouchableOpacity
                                   style={{backgroundColor:'#ff4444', paddingHorizontal:8, paddingVertical:3, borderRadius:5, alignItems:'center'}}
@@ -3153,16 +3193,39 @@ export default function CustomScreen({ customOrders, setCustomOrders, soldOrders
                         };
                         const hasCaseOk = checkStock(caseStock, ckD);
                         const tasks = o.buildTasks||{};
-                        const taskLabels = {stavera:'📐 Σταθερό', lock:'🔒 Κλειδαριά', heightReduction:'📏 Μείωση', montage:'🪛 Μοντάρ.'};
+                        const taskLabels = {stavera:'📐 Σταθερό', lock:'🔒 Κλειδαριά', heightReduction:'📏 Μείωση', montage:'🪛 Μοντάρ.', sasi:'🔧 Σασί'};
                         const allDone = Object.keys(tasks).length>0 && Object.values(tasks).every(v=>v===true);
                         return (
                           <View key={o.id} style={{backgroundColor:'#fff', borderRadius:8, marginBottom:6, borderLeftWidth:5, borderLeftColor: allDone?'#00C851':'#e65100', elevation:2, padding:10}}>
                             <View style={{flexDirection:'row', justifyContent:'space-between', alignItems:'flex-start'}}>
                               <View style={{flex:1}}>
-                                <Text style={{fontWeight:'bold', fontSize:13}}>#{o.orderNo} {o.customer?`— ${o.customer}`:''}</Text>
-                                <Text style={{fontSize:12, color:'#555'}}>{o.h}x{o.w} | {o.side} | ΔΙΠΛΗ</Text>
-                                {o.heightReduction?<Text style={{fontSize:11,color:'#e65100',fontWeight:'bold'}}>📏 Μείωση: {o.heightReduction}</Text>:null}
-                                {o.notes?<Text style={{fontSize:11,color:'#888'}}>Σημ: {o.notes}</Text>:null}
+                                {/* ΓΡΑΜΜΗ 1: #νούμερο — πελάτης — τεμάχια */}
+                                <View style={{flexDirection:'row', alignItems:'center', gap:6, flexWrap:'wrap'}}>
+                                  <Text style={{fontWeight:'900', fontSize:16, color:'#1a1a1a'}}>#{o.orderNo}</Text>
+                                  {o.customer?<Text style={{fontSize:14, fontWeight:'bold', color:'#333'}}>{o.customer}</Text>:null}
+                                  {o.qty&&parseInt(o.qty)>1?<Text style={{fontSize:16,fontWeight:'900',color:'#cc0000'}}>{o.qty}τεμ</Text>:null}
+                                  <TouchableOpacity
+                                    onPress={async()=>{
+                                      editOrder(o);
+                                      setTimeout(()=>{
+                                        if(Platform.OS==='web') window.scrollTo({top:0, behavior:'smooth'});
+                                        else mainScrollRef.current?.scrollTo({y:0, animated:true});
+                                      }, 150);
+                                    }}
+                                    style={{backgroundColor:'#1565C0', borderRadius:4, paddingHorizontal:6, paddingVertical:2}}>
+                                    <Text style={{color:'white', fontSize:10, fontWeight:'bold'}}>✏️ ΕΠΕΞ</Text>
+                                  </TouchableOpacity>
+                                </View>
+                                {/* ΓΡΑΜΜΗ 2: διάσταση — φορά — ΔΙΠΛΗ — χρώμα */}
+                                <View style={{flexDirection:'row', alignItems:'center', gap:10, marginTop:3}}>
+                                  <Text style={{fontSize:15, fontWeight:'900', color:'#1a1a1a'}}>{o.h}x{o.w}</Text>
+                                  <Text style={{fontSize:15, fontWeight:'900', color:'#1a1a1a'}}>{o.side==='ΑΡΙΣΤΕΡΗ'?'◄ ΑΡ':'ΔΕΞ ►'}</Text>
+                                  <Text style={{fontSize:12, fontWeight:'bold', color:'#8B0000'}}>ΔΙΠΛΗ</Text>
+                                  {o.hardware?<Text style={{fontSize:13, fontWeight:'bold', color:'#555'}}>🎨 {o.hardware}</Text>:null}
+                                </View>
+                                {/* ΓΡΑΜΜΗ 3-4 */}
+                                {o.lock?<Text style={{fontSize:11,color:'#555',marginTop:2}}>🔒 {o.lock}</Text>:null}
+                                {o.notes?<Text style={{fontSize:11,color:'#888',marginTop:2}}>Σημ: {o.notes}</Text>:null}
                                 {/* CHECKBOXES ΟΡΙΖΟΝΤΙΑ */}
                                 <View style={{marginTop:6, flexDirection:'row', flexWrap:'wrap', gap:6, alignItems:'center'}}>
                                   {Object.entries(tasks).map(([key, done])=>(
