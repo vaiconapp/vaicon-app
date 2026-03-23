@@ -123,7 +123,7 @@ if (Platform.OS === 'android' && UIManager.setLayoutAnimationEnabledExperimental
 }
 
 const TABS = ['custom', 'sasi', 'cases', 'stats'];
-const TAB_LABELS = { custom: 'ΤΥΠΟΠΟΙΗΜΕΝΕΣ', sasi: 'ΣΑΣΙ ΣΤΟΚ', cases: 'ΚΑΣΕΣ ΣΤΟΚ', stats: 'ΣΤΑΤΙΣΤΙΚΑ' };
+const TAB_LABELS = { custom: 'ΤΥΠΟΠΟΙΗΜΕΝΕΣ', sasi: 'STOCK ΣΑΣΙ (ΑΠΟΘΗΚΗ)', cases: 'STOCK ΚΑΣΑ (ΑΠΟΘΗΚΗ)', stats: 'ΣΤΑΤΙΣΤΙΚΑ' };
 const NAV_TABS = ['custom', 'sasi', 'cases']; // ΣΤΑΤΙΣΤΙΚΑ → μενού
 
 export default function App() {
@@ -364,11 +364,11 @@ const styles = StyleSheet.create({
   loading: { flex: 1, justifyContent: 'center', alignItems: 'center', gap: 12 },
   loadingText: { color: '#555', fontSize: 14 },
   header: { backgroundColor: '#1565C0', paddingVertical: 8, paddingHorizontal: 10, borderRadius: 18, marginHorizontal: 8, marginTop: (StatusBar.currentHeight || 0) + 6, flexDirection: 'row', alignItems: 'center', gap: 6 },
-  headerTitle: { color: '#1a1a1a', fontSize: 13, fontWeight: '800', fontStyle: 'italic', letterSpacing: 2 },
+  headerTitle: { color: '#FFD600', fontSize: 18, fontWeight: '900', fontStyle: 'italic', letterSpacing: 3 },
   headerTabs: { flex: 1, flexDirection: 'row', gap: 4 },
   headerTabBtn: { flex: 1, paddingVertical: 6, paddingHorizontal: 2, borderRadius: 6, backgroundColor: 'rgba(0,0,0,0.1)', alignItems: 'center' },
   headerTabActive: { backgroundColor: '#1a1a1a' },
-  headerTabTxt: { color: 'rgba(0,0,0,0.6)', fontSize: 9, fontWeight: '700' },
+  headerTabTxt: { color: 'rgba(0,0,0,0.6)', fontSize: 11, fontWeight: '700' },
   headerTabTxtActive: { color: 'white' },
   menuBtn: { padding: 4 },
   menuIcon: { color: '#1a1a1a', fontSize: 22 },

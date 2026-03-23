@@ -245,9 +245,22 @@ export default function CustomScreen({ customOrders, setCustomOrders, soldOrders
       // GUARD CLAUSE: Αν είναι ήδη STD_READY ή stdInProd===true, το κλειδώνουμε
       if (o.status === 'STD_READY' || o.stdInProd) return o;
 
+      // FIFO check: η παραγγελία καλύπτεται μόνο αν το αθροιστικό ως αυτήν <= stock
+      const checkStockFIFO = (stockMap, key, orderNo) => {
+        const entry = stockMap?.[key];
+        if (!entry) return false;
+        const totalQty = parseInt(entry.qty) || 0;
+        let cumulative = 0;
+        for (const r of (entry.reservations || [])) {
+          cumulative += (parseInt(r.qty) || 1);
+          if (r.orderNo === orderNo) return cumulative <= totalQty;
+        }
+        return false;
+      };
+
       if(o.status==='STD_PENDING' && isMoniNoLock && (hasMontage || hasStavera)){
-        const hasSasiOk = sasiAvail > 0 || (sasiStock[sk]?.reservations||[]).some(r=>r.orderNo===o.orderNo);
-        const hasCaseOk = caseAvail > 0 || (caseStock[ck]?.reservations||[]).some(r=>r.orderNo===o.orderNo);
+        const hasSasiOk = checkStockFIFO(sasiStock, sk, o.orderNo);
+        const hasCaseOk = checkStockFIFO(caseStock, ck, o.orderNo);
         if(!hasCaseOk || !hasSasiOk) return o;
         if(hasMontage){
           if(o.stdInProd) return o;
@@ -268,7 +281,7 @@ export default function CustomScreen({ customOrders, setCustomOrders, soldOrders
       const allDone = phases && Object.keys(phases).every(k=>!phases[k].active||phases[k].done);
       if(!allDone) return o;
       const staveraPending = hasStavera && !o.staveraDone;
-      const hasCaseOk2 = caseAvail > 0 || (caseStock[ck]?.reservations||[]).some(r=>r.orderNo===o.orderNo);
+      const hasCaseOk2 = checkStockFIFO(caseStock, ck, o.orderNo);
       if(!hasCaseOk2) return o;
       updated = true;
       const upd2 = {...o, status:'STD_READY', readyAt:Date.now(), ...(staveraPending?{staveraPendingAtReady:true}:{})};

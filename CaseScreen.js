@@ -16,7 +16,7 @@ const initStockMap = () => {
     HEIGHTS.forEach(h => {
       WIDTHS.forEach(w => {
         CASE_TYPES.forEach(ct => {
-          map[stockKey(h,w,side,ct)] = { qty: 0, reservations: [], caseType: ct };
+          map[stockKey(h,w,side,ct)] = { qty: 0, reservations: [], caseType: ct, pending: 0 };
         });
       });
     });
@@ -75,7 +75,12 @@ export default function CaseScreen({ caseStock={}, setCaseStock }) {
   };
 
   const handleAdd = (key, label) => {
-    setQtyModal({ visible:true, key, mode:'add', label:`+ Προσθήκη στοκ\n${label}` });
+    setQtyModal({ visible:true, key, mode:'pending', label:`+ PENDING\n${label}` });
+  };
+
+  const handlePendingIn = (key, label, pendingQty) => {
+    if (pendingQty <= 0) return Alert.alert('Προσοχή','Δεν υπάρχει ποσότητα σε PENDING.');
+    setQtyModal({ visible:true, key, mode:'pendingIn', label:`📦 Παραλαβή από PENDING\n${label}\n(έως ${pendingQty} τεμ.)` });
   };
 
   const handleSubtract = (key, label, maxQty) => {
@@ -86,9 +91,14 @@ export default function CaseScreen({ caseStock={}, setCaseStock }) {
   const handleQtyConfirm = async (n) => {
     const { key, mode } = qtyModal;
     setQtyModal(m => ({...m, visible:false}));
-    const entry = {...(stockMap[key] || { qty:0, reservations:[], caseType: activeCaseType })};
-    if (mode === 'add') {
+    const entry = {...(stockMap[key] || { qty:0, reservations:[], caseType: activeCaseType, pending:0 })};
+    if (mode === 'pending') {
+      entry.pending = (entry.pending || 0) + n;
+    } else if (mode === 'pendingIn') {
+      const maxPending = entry.pending || 0;
+      if (n > maxPending) return Alert.alert('Προσοχή',`Μπορείτε να παραλάβετε έως ${maxPending} τεμάχια.`);
       entry.qty = (entry.qty || 0) + n;
+      entry.pending = maxPending - n;
     } else {
       const available = (entry.qty || 0) - (entry.reservations||[]).reduce((s,r)=>s+(parseInt(r.qty)||1),0);
       if (n > available) return Alert.alert('Προσοχή',`Μπορείτε να αφαιρέσετε έως ${available} τεμάχια.`);
@@ -96,45 +106,58 @@ export default function CaseScreen({ caseStock={}, setCaseStock }) {
     }
     setCaseStock(prev => ({...prev, [key]: entry}));
     await syncKey(key, entry);
-    await logActivity('ΚΑΣΕΣ ΣΤΟΚ', mode==='add'?'Προσθήκη':'Αφαίρεση', { size: key, qty: String(n) });
+    const modeLabel = mode==='pending'?'PENDING':mode==='pendingIn'?'Παραλαβή από PENDING':'Αφαίρεση';
+    await logActivity('ΚΑΣΕΣ ΣΤΟΚ', modeLabel, { size: key, qty: String(n) });
   };
 
   const renderTable = (side, caseType) => {
     return (
       <View style={styles.table}>
         <View style={styles.tableHeader}>
-          <View style={[styles.thWrap, {width:60}]}><Text style={styles.thCell}>ACT</Text></View>
+          <View style={[styles.thWrap, {width:34}]}><Text style={styles.thCell}>ACT</Text></View>
+          <View style={[styles.thWrap, {width:60}]}><Text style={[styles.thCell,{textAlign:'center'}]}>PEND.</Text></View>
           <View style={[styles.thWrap, {width:80}]}><Text style={styles.thCell}>ΔΙΑΣΤΑΣΗ</Text></View>
           <View style={[styles.thWrap, {width:60}]}><Text style={[styles.thCell,{textAlign:'center'}]}>ΥΠΟ/ΠΟ</Text></View>
           <View style={[styles.thWrap, {flex:1, borderRightWidth:0}]}><Text style={styles.thCell}>ΔΕΣΜΕΥΣΕΙΣ</Text></View>
         </View>
         {HEIGHTS.map(h => WIDTHS.map(w => {
           const key = stockKey(h, w, side, caseType);
-          const entry = stockMap[key] || { qty:0, reservations:[] };
+          const entry = stockMap[key] || { qty:0, reservations:[], pending:0 };
           const reserved = (entry.reservations||[]).reduce((s,r)=>s+(parseInt(r.qty)||1),0);
           const available = (entry.qty||0) - reserved;
+          const pending = entry.pending || 0;
           const label = `${h}x${w} ${side==='ΑΡΙΣΤΕΡΗ'?'ΑΡ':'ΔΕ'}`;
           const hasReservations = (entry.reservations||[]).length > 0;
           const availColor = available <= 0 ? '#ff4444' : available <= 3 ? '#ff9800' : '#1b5e20';
 
           return (
             <View key={key} style={[styles.tableRow, available<0&&{backgroundColor:'#fff5f5'}]}>
-              <View style={[styles.tdWrap, {width:60, flexDirection:'row', gap:4, justifyContent:'center'}]}>
-                <TouchableOpacity style={styles.addBtn} onPress={()=>handleAdd(key, label)}>
-                  <Text style={styles.btnTxt}>+</Text>
-                </TouchableOpacity>
+              {/* ΕΝΕΡΓΕΙΕΣ — μόνο το - */}
+              <View style={[styles.tdWrap, {width:34, justifyContent:'center', alignItems:'center'}]}>
                 <TouchableOpacity style={[styles.subBtn, available<=0&&{opacity:0.35}]}
                   onPress={()=>handleSubtract(key, label, available)}>
                   <Text style={styles.btnTxt}>-</Text>
                 </TouchableOpacity>
               </View>
+              {/* PENDING */}
+              <TouchableOpacity
+                style={[styles.tdWrap, {width:60, alignItems:'center', backgroundColor: pending>0?'#fff8e1':'transparent'}]}
+                onPress={()=>handleAdd(key, label)}
+                onLongPress={()=>pending>0&&handlePendingIn(key, label, pending)}>
+                <Text style={{fontSize:16, fontWeight:'900', color: pending>0?'#e65100':'#ccc'}}>{pending>0?pending:'+'}</Text>
+                {pending>0&&<Text style={{fontSize:8, color:'#e65100', fontWeight:'bold'}}>PENDING</Text>}
+                {pending>0&&<Text style={{fontSize:8, color:'#888'}}>πάτα παρ/βή</Text>}
+              </TouchableOpacity>
+              {/* ΔΙΑΣΤΑΣΗ */}
               <View style={[styles.tdWrap, {width:80}]}>
                 <Text style={styles.dimCell}>{h}x{w}</Text>
               </View>
+              {/* ΥΠΟΛΟΙΠΟ */}
               <View style={[styles.tdWrap, {width:60, alignItems:'center'}]}>
                 <Text style={[styles.qtyCell, {color: availColor}]}>{available}</Text>
                 {entry.qty > 0 && <Text style={{fontSize:9, color:'#aaa'}}>/{entry.qty}</Text>}
               </View>
+              {/* ΔΕΣΜΕΥΣΕΙΣ */}
               <TouchableOpacity
                 style={[styles.tdWrap, {flex:1, borderRightWidth:0}]}
                 onPress={()=>hasReservations?setShowReservations(key):null}>
@@ -154,6 +177,35 @@ export default function CaseScreen({ caseStock={}, setCaseStock }) {
 
   const reservationEntry = showReservations ? stockMap[showReservations] : null;
 
+  const handlePrint = (caseType) => {
+    const today = new Date();
+    const dateStr = `${String(today.getDate()).padStart(2,'0')}/${String(today.getMonth()+1).padStart(2,'0')}/${today.getFullYear()}`;
+    const label = caseType==='ΚΑΣΑ ΚΛΕΙΣΤΗ'?'ΚΛΕΙΣΤΗ':'ΑΝΟΙΧΤΗ';
+    const buildRows = (side) => HEIGHTS.flatMap(h => WIDTHS.map(w => {
+      const key = stockKey(h, w, side, caseType);
+      const entry = stockMap[key] || { qty:0, reservations:[], pending:0 };
+      const reserved = (entry.reservations||[]).reduce((s,r)=>s+(parseInt(r.qty)||1),0);
+      const available = (entry.qty||0) - reserved;
+      const pending = entry.pending || 0;
+      const resText = (entry.reservations||[]).map(r=>`#${r.orderNo}(${r.qty||1})`).join(', ') || '—';
+      const availColor = available < 0 ? '#cc0000' : available === 0 ? '#888' : '#155724';
+      return `<tr>
+        <td style="font-weight:bold">${h}x${w}</td>
+        <td style="text-align:center;color:${pending>0?'#e65100':'#aaa'};font-weight:bold">${pending>0?pending:'—'}</td>
+        <td style="text-align:center;font-weight:900;color:${availColor}">${available}</td>
+        <td style="font-size:10px;color:#555">${resText}</td>
+      </tr>`;
+    })).join('');
+    const colHeader = `<tr style="background:#1a1a1a"><th style="color:white;padding:4px 4px;width:50px">ΔΙΑΣΤΑΣΗ</th><th style="color:white;padding:4px 4px;width:40px;text-align:center">PEND.</th><th style="color:white;padding:4px 4px;width:45px;text-align:center">ΥΠΟ/ΠΟ</th><th style="color:white;padding:4px 4px">ΔΕΣΜΕΥΣΕΙΣ</th></tr>`;
+    const html = `<!DOCTYPE html><html><head><meta charset="utf-8"><style>body{font-family:Arial,sans-serif;margin:6mm;color:#000;}h1{font-size:16px;margin-bottom:2px;font-weight:bold;}h2{font-size:11px;color:#555;margin-top:0;margin-bottom:8px;}.wrapper{display:flex;gap:8mm;}.half{flex:1;}.half h3{font-size:13px;font-weight:bold;background:#333;color:white;padding:5px 8px;margin-bottom:0;}table{width:100%;border-collapse:collapse;font-size:11px;table-layout:fixed;}th{padding:4px 6px;text-align:left;border-bottom:2px solid #000;overflow:hidden;}td{padding:3px 6px;border-bottom:1px solid #ddd;overflow:hidden;white-space:nowrap;}td:last-child{white-space:normal;}@media print{@page{size:A4 landscape;margin:6mm;}}</style></head><body><h1>STOCK ΚΑΣΑ ${label} (ΑΠΟΘΗΚΗ)</h1><h2>📅 ${dateStr}</h2><div class="wrapper"><div class="half"><h3>◄ ΑΡΙΣΤΕΡΗ</h3><table><thead>${colHeader}</thead><tbody>${buildRows('ΑΡΙΣΤΕΡΗ')}</tbody></table></div><div class="half"><h3>ΔΕΞΙΑ ►</h3><table><thead>${colHeader}</thead><tbody>${buildRows('ΔΕΞΙΑ')}</tbody></table></div></div><script>window.onload=()=>window.print();<\/script></body></html>`;
+    if (Platform.OS === 'web') {
+      const win = window.open('', '_blank');
+      if (!win) return Alert.alert('Σφάλμα','Επιτρέψτε τα pop-ups.');
+      win.document.write(html);
+      win.document.close();
+    }
+  };
+
   return (
     <View style={{flex:1, backgroundColor:'#f5f5f5'}}>
       {/* Tab ΚΛΕΙΣΤΗ / ΑΝΟΙΧΤΗ */}
@@ -170,10 +222,16 @@ export default function CaseScreen({ caseStock={}, setCaseStock }) {
         ))}
       </View>
 
+      {/* ΚΟΥΜΠΙ ΕΚΤΥΠΩΣΗΣ μέσα στο sectionHeader */}
       <ScrollView style={{flex:1, paddingHorizontal:10}}>
         {/* ΑΡΙΣΤΕΡΗ */}
-        <View style={styles.sectionHeader}>
+        <View style={[styles.sectionHeader, {flexDirection:'row', alignItems:'center', justifyContent:'space-between'}]}>
           <Text style={styles.sectionTitle}>◄ ΑΡΙΣΤΕΡΗ — {activeCaseType}</Text>
+          <TouchableOpacity
+            style={{backgroundColor:'white', paddingHorizontal:10, paddingVertical:5, borderRadius:6}}
+            onPress={()=>handlePrint(activeCaseType)}>
+            <Text style={{color:'#1a1a1a', fontWeight:'bold', fontSize:11}}>🖨️ ΕΚΤΥΠΩΣΗ</Text>
+          </TouchableOpacity>
         </View>
         {renderTable('ΑΡΙΣΤΕΡΗ', activeCaseType)}
 
