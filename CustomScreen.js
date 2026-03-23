@@ -365,16 +365,22 @@ export default function CustomScreen({ customOrders, setCustomOrders, soldOrders
     if (!setSasiStock || !setCaseStock) return;
     const sk = sasiKey(String(h), String(w), side);
     const ck = caseKey(String(h), String(w), side, caseType);
-    if (isMoni && sasiStock[sk]) {
-      const updEntry = {...sasiStock[sk], reservations: (sasiStock[sk].reservations||[]).filter(r=>r.orderNo!==orderNo)};
-      setSasiStock(prev=>({...prev, [sk]: updEntry}));
-      await fetch(`${FIREBASE_URL}/sasi_stock/${sk}.json`,{method:'PUT',body:JSON.stringify(updEntry)});
+
+    if (isMoni) {
+      setSasiStock(prev => {
+        if (!prev[sk]) return prev;
+        const updEntry = { ...prev[sk], reservations: (prev[sk].reservations || []).filter(r => r.orderNo !== orderNo) };
+        fetch(`${FIREBASE_URL}/sasi_stock/${sk}.json`, { method: 'PUT', body: JSON.stringify(updEntry) }).catch(console.error);
+        return { ...prev, [sk]: updEntry };
+      });
     }
-    if (caseStock[ck]) {
-      const updEntry = {...caseStock[ck], reservations: (caseStock[ck].reservations||[]).filter(r=>r.orderNo!==orderNo)};
-      setCaseStock(prev=>({...prev, [ck]: updEntry}));
-      await fetch(`${FIREBASE_URL}/case_stock/${ck}.json`,{method:'PUT',body:JSON.stringify(updEntry)});
-    }
+
+    setCaseStock(prev => {
+      if (!prev[ck]) return prev;
+      const updEntry = { ...prev[ck], reservations: (prev[ck].reservations || []).filter(r => r.orderNo !== orderNo) };
+      fetch(`${FIREBASE_URL}/case_stock/${ck}.json`, { method: 'PUT', body: JSON.stringify(updEntry) }).catch(console.error);
+      return { ...prev, [ck]: updEntry };
+    });
   };
 
   const editOrder = async (order) => {
