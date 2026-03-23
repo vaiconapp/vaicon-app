@@ -1734,6 +1734,10 @@ export default function CustomScreen({ customOrders, setCustomOrders, soldOrders
                                 if(!window.confirm(`Διαγραφή παραγγελίας #${o.orderNo};`)) return;
                                 setCustomOrders(customOrders.filter(x=>x.id!==o.id));
                                 await deleteFromCloud(o.id);
+                                if (o.orderType === 'ΤΥΠΟΠΟΙΗΜΕΝΗ') {
+                                  const isMoni = (o.sasiType === 'ΜΟΝΗ ΘΩΡΑΚΙΣΗ' || !o.sasiType) && !o.lock;
+                                  await removeStockReservation(o.orderNo, o.h, o.w, o.side, o.caseType, isMoni);
+                                }
                               }}>
                               <Text style={{color:'white', fontSize:10, fontWeight:'bold'}}>✕ ΔΙΑ/ΦΗ</Text>
                             </TouchableOpacity>
@@ -2222,8 +2226,12 @@ export default function CustomScreen({ customOrders, setCustomOrders, soldOrders
                           style={{backgroundColor:'#ff4444', paddingHorizontal:8, paddingVertical:3, borderRadius:5, alignSelf:'stretch', alignItems:'center'}}
                           onPress={async()=>{
                             if(!window.confirm(`Διαγραφή παραγγελίας #${o.orderNo};`)) return;
-                            setCustomOrders(customOrders.filter(x=>x.id!==o.id));
-                            await deleteFromCloud(o.id);
+                                setCustomOrders(customOrders.filter(x=>x.id!==o.id));
+                                await deleteFromCloud(o.id);
+                                if (o.orderType === 'ΤΥΠΟΠΟΙΗΜΕΝΗ') {
+                                  const isMoni = (o.sasiType === 'ΜΟΝΗ ΘΩΡΑΚΙΣΗ' || !o.sasiType) && !o.lock;
+                                  await removeStockReservation(o.orderNo, o.h, o.w, o.side, o.caseType, isMoni);
+                                }
                           }}>
                           <Text style={{color:'white', fontSize:10, fontWeight:'bold'}}>✕ ΔΙΑ/ΦΗ</Text>
                         </TouchableOpacity>
@@ -2538,15 +2546,29 @@ export default function CustomScreen({ customOrders, setCustomOrders, soldOrders
                 const sk = sasiKey(String(o.h), String(o.w), o.side);
                 const ck = caseKey(String(o.h), String(o.w), o.side, o.caseType);
                 // ✅ μόνο αν υπάρχει φυσικό διαθέσιμο απόθεμα (qty > reservations)
-                const hasSasi = stockAvailable(sasiStock, sk) > 0 || (sasiStock[sk]?.reservations||[]).some(r=>r.orderNo===o.orderNo);
-                const hasCase = stockAvailable(caseStock, ck) > 0 || (caseStock[ck]?.reservations||[]).some(r=>r.orderNo===o.orderNo);
+                const checkStock = (stockMap, key, orderNo) => {
+                  const entry = stockMap?.[key];
+                  if (!entry) return false;
+                  const isReserved = (entry.reservations||[]).some(r=>r.orderNo===orderNo);
+                  const available = stockAvailable(stockMap, key);
+                  return isReserved ? available >= 0 : available > 0;
+                };
+                const hasSasi = checkStock(sasiStock, sk, o.orderNo);
+                const hasCase = checkStock(caseStock, ck, o.orderNo);
                 return renderStdCard(o, hasSasi, hasCase, true);
               });
 
               // ΔΙΠΛΗ — έλεγχος με νέο stock
               const dipliCards = dipliOrders.map(o=>{
                 const ckD = caseKey(String(o.h), String(o.w), o.side, o.caseType);
-                const hasCase = stockAvailable(caseStock, ckD) > 0 || (caseStock[ckD]?.reservations||[]).some(r=>r.orderNo===o.orderNo);
+                const checkStock = (stockMap, key, orderNo) => {
+                  const entry = stockMap?.[key];
+                  if (!entry) return false;
+                  const isReserved = (entry.reservations||[]).some(r=>r.orderNo===orderNo);
+                  const available = stockAvailable(stockMap, key);
+                  return isReserved ? available >= 0 : available > 0;
+                };
+                const hasCase = checkStock(caseStock, ckD, o.orderNo);
                 return renderStdCard(o, false, hasCase, false);
               });
 
