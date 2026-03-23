@@ -198,6 +198,8 @@ export default function SasiScreen({ sasiStock={}, setSasiStock }) {
       win.document.close();
     }
   };
+
+  const handlePrint = () => {
     const today = new Date();
     const dateStr = `${String(today.getDate()).padStart(2,'0')}/${String(today.getMonth()+1).padStart(2,'0')}/${today.getFullYear()}`;
     const buildRows = (side) => HEIGHTS.flatMap(h => WIDTHS.map(w => {
