@@ -316,9 +316,14 @@ export default function CustomScreen({ customOrders, setCustomOrders, soldOrders
       status: isMoniWithLock ? 'MONI_PROD' : 'STD_PENDING',
       ...(isMoniWithLock ? {moniPhases} : {})
     };
-    setCustomOrders([newOrder,...customOrders]);
-    await syncToCloud(newOrder);
-    await logActivity('ΤΥΠΟΠΟΙΗΜΕΝΗ', 'Νέα παραγγελία', { orderNo: newOrder.orderNo, customer: newOrder.customer, size: `${newOrder.h}x${newOrder.w}`, qty: newOrder.qty });
+
+    try {
+      setCustomOrders([newOrder,...customOrders]);
+      await syncToCloud(newOrder);
+      await logActivity('ΤΥΠΟΠΟΙΗΜΕΝΗ', 'Νέα παραγγελία', { orderNo: newOrder.orderNo, customer: newOrder.customer, size: `${newOrder.h}x${newOrder.w}`, qty: newOrder.qty });
+    } catch (e) {
+      Alert.alert('Σφάλμα', 'Αποτυχία αποθήκευσης στο Firebase.');
+    }
 
     // ── Δέσμευση στοκ (νέο σύστημα) ──
     if (newOrder.status === 'STD_PENDING' && setSasiStock && setCaseStock) {
@@ -1285,15 +1290,19 @@ export default function CustomScreen({ customOrders, setCustomOrders, soldOrders
   };
 
     const handleDeleteAndRelease = async (order) => {
-    // Διαγραφή από το UI
-    setCustomOrders(prev => prev.filter(o => o.id !== order.id));
-    // Διαγραφή από το Firebase
-    await deleteFromCloud(order.id);
+    try {
+      // Διαγραφή από το UI
+      setCustomOrders(prev => prev.filter(o => o.id !== order.id));
+      // Διαγραφή από το Firebase
+      await deleteFromCloud(order.id);
 
-    // Αν είναι τυποποιημένη, απελευθερώνουμε το στοκ
-    if (order.orderType === 'ΤΥΠΟΠΟΙΗΜΕΝΗ') {
-      const isMoni = (order.sasiType === 'ΜΟΝΗ ΘΩΡΑΚΙΣΗ' || !order.sasiType) && !order.lock;
-      await removeStockReservation(order.orderNo, order.h, order.w, order.side, order.caseType, isMoni);
+      // Αν είναι τυποποιημένη, απελευθερώνουμε το στοκ
+      if (order.orderType === 'ΤΥΠΟΠΟΙΗΜΕΝΗ') {
+        const isMoni = (order.sasiType === 'ΜΟΝΗ ΘΩΡΑΚΙΣΗ' || !order.sasiType) && !order.lock;
+        await removeStockReservation(order.orderNo, order.h, order.w, order.side, order.caseType, isMoni);
+      }
+    } catch (e) {
+      Alert.alert('Σφάλμα', 'Αποτυχία διαγραφής παραγγελίας.');
     }
   };
 
