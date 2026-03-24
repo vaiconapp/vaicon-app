@@ -362,14 +362,16 @@ export default function CustomScreen({ customOrders, setCustomOrders, soldOrders
       montSasi:{active:true, done:false, printHistory:[]},
       montDoor:{active:true, done:false, printHistory:[]}
     } : null;
-    const newOrder = {...customForm, orderType:'ΤΥΠΟΠΟΙΗΜΕΝΗ', id:Date.now().toString(), createdAt:Date.now(),
+    const newOrder = {...customForm, orderType:'ΤΥΠΟΠΟΙΗΜΕΝΗ',
+      id: editingOrder ? editingOrder.id : Date.now().toString(),
+      createdAt: editingOrder ? editingOrder.createdAt : Date.now(),
       status: needsBuild ? 'STD_BUILD' : 'STD_PENDING',
       ...(needsBuild ? {buildTasks} : {}),
       ...(isMoniWithLock ? {moniPhases} : {})
     };
-    setCustomOrders([newOrder,...customOrders]);
+    setCustomOrders(prev => [newOrder, ...prev.filter(o => o.id !== newOrder.id)]);
     await syncToCloud(newOrder);
-    await logActivity('ΤΥΠΟΠΟΙΗΜΕΝΗ', 'Νέα παραγγελία', { orderNo: newOrder.orderNo, customer: newOrder.customer, size: `${newOrder.h}x${newOrder.w}`, qty: newOrder.qty });
+    await logActivity('ΤΥΠΟΠΟΙΗΜΕΝΗ', editingOrder ? 'Επεξεργασία παραγγελίας' : 'Νέα παραγγελία', { orderNo: newOrder.orderNo, customer: newOrder.customer, size: `${newOrder.h}x${newOrder.w}`, qty: newOrder.qty });
 
     // ── Δέσμευση στοκ ──
     if (setSasiStock && setCaseStock) {
@@ -441,13 +443,14 @@ export default function CustomScreen({ customOrders, setCustomOrders, soldOrders
     setCustomForm(order); setOrderType(order.orderType||'ΕΙΔΙΚΗ');
     setCustomerSearch(order.customer||'');
     setEditingOrder(order);
-    setCustomOrders(customOrders.filter(o=>o.id!==order.id));
-    deleteFromCloud(order.id);
+    setCustomOrders(prev => prev.filter(o=>o.id!==order.id));
+    await deleteFromCloud(order.id);
 
     if (order.orderType==='ΤΥΠΟΠΟΙΗΜΕΝΗ') {
       const isMoni = (order.sasiType==='ΜΟΝΗ ΘΩΡΑΚΙΣΗ'||!order.sasiType) && !order.lock;
       await removeStockReservation(order.orderNo, order.h, order.w, order.side, order.caseType, isMoni);
-    }  };
+    }
+  };
 
   // Μεταφορά PENDING → PROD: αρχικοποιεί τις φάσεις παραγωγής
   const moveToProd = async (id) => {

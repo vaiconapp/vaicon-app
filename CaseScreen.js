@@ -179,7 +179,7 @@ export default function CaseScreen({ caseStock={}, setCaseStock }) {
 
   const handlePrintProd = (caseType) => {
     const today = new Date();
-    const dateStr = `${String(today.getDate()).padStart(2,'0')}/${String(today.getMonth()+1).padStart(2,'0')}/${today.getFullYear()}`;
+    const dateStr = `${String(today.getDate()).padStart(2,'0')}/${String(today.getMonth()+1).padStart(2,'0')}/${today.getFullYear()} ${String(today.getHours()).padStart(2,'0')}:${String(today.getMinutes()).padStart(2,'0')}`;
     const label = caseType==='ΚΑΣΑ ΚΛΕΙΣΤΗ'?'ΚΛΕΙΣΤΗ':'ΑΝΟΙΧΤΗ';
     const buildRows = (side) => HEIGHTS.flatMap(h => WIDTHS.map(w => {
       const key = stockKey(h, w, side, caseType);
@@ -203,7 +203,7 @@ export default function CaseScreen({ caseStock={}, setCaseStock }) {
 
   const handlePrint = (caseType) => {
     const today = new Date();
-    const dateStr = `${String(today.getDate()).padStart(2,'0')}/${String(today.getMonth()+1).padStart(2,'0')}/${today.getFullYear()}`;
+    const dateStr = `${String(today.getDate()).padStart(2,'0')}/${String(today.getMonth()+1).padStart(2,'0')}/${today.getFullYear()} ${String(today.getHours()).padStart(2,'0')}:${String(today.getMinutes()).padStart(2,'0')}`;
     const label = caseType==='ΚΑΣΑ ΚΛΕΙΣΤΗ'?'ΚΛΕΙΣΤΗ':'ΑΝΟΙΧΤΗ';
     const buildRows = (side) => HEIGHTS.flatMap(h => WIDTHS.map(w => {
       const key = stockKey(h, w, side, caseType);

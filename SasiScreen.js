@@ -178,7 +178,7 @@ export default function SasiScreen({ sasiStock={}, setSasiStock }) {
 
   const handlePrintProd = () => {
     const today = new Date();
-    const dateStr = `${String(today.getDate()).padStart(2,'0')}/${String(today.getMonth()+1).padStart(2,'0')}/${today.getFullYear()}`;
+    const dateStr = `${String(today.getDate()).padStart(2,'0')}/${String(today.getMonth()+1).padStart(2,'0')}/${today.getFullYear()} ${String(today.getHours()).padStart(2,'0')}:${String(today.getMinutes()).padStart(2,'0')}`;
     const buildRows = (side) => HEIGHTS.flatMap(h => WIDTHS.map(w => {
       const key = stockKey(h, w, side);
       const entry = stockMap[key] || { qty:0, reservations:[], pending:0 };
@@ -201,7 +201,7 @@ export default function SasiScreen({ sasiStock={}, setSasiStock }) {
 
   const handlePrint = () => {
     const today = new Date();
-    const dateStr = `${String(today.getDate()).padStart(2,'0')}/${String(today.getMonth()+1).padStart(2,'0')}/${today.getFullYear()}`;
+    const dateStr = `${String(today.getDate()).padStart(2,'0')}/${String(today.getMonth()+1).padStart(2,'0')}/${today.getFullYear()} ${String(today.getHours()).padStart(2,'0')}:${String(today.getMinutes()).padStart(2,'0')}`;
     const buildRows = (side) => HEIGHTS.flatMap(h => WIDTHS.map(w => {
       const key = stockKey(h, w, side);
       const entry = stockMap[key] || { qty:0, reservations:[], pending:0 };
