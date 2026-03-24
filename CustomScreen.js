@@ -440,7 +440,7 @@ export default function CustomScreen({ customOrders, setCustomOrders, soldOrders
   };
 
   const editOrder = async (order) => {
-    setCustomForm(order); setOrderType(order.orderType||'ΕΙΔΙΚΗ');
+    setCustomForm(order);
     setCustomerSearch(order.customer||'');
     setEditingOrder(order);
     setCustomOrders(prev => prev.filter(o=>o.id!==order.id));
