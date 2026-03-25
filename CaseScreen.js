@@ -62,6 +62,7 @@ export default function CaseScreen({ caseStock={}, setCaseStock }) {
   // Χρησιμοποιούμε απευθείας το κεντρικό state από App.js
   const stockMap = { ...initStockMap(), ...caseStock };
   const [qtyModal, setQtyModal] = useState({ visible:false, key:'', mode:'add', label:'' });
+  const [choiceModal, setChoiceModal] = useState({ visible:false, key:'', label:'' });
   const [showReservations, setShowReservations] = useState(null);
   const [activeCaseType, setActiveCaseType] = useState('ΚΑΣΑ ΚΛΕΙΣΤΗ');
 
@@ -75,7 +76,7 @@ export default function CaseScreen({ caseStock={}, setCaseStock }) {
   };
 
   const handleAdd = (key, label) => {
-    setQtyModal({ visible:true, key, mode:'pending', label:`+ PENDING\n${label}` });
+    setChoiceModal({ visible:true, key, label });
   };
 
   const handlePendingIn = (key, label, pendingQty) => {
@@ -94,7 +95,24 @@ export default function CaseScreen({ caseStock={}, setCaseStock }) {
     const entry = {...(stockMap[key] || { qty:0, reservations:[], caseType: activeCaseType, pending:0 })};
     if (mode === 'pending') {
       entry.pending = (entry.pending || 0) + n;
+    } else if (mode === 'add') {
+      entry.qty = (entry.qty || 0) + n;
     } else if (mode === 'pendingIn') {
+      // Διαβάζω φρέσκο από Firebase για να έχω το σωστό pending
+      try {
+        const res = await fetch(`${FIREBASE_URL}/case_stock/${key}.json`);
+        const fresh = await res.json();
+        if (fresh) {
+          const maxPending = fresh.pending || 0;
+          if (n > maxPending) return Alert.alert('Προσοχή',`Μπορείτε να παραλάβετε έως ${maxPending} τεμάχια.`);
+          const updEntry = {...fresh, qty: (fresh.qty||0) + n, pending: maxPending - n};
+          setCaseStock(prev => ({...prev, [key]: updEntry}));
+          await fetch(`${FIREBASE_URL}/case_stock/${key}.json`, {method:'PUT', body:JSON.stringify(updEntry)});
+          await logActivity('ΚΑΣΕΣ ΣΤΟΚ', 'Παραλαβή από PENDING', { size: key, qty: String(n) });
+          return;
+        }
+      } catch(e) { console.error('pendingIn case:', e); }
+      // Fallback αν αποτύχει το Firebase
       const maxPending = entry.pending || 0;
       if (n > maxPending) return Alert.alert('Προσοχή',`Μπορείτε να παραλάβετε έως ${maxPending} τεμάχια.`);
       entry.qty = (entry.qty || 0) + n;
@@ -274,6 +292,31 @@ export default function CaseScreen({ caseStock={}, setCaseStock }) {
 
         <View style={{height:40}}/>
       </ScrollView>
+
+      {/* Modal επιλογής ΠΑΡΑΓΩΓΗ / ΑΠΟΘΗΚΗ */}
+      <Modal visible={choiceModal.visible} transparent animationType="fade">
+        <View style={styles.overlay}>
+          <View style={[styles.modalBox, {width:'80%'}]}>
+            <Text style={styles.modalTitle}>Πού προσθέτεις;</Text>
+            <Text style={{fontSize:13, color:'#555', marginBottom:16, textAlign:'center'}}>{choiceModal.label}</Text>
+            <View style={{flexDirection:'row', gap:10, width:'100%'}}>
+              <TouchableOpacity
+                style={{flex:1, padding:14, borderRadius:8, alignItems:'center', backgroundColor:'#e65100'}}
+                onPress={()=>{ setChoiceModal(m=>({...m,visible:false})); setQtyModal({visible:true, key:choiceModal.key, mode:'pending', label:`🏭 ΠΑΡΑΓΩΓΗ\n${choiceModal.label}`}); }}>
+                <Text style={{color:'white', fontWeight:'bold', fontSize:13}}>🏭 ΠΑΡΑΓΩΓΗ</Text>
+              </TouchableOpacity>
+              <TouchableOpacity
+                style={{flex:1, padding:14, borderRadius:8, alignItems:'center', backgroundColor:'#2e7d32'}}
+                onPress={()=>{ setChoiceModal(m=>({...m,visible:false})); setQtyModal({visible:true, key:choiceModal.key, mode:'pendingIn', label:`📦 ΑΠΟΘΗΚΗ\n${choiceModal.label}`}); }}>
+                <Text style={{color:'white', fontWeight:'bold', fontSize:13}}>📦 ΑΠΟΘΗΚΗ</Text>
+              </TouchableOpacity>
+            </View>
+            <TouchableOpacity style={{marginTop:10}} onPress={()=>setChoiceModal(m=>({...m,visible:false}))}>
+              <Text style={{color:'#aaa', fontSize:13}}>ΑΚΥΡΟ</Text>
+            </TouchableOpacity>
+          </View>
+        </View>
+      </Modal>
 
       <QtyModal
         visible={qtyModal.visible}
