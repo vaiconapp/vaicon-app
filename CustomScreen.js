@@ -186,6 +186,22 @@ function DuplicateModal({ visible, base, suggested, onUse, onKeep, onCancel }) {
   );
 }
 
+const PHASES = [
+  { key:'laser',    label:'🔴 LASER ΚΟΠΕΣ' },
+  { key:'cases',    label:'🟡 ΚΑΣΣΕΣ' },
+  { key:'montSasi', label:'🔵 ΚΑΤΑΡΤΙΣΗ ΣΑΣΙ' },
+  { key:'vafio',    label:'🟢 ΒΑΦΕΙΟ' },
+  { key:'montDoor', label:'⚫ ΜΟΝΤΑΡΙΣΜΑ/ΕΠΕΝΔΥΣΗ' },
+];
+
+const DIPLI_PHASES = [
+  { key:'laser',    label:'🔴 LASER ΚΟΠΕΣ' },
+  { key:'cases',    label:'🟡 ΚΑΣΣΕΣ' },
+  { key:'montSasi', label:'🔵 ΚΑΤΑΡΤΙΣΗ ΣΑΣΙ' },
+  { key:'vafio',    label:'🟢 ΒΑΦΕΙΟ' },
+  { key:'montDoor', label:'⚫ ΜΟΝΤΑΡΙΣΜΑ/ΕΠΕΝΔΥΣΗ' },
+];
+
 export default function CustomScreen({ customOrders, setCustomOrders, soldOrders, setSoldOrders, customers, onRequestAddCustomer, sasiStock={}, setSasiStock, caseStock={}, setCaseStock, sasiOrders=[], setSasiOrders, caseOrders=[], setCaseOrders, coatings=[], dipliSasiStock=[], setDipliSasiStock, locks=[], specialOrders=[] }) {
   const [expanded, setExpanded] = useState({ pending:false, prod:false, ready:false, archive:false, stdList:true, stdMoni:true, stdDipli:true, stdReady:true, stdSold:false, stdReadyD:true, stdSoldD:false, stdMoniOpen:true, stdDipliOpen:true, dipliProd:true, dipliSasiStock:false, moniProd:true, moniSasiStock:false, stdBuildMoni:true, stdBuildDipli:true });
   const [showHardwarePicker, setShowHardwarePicker] = useState(false);
@@ -207,6 +223,10 @@ export default function CustomScreen({ customOrders, setCustomOrders, soldOrders
   const [confirmModal, setConfirmModal] = useState({ visible:false, title:'', message:'', confirmText:'', onConfirm:null });
   const [dupModal, setDupModal] = useState({ visible:false, base:'', suggested:'', onUse:null, onKeep:null, onCancel:null });
   const [menonSellModal, setMenonSellModal] = useState({ visible:false, entry:null, newCustomer:'' });
+  const [printSelected, setPrintSelected] = useState({});
+  const [printPreview, setPrintPreview] = useState({ visible:false, phaseKey:null, orders:[], copies:1 });
+  const [activeProdPhase, setActiveProdPhase] = useState('laser');
+  const [moniProdTab, setMoniProdTab] = useState('montSasi');
 
   const customerRef=useRef(); const orderNoRef=useRef(); const hRef=useRef(); const wRef=useRef(); const qtyEidikiRef=useRef();
   const hingeRef=useRef(); const glassRef=useRef(); const glassNotesRef=useRef(); const lockRef=useRef(); const notesRef=useRef();
@@ -427,13 +447,12 @@ export default function CustomScreen({ customOrders, setCustomOrders, soldOrders
     } catch(e) { console.error('case remove reservation:', e); }
   };
 
-  const editOrder = async (order) => {
+  const editOrder = (order) => {
     setCustomForm(order);
     setCustomerSearch(order.customer||'');
     setEditingOrder(order);
-    setCustomOrders(prev => prev.filter(o=>o.id!==order.id));
-    await deleteFromCloud(order.id);
-    // ΔΕΝ αφαιρούμε reservations — τις κρατάμε για να μην χάσει τη σειρά FIFO
+    // ΔΕΝ αφαιρούμε από τη λίστα ούτε από το Firebase εδώ —
+    // η παραγγελία αφαιρείται μόνο κατά την αποθήκευση (saveOrder)
   };
 
   // Μεταφορά PENDING → PROD: αρχικοποιεί τις φάσεις παραγωγής
@@ -2575,16 +2594,41 @@ export default function CustomScreen({ customOrders, setCustomOrders, soldOrders
                 <View key={o.id} style={{backgroundColor:'#e8f5e9', borderRadius:8, padding:10, marginBottom:8, borderLeftWidth:5, borderLeftColor:'#00C851', elevation:2}}>
                   <View style={{flexDirection:'row', justifyContent:'space-between', alignItems:'flex-start'}}>
                     <View style={{flex:1}}>
-                      {fmtDate(o.createdAt)?<Text style={{fontSize:11,color:'#007AFF',fontWeight:'bold'}}>📅 {fmtDate(o.createdAt)}</Text>:null}
-                      <Text style={{fontWeight:'bold', fontSize:13}}>#{o.orderNo} {o.customer?`— ${o.customer}`:''}</Text>
-                      <Text style={{fontSize:12, color:'#555', marginTop:1}}>{o.h}x{o.w} | {o.side}</Text>
-                      {o.notes?<Text style={{fontSize:11, color:'#888'}}>Σημ: {o.notes}</Text>:null}
-                      {o.deliveryDate?<Text style={{fontSize:10, color:'#007AFF'}}>📅 Παράδοση: {o.deliveryDate}</Text>:null}
+                      {/* ΓΡΑΜΜΗ 1: ημερομηνία — #νούμερο — πελάτης — τεμάχια */}
+                      <View style={{flexDirection:'row', alignItems:'center', gap:6, flexWrap:'wrap'}}>
+                        {fmtDate(o.createdAt)?<Text style={{fontSize:11,color:'#007AFF',fontWeight:'bold'}}>📅 {fmtDate(o.createdAt)}</Text>:null}
+                        <Text style={{fontWeight:'900', fontSize:16, color:'#1a1a1a'}}>#{o.orderNo}</Text>
+                        {o.customer?<Text style={{fontSize:14, fontWeight:'bold', color:'#333'}}>{o.customer}</Text>:null}
+                        {o.qty&&parseInt(o.qty)>1?<Text style={{fontSize:16,fontWeight:'900',color:'#cc0000'}}>{o.qty}τεμ</Text>:null}
+                      </View>
+                      {/* ΓΡΑΜΜΗ 2: διάσταση — φορά — τύπος σασί — χρώμα εξαρτημάτων */}
+                      <View style={{flexDirection:'row', alignItems:'center', gap:8, marginTop:3, flexWrap:'wrap'}}>
+                        <Text style={{fontSize:15, fontWeight:'900', color:'#1a1a1a'}}>{o.h}x{o.w}</Text>
+                        <Text style={{fontSize:15, fontWeight:'900', color:'#1a1a1a'}}>{o.side==='ΑΡΙΣΤΕΡΗ'?'◄ ΑΡ':'ΔΕΞ ►'}</Text>
+                        <Text style={{fontSize:12, fontWeight:'bold', color: o.sasiType==='ΔΙΠΛΗ ΘΩΡΑΚΙΣΗ'?'#8B0000':'#1565C0'}}>{o.sasiType==='ΔΙΠΛΗ ΘΩΡΑΚΙΣΗ'?'ΔΙΠΛΗ':'ΜΟΝΗ'}</Text>
+                        {o.hardware?<Text style={{fontSize:12, fontWeight:'bold', color:'#555'}}>🎨 {o.hardware}</Text>:null}
+                      </View>
+                      {/* ΓΡΑΜΜΗ 3: κλειδαριά — τύπος κάσας — επένδυση */}
+                      {(o.lock||o.caseType||(o.coatings&&o.coatings.length>0))&&(
+                        <Text style={{fontSize:11, color:'#555', marginTop:2}}>
+                          {[
+                            o.lock?`🔒 ${o.lock}`:'',
+                            o.caseType?(o.caseType.includes('ΑΝΟΙΧΤΟΥ')?'ΑΝΟΙΧΤΗ ΚΑΣΑ':'ΚΛΕΙΣΤΗ ΚΑΣΑ'):'',
+                            o.coatings&&o.coatings.length>0?o.coatings.join(', '):''
+                          ].filter(Boolean).join(' — ')}
+                        </Text>
+                      )}
+                      {/* ΓΡΑΜΜΗ 4: μείωση ύψους — σταθερά */}
+                      {o.heightReduction?<Text style={{fontSize:11, color:'#e65100', fontWeight:'bold', marginTop:2}}>📏 Μείωση: {o.heightReduction}</Text>:null}
+                      {o.stavera&&o.stavera.filter(s=>s.dim).length>0?<Text style={{fontSize:11, color:'#555', marginTop:2}}>📐 {o.stavera.filter(s=>s.dim).map(s=>s.dim+(s.note?' '+s.note:'')).join(' | ')}</Text>:null}
+                      {/* ΓΡΑΜΜΗ 5: παρατηρήσεις — ημερομηνία παράδοσης */}
+                      {o.notes?<Text style={{fontSize:11, color:'#888', marginTop:2}}>Σημ: {o.notes}</Text>:null}
+                      {o.deliveryDate?<Text style={{fontSize:10, color:'#007AFF', marginTop:2}}>📅 Παράδοση: {o.deliveryDate}</Text>:null}
                       {/* BADGES: ΜΟΝΤΑΡΙΣΜΕΝΗ + ΣΤΑΘΕΡΑ */}
                       <View style={{flexDirection:'row', flexWrap:'wrap', gap:4, marginTop:4}}>
                         {o.stdMounted&&<View style={{backgroundColor:'#1565C0', borderRadius:4, paddingHorizontal:6, paddingVertical:2}}><Text style={{color:'white', fontWeight:'bold', fontSize:11}}>🔧 ΜΟΝΤΑΡΙΣΜΕΝΗ</Text></View>}
-                        {(o.stavera&&o.stavera.length>0&&!o.staveraDone)&&<View style={{backgroundColor:'#c62828', borderRadius:4, paddingHorizontal:6, paddingVertical:2}}><Text style={{color:'white', fontWeight:'bold', fontSize:11}}>🔴 ΑΝΑΜΟΝΗ ΓΙΑ ΣΤΑΘΕΡΟ</Text></View>}
-                        {(o.stavera&&o.stavera.length>0&&o.staveraDone)&&<View style={{backgroundColor:'#2e7d32', borderRadius:4, paddingHorizontal:6, paddingVertical:2}}><Text style={{color:'white', fontWeight:'bold', fontSize:11}}>🟢 ΣΤΑΘΕΡΑ</Text></View>}
+                        {(o.stavera&&o.stavera.filter(s=>s.dim).length>0&&!o.staveraDone)&&<View style={{backgroundColor:'#c62828', borderRadius:4, paddingHorizontal:6, paddingVertical:2}}><Text style={{color:'white', fontWeight:'bold', fontSize:11}}>🔴 ΑΝΑΜΟΝΗ ΓΙΑ ΣΤΑΘΕΡΟ</Text></View>}
+                        {(o.stavera&&o.stavera.filter(s=>s.dim).length>0&&o.staveraDone)&&<View style={{backgroundColor:'#2e7d32', borderRadius:4, paddingHorizontal:6, paddingVertical:2}}><Text style={{color:'white', fontWeight:'bold', fontSize:11}}>🟢 ΣΤΑΘΕΡΑ</Text></View>}
                       </View>
                     </View>
                     <View style={{gap:4, marginLeft:8}}>
@@ -2749,55 +2793,7 @@ export default function CustomScreen({ customOrders, setCustomOrders, soldOrders
                         <Text style={{color:'white', fontSize:10, fontWeight:'bold'}}>📦 ΜΕΝΤΑ ΕΜΠ.</Text>
                       </TouchableOpacity>
 
-                              // 2. Ξεδεσμεύω κάσα
-                              const removeRes = async (stockOrders, setStockOrders, firebasePath) => {
-                                const sameSize = s => String(s.selectedHeight)===String(o.h) && String(s.selectedWidth)===String(o.w) && s.side===o.side;
-                                let target = stockOrders.find(s=>sameSize(s)&&s.autoNote&&s.autoNote.includes(customer));
-                                if (!target) target = stockOrders.find(s=>sameSize(s)&&s.status!=='SOLD');
-                                if (!target) return;
-                                const customerMap = {};
-                                if (target.autoNote) {
-                                  target.autoNote.split(',').forEach(entry => {
-                                    const match = entry.trim().match(/^(.+)\s+\((\d+)τεμ\)$/);
-                                    if (match) customerMap[match[1].trim()] = (customerMap[match[1].trim()]||0) + parseInt(match[2]);
-                                  });
-                                }
-                                if (customerMap[customer]) { customerMap[customer] -= orderQty; if (customerMap[customer]<=0) delete customerMap[customer]; }
-                                const newNote = Object.entries(customerMap).map(([n,q])=>`${n} (${q}τεμ)`).join(', ');
-                                const hasRes = newNote.trim().length > 0;
-                                const upd = {...target, autoNote: newNote, isAuto: hasRes};
-                                setStockOrders(prev=>prev.map(s=>s.id===target.id?upd:s));
-                                await fetch(`${FIREBASE_URL}/${firebasePath}/${upd.id}.json`,{method:'PUT',body:JSON.stringify(upd)});
-                              };
-                              // Αφαίρεση δέσμευσης κάσας από νέο stock
-                              if (setCaseStock && caseStock[caseKey(String(o.h),String(o.w),o.side,o.caseType)]) {
-                                const ckAk = caseKey(String(o.h),String(o.w),o.side,o.caseType);
-                                const entryAk = {...caseStock[ckAk], reservations:(caseStock[ckAk].reservations||[]).filter(r=>r.orderNo!==o.orderNo)};
-                                setCaseStock(prev=>({...prev,[ckAk]:entryAk}));
-                                await fetch(`${FIREBASE_URL}/case_stock/${ckAk}.json`,{method:'PUT',body:JSON.stringify(entryAk)});
-                              }
 
-                              // 3. Σασί → ΜΕΝΟΝΤΑ
-                              if (setDipliSasiStock) {
-                                const sasiEntry = {
-                                  id: `dsasi_${Date.now()}`,
-                                  h: o.h, w: o.w, side: o.side,
-                                  sasiType: o.sasiType||'ΜΟΝΗ ΘΩΡΑΚΙΣΗ',
-                                  hardware: o.hardware||'', hardwareColor: o.hardwareColor||'',
-                                  lock: o.lock||'',
-                                  coating: o.coating||'', notes: o.notes||'',
-                                  orderNo: o.orderNo, customer: o.customer||'',
-                                  createdAt: Date.now(),
-                                  reservedBy: null, reservedOrderNo: null
-                                };
-                                setDipliSasiStock(prev=>[sasiEntry,...prev]);
-                                await fetch(`${FIREBASE_URL}/dipli_sasi_stock/${sasiEntry.id}.json`,{method:'PUT',body:JSON.stringify(sasiEntry)});
-                              }
-                          }
-                        }}>
-                          <Text style={{color:'white', fontSize:10, fontWeight:'bold'}}>❌ ΑΚΥΡΩΣΗ</Text>
-                        </TouchableOpacity>
-                      )}
                     </View>
                   </View>
                 </View>
@@ -2805,73 +2801,182 @@ export default function CustomScreen({ customOrders, setCustomOrders, soldOrders
 
               // Κάρτα ΑΡΧΕΙΟ ΠΩΛΗΣΕΩΝ
               const renderSoldCard = (o) => (
-                <View key={o.id} style={{backgroundColor:'#f5f5f5', borderRadius:8, padding:10, marginBottom:8, borderLeftWidth:5, borderLeftColor:'#888', elevation:1}}>
+                <View key={o.id} style={{backgroundColor:'#f5f5f5', borderRadius:8, padding:10, marginBottom:8, borderLeftWidth:5, borderLeftColor: o.fromMenon?'#7b1fa2':'#888', elevation:1}}>
                   <View style={{flexDirection:'row', justifyContent:'space-between', alignItems:'flex-start'}}>
                     <View style={{flex:1}}>
+                      {/* Badge αν προέρχεται από ΜΕΝΟΝΤΑ */}
+                      {o.fromMenon&&<View style={{backgroundColor:'#7b1fa2',borderRadius:4,paddingHorizontal:6,paddingVertical:2,alignSelf:'flex-start',marginBottom:4}}><Text style={{color:'white',fontWeight:'bold',fontSize:10}}>📦 ΑΠΟ ΜΕΝΟΝΤΑ ΕΜΠΟΡΕΥΜΑΤΑ</Text></View>}
                       {/* Ημερομηνία καταχώρησης + ημερομηνία πώλησης */}
                       <View style={{flexDirection:'row', gap:8, flexWrap:'wrap'}}>
                         {fmtDate(o.createdAt)?<Text style={{fontSize:11,color:'#007AFF',fontWeight:'bold'}}>📅 {fmtDate(o.createdAt)}</Text>:null}
                         {o.soldAt?<Text style={{fontSize:11,color:'#00796B',fontWeight:'bold'}}>💰 {fmtDate(o.soldAt)}</Text>:null}
+                        {o.deliveryDate?<Text style={{fontSize:11,color:'#e65100',fontWeight:'bold'}}>🚚 {o.deliveryDate}</Text>:null}
                       </View>
-                      <Text style={{fontWeight:'bold', fontSize:13, color:'#555'}}>#{o.orderNo} {o.customer?`— ${o.customer}`:''}</Text>
-                      <Text style={{fontSize:12, color:'#888', marginTop:1}}>{o.h}x{o.w} | {o.side} | {o.sasiType==='ΔΙΠΛΗ ΘΩΡΑΚΙΣΗ'?'ΔΙΠΛΗ':'ΜΟΝΗ'}</Text>
-                      {o.hardware?<Text style={{fontSize:11,color:'#888'}}>🎨 {o.hardware}</Text>:null}
-                      {o.lock?<Text style={{fontSize:11,color:'#888'}}>🔒 {o.lock}</Text>:null}
-                      {o.caseType?<Text style={{fontSize:11,color:'#888'}}>{o.caseType.includes('ΑΝΟΙΧΤΟΥ')?'ΑΝΟΙΧΤΗ ΚΑΣΑ':'ΚΛΕΙΣΤΗ ΚΑΣΑ'}</Text>:null}
-                      {o.heightReduction?<Text style={{fontSize:11,color:'#e65100',fontWeight:'bold'}}>📏 Μείωση: {o.heightReduction}</Text>:null}
-                      {o.stavera&&o.stavera.filter(s=>s.dim).length>0?<Text style={{fontSize:11,color:'#888'}}>📐 {o.stavera.filter(s=>s.dim).map(s=>s.dim).join(' | ')}</Text>:null}
-                      {o.notes?<Text style={{fontSize:11, color:'#aaa'}}>Σημ: {o.notes}</Text>:null}
-                      {/* #5 menonNotes - bold μωβ χρώμα για να ξεχωρίζει */}
-                      {o.menonNotes?<Text style={{fontSize:11, color:'#7b1fa2', fontWeight:'bold', marginTop:2}}>📝 {o.menonNotes}</Text>:null}
+                      {/* ΓΡΑΜΜΗ 1: #νούμερο — πελάτης — τεμάχια */}
+                      <View style={{flexDirection:'row', alignItems:'center', gap:6, flexWrap:'wrap', marginTop:2}}>
+                        <Text style={{fontWeight:'900', fontSize:15, color:'#333'}}>#{o.orderNo}</Text>
+                        {o.customer?<Text style={{fontSize:13, fontWeight:'bold', color:'#444'}}>{o.customer}</Text>:null}
+                        {o.qty&&parseInt(o.qty)>1?<Text style={{fontSize:14,fontWeight:'900',color:'#cc0000'}}>{o.qty}τεμ</Text>:null}
+                        {o.partialNote?<Text style={{fontSize:11,color:'#e65100',fontWeight:'bold'}}>({o.partialNote})</Text>:null}
+                      </View>
+                      {/* ΓΡΑΜΜΗ 2: διάσταση — φορά — τύπος σασί */}
+                      <View style={{flexDirection:'row', alignItems:'center', gap:8, marginTop:3, flexWrap:'wrap'}}>
+                        <Text style={{fontSize:14, fontWeight:'900', color:'#555'}}>{o.h}x{o.w}</Text>
+                        <Text style={{fontSize:14, fontWeight:'900', color:'#555'}}>{o.side==='ΑΡΙΣΤΕΡΗ'?'◄ ΑΡ':'ΔΕΞ ►'}</Text>
+                        <Text style={{fontSize:12, fontWeight:'bold', color: o.sasiType==='ΔΙΠΛΗ ΘΩΡΑΚΙΣΗ'?'#8B0000':'#1565C0'}}>{o.sasiType==='ΔΙΠΛΗ ΘΩΡΑΚΙΣΗ'?'ΔΙΠΛΗ':'ΜΟΝΗ'}</Text>
+                        {o.hardware?<Text style={{fontSize:12, fontWeight:'bold', color:'#666'}}>🎨 {o.hardware}</Text>:null}
+                      </View>
+                      {/* ΓΡΑΜΜΗ 3: κλειδαριά — τύπος κάσας — υλικό — επένδυση */}
+                      {(o.lock||o.caseType||o.caseMaterial||(o.coatings&&o.coatings.length>0))&&(
+                        <Text style={{fontSize:11, color:'#666', marginTop:2}}>
+                          {[
+                            o.lock?`🔒 ${o.lock}`:'',
+                            o.caseType?(o.caseType.includes('ΑΝΟΙΧΤΟΥ')?'ΑΝΟΙΧΤΗ ΚΑΣΑ':'ΚΛΕΙΣΤΗ ΚΑΣΑ'):'',
+                            o.caseMaterial&&o.caseMaterial!=='DKP'?o.caseMaterial:'',
+                            o.coatings&&o.coatings.length>0?`🎨 ${o.coatings.join(', ')}`:''
+                          ].filter(Boolean).join(' — ')}
+                        </Text>
+                      )}
+                      {/* ΓΡΑΜΜΗ 4: μείωση ύψους — σταθερά */}
+                      {o.heightReduction?<Text style={{fontSize:11,color:'#e65100',fontWeight:'bold',marginTop:2}}>📏 Μείωση: {o.heightReduction}</Text>:null}
+                      {o.stavera&&o.stavera.filter(s=>s.dim).length>0?<Text style={{fontSize:11,color:'#666',marginTop:2}}>📐 {o.stavera.filter(s=>s.dim).map(s=>s.dim+(s.note?' '+s.note:'')).join(' | ')}</Text>:null}
+                      {/* ΓΡΑΜΜΗ 5: μοντάρισμα */}
+                      {o.installation==='ΝΑΙ'&&<View style={{flexDirection:'row',marginTop:3}}><View style={{backgroundColor:'#E65100',borderRadius:4,paddingHorizontal:6,paddingVertical:2,alignSelf:'flex-start'}}><Text style={{color:'white',fontWeight:'bold',fontSize:11}}>🪛 ΜΟΝΤΑΡΙΣΜΑ</Text></View></View>}
+                      {/* ΓΡΑΜΜΗ 6: παρατηρήσεις */}
+                      {o.notes?<Text style={{fontSize:11, color:'#888', marginTop:2}}>Σημ: {o.notes}</Text>:null}
+                      {/* menonNotes — εμφανίζεται μόνο αν προέρχεται από ΜΕΝΟΝΤΑ */}
+                      {o.fromMenon&&o.menonNotes?<Text style={{fontSize:11, color:'#7b1fa2', fontWeight:'bold', marginTop:2}}>📝 {o.menonNotes}</Text>:null}
                     </View>
                     <View style={{gap:4, marginLeft:8}}>
-                      {/* #4 - ΠΙΣΩ με επιβεβαίωση */}
-                      <TouchableOpacity
-                        style={{backgroundColor:'#ff9800', paddingHorizontal:8, paddingVertical:5, borderRadius:5, alignItems:'center'}}
-                        onPress={()=>setConfirmModal({
-                          visible:true,
-                          title:'Επιστροφή στα ΕΤΟΙΜΑ',
-                          message:`Η παραγγελία #${o.orderNo} θα επιστρέψει στα ΕΤΟΙΜΑ ΑΠΟΘΗΚΗΣ;`,
-                          confirmText:'ΝΑΙ',
-                          onConfirm:async()=>{
-                            const upd = {...o, status:'STD_READY', soldAt:null};
-                            setCustomOrders(prev=>prev.map(x=>x.id===o.id?upd:x));
-                            await syncToCloud(upd);
-                          }
-                        })}>
-                        <Text style={{color:'white', fontSize:10, fontWeight:'bold'}}>↩ ΠΙΣΩ</Text>
-                      </TouchableOpacity>
-                      {/* #8 ΜΕΝΟΝΤΑ button */}
-                      <TouchableOpacity
-                        style={{backgroundColor:'#4a148c', paddingHorizontal:8, paddingVertical:5, borderRadius:5, alignItems:'center'}}
-                        onPress={()=>setConfirmModal({
-                          visible:true,
-                          title:'→ ΜΕΝΟΝΤΑ ΕΜΠΟΡΕΥΜΑΤΑ',
-                          message:`Μεταφορά παραγγελίας #${o.orderNo} στα ΜΕΝΟΝΤΑ ΕΜΠΟΡΕΥΜΑΤΑ;`,
-                          confirmText:'ΝΑΙ',
-                          onConfirm:async()=>{
-                            const entry = {
-                              id:`menon_${Date.now()}`,
-                              h:o.h, w:o.w, side:o.side,
-                              sasiType:o.sasiType||'ΜΟΝΗ ΘΩΡΑΚΙΣΗ',
-                              hardware:o.hardware||'', lock:o.lock||'',
-                              caseType:o.caseType||'', coatings:o.coatings||[],
-                              stavera:o.stavera||[], heightReduction:o.heightReduction||'',
-                              installation:o.installation||'ΟΧΙ',
-                              orderNo:o.orderNo, customer:o.customer||'',
-                              notes:o.notes||'', menonNotes:'',
-                              createdAt:o.createdAt||Date.now(),
-                              movedToMenonAt:Date.now(),
-                            };
-                            setDipliSasiStock(prev=>[entry,...prev]);
-                            await fetch(`${FIREBASE_URL}/dipli_sasi_stock/${entry.id}.json`,{method:'PUT',body:JSON.stringify(entry)});
-                            setSoldOrders(prev=>prev.filter(x=>x.id!==o.id));
-                            setCustomOrders(prev=>prev.filter(x=>x.id!==o.id));
-                            await deleteFromCloud(o.id);
-                          }
-                        })}>
-                        <Text style={{color:'white', fontSize:10, fontWeight:'bold'}}>📦 ΜΕΝΤΑ ΕΜΠ.</Text>
-                      </TouchableOpacity>
+                      {o.fromMenon ? (
+                        /* Παραγγελία από ΜΕΝΟΝΤΑ: μόνο επιστροφή στα ΜΕΝΟΝΤΑ */
+                        <TouchableOpacity
+                          style={{backgroundColor:'#7b1fa2', paddingHorizontal:8, paddingVertical:5, borderRadius:5, alignItems:'center'}}
+                          onPress={()=>setConfirmModal({
+                            visible:true,
+                            title:'↩ Επιστροφή στα ΜΕΝΟΝΤΑ',
+                            message:`Η παραγγελία #${o.orderNo} θα επιστρέψει στα ΜΕΝΟΝΤΑ ΕΜΠΟΡΕΥΜΑΤΑ;`,
+                            confirmText:'ΝΑΙ',
+                            onConfirm:async()=>{
+                              const entry = {
+                                id:`menon_${Date.now()}`,
+                                h:o.h, w:o.w, side:o.side,
+                                sasiType:o.sasiType||'ΜΟΝΗ ΘΩΡΑΚΙΣΗ',
+                                hardware:o.hardware||'', lock:o.lock||'',
+                                caseType:o.caseType||'', coatings:o.coatings||[],
+                                stavera:o.stavera||[], heightReduction:o.heightReduction||'',
+                                installation:o.installation||'ΟΧΙ',
+                                orderNo:o.orderNo, customer:o.customer||'',
+                                notes:o.notes||'', menonNotes:o.menonNotes||'',
+                                createdAt:o.createdAt||Date.now(),
+                                movedToMenonAt:Date.now(),
+                              };
+                              setDipliSasiStock(prev=>[entry,...prev]);
+                              await fetch(`${FIREBASE_URL}/dipli_sasi_stock/${entry.id}.json`,{method:'PUT',body:JSON.stringify(entry)});
+                              setCustomOrders(prev=>prev.filter(x=>x.id!==o.id));
+                              await deleteFromCloud(o.id);
+                              await logActivity('ΤΥΠΟΠΟΙΗΜΕΝΗ','Επιστροφή στα ΜΕΝΟΝΤΑ από Αρχείο Πωλήσεων',{orderNo:o.orderNo,customer:o.customer,size:`${o.h}x${o.w}`});
+                            }
+                          })}>
+                          <Text style={{color:'white', fontSize:10, fontWeight:'bold'}}>↩ ΜΕΝΟΝΤΑ</Text>
+                        </TouchableOpacity>
+                      ) : (
+                        <View style={{gap:4}}>
+                        {/* Κανονική παραγγελία: ΠΙΣΩ στα ΕΤΟΙΜΑ + ΜΕΝΟΝΤΑ ΕΜΠ. */}
+                        <TouchableOpacity
+                          style={{backgroundColor:'#ff9800', paddingHorizontal:8, paddingVertical:5, borderRadius:5, alignItems:'center'}}
+                          onPress={()=>setConfirmModal({
+                            visible:true,
+                            title:'Επιστροφή στα ΕΤΟΙΜΑ',
+                            message:`Η παραγγελία #${o.orderNo} θα επιστρέψει στα ΕΤΟΙΜΑ ΑΠΟΘΗΚΗΣ;\n\nΤο stock σασί και κάσα θα ενημερωθεί αυτόματα.`,
+                            confirmText:'ΝΑΙ',
+                            onConfirm:async()=>{
+                              const upd = {...o, status:'STD_READY', soldAt:null};
+                              setCustomOrders(prev=>prev.map(x=>x.id===o.id?upd:x));
+                              await syncToCloud(upd);
+
+                              // ── Επαναφορά stock: προσθήκη qty + reservation ──
+                              const orderQty = parseInt(o.qty)||1;
+                              const isMoni = (o.sasiType==='ΜΟΝΗ ΘΩΡΑΚΙΣΗ'||!o.sasiType) && !o.lock;
+                              const sk = sasiKey(String(o.h), String(o.w), o.side);
+                              const ck = caseKey(String(o.h), String(o.w), o.side, o.caseType);
+                              const newRes = { orderNo: o.orderNo, customer: o.customer||'', qty: orderQty };
+
+                              // Επαναφορά σασί (μόνο για ΜΟΝΗ χωρίς κλειδαριά)
+                              if (isMoni && setSasiStock) {
+                                try {
+                                  const res = await fetch(`${FIREBASE_URL}/sasi_stock/${sk}.json`);
+                                  const data = await res.json();
+                                  const base = data || { qty: 0, reservations: [] };
+                                  const alreadyExists = (base.reservations||[]).some(r=>r.orderNo===o.orderNo);
+                                  if (!alreadyExists) {
+                                    const updEntry = {
+                                      ...base,
+                                      qty: (parseInt(base.qty)||0) + orderQty,
+                                      reservations: [...(base.reservations||[]), newRes]
+                                    };
+                                    await fetch(`${FIREBASE_URL}/sasi_stock/${sk}.json`,{method:'PUT',body:JSON.stringify(updEntry)});
+                                    setSasiStock(prev=>({...prev,[sk]:updEntry}));
+                                  }
+                                } catch(e) { console.error('restore sasi stock:', e); }
+                              }
+
+                              // Επαναφορά κάσας (πάντα)
+                              if (setCaseStock) {
+                                try {
+                                  const res = await fetch(`${FIREBASE_URL}/case_stock/${ck}.json`);
+                                  const data = await res.json();
+                                  const base = data || { qty: 0, reservations: [] };
+                                  const alreadyExists = (base.reservations||[]).some(r=>r.orderNo===o.orderNo);
+                                  if (!alreadyExists) {
+                                    const updEntry = {
+                                      ...base,
+                                      qty: (parseInt(base.qty)||0) + orderQty,
+                                      reservations: [...(base.reservations||[]), newRes]
+                                    };
+                                    await fetch(`${FIREBASE_URL}/case_stock/${ck}.json`,{method:'PUT',body:JSON.stringify(updEntry)});
+                                    setCaseStock(prev=>({...prev,[ck]:updEntry}));
+                                  }
+                                } catch(e) { console.error('restore case stock:', e); }
+                              }
+
+                              await logActivity('ΤΥΠΟΠΟΙΗΜΕΝΗ','Επιστροφή από Αρχείο Πωλήσεων',{orderNo:o.orderNo,customer:o.customer,size:`${o.h}x${o.w}`});
+                            }
+                          })}>
+                          <Text style={{color:'white', fontSize:10, fontWeight:'bold'}}>↩ ΠΙΣΩ</Text>
+                        </TouchableOpacity>
+                        <TouchableOpacity
+                          style={{backgroundColor:'#4a148c', paddingHorizontal:8, paddingVertical:5, borderRadius:5, alignItems:'center'}}
+                          onPress={()=>setConfirmModal({
+                            visible:true,
+                            title:'→ ΜΕΝΟΝΤΑ ΕΜΠΟΡΕΥΜΑΤΑ',
+                            message:`Μεταφορά παραγγελίας #${o.orderNo} στα ΜΕΝΟΝΤΑ ΕΜΠΟΡΕΥΜΑΤΑ;`,
+                            confirmText:'ΝΑΙ',
+                            onConfirm:async()=>{
+                              const entry = {
+                                id:`menon_${Date.now()}`,
+                                h:o.h, w:o.w, side:o.side,
+                                sasiType:o.sasiType||'ΜΟΝΗ ΘΩΡΑΚΙΣΗ',
+                                hardware:o.hardware||'', lock:o.lock||'',
+                                caseType:o.caseType||'', coatings:o.coatings||[],
+                                stavera:o.stavera||[], heightReduction:o.heightReduction||'',
+                                installation:o.installation||'ΟΧΙ',
+                                orderNo:o.orderNo, customer:o.customer||'',
+                                notes:o.notes||'', menonNotes:'',
+                                createdAt:o.createdAt||Date.now(),
+                                movedToMenonAt:Date.now(),
+                              };
+                              setDipliSasiStock(prev=>[entry,...prev]);
+                              await fetch(`${FIREBASE_URL}/dipli_sasi_stock/${entry.id}.json`,{method:'PUT',body:JSON.stringify(entry)});
+                              setSoldOrders(prev=>prev.filter(x=>x.id!==o.id));
+                              setCustomOrders(prev=>prev.filter(x=>x.id!==o.id));
+                              await deleteFromCloud(o.id);
+                            }
+                          })}>
+                          <Text style={{color:'white', fontSize:10, fontWeight:'bold'}}>📦 ΜΕΝΤΑ ΕΜΠ.</Text>
+                        </TouchableOpacity>
+                        </View>
+                      )}
                     </View>
                   </View>
                 </View>
@@ -4156,4 +4261,5 @@ const styles = StyleSheet.create({
   printCancelTxt: { fontWeight:'bold', fontSize:15, color:'#333' },
   printConfirmBtn: { flex:2, padding:16, borderRadius:8, alignItems:'center', backgroundColor:'#8B0000' },
   printConfirmTxt: { fontWeight:'bold', fontSize:15, color:'white' },
+  overlay: { flex:1, backgroundColor:'rgba(0,0,0,0.6)', justifyContent:'center', alignItems:'center' },
 });

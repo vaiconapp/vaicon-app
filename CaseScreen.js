@@ -173,7 +173,7 @@ export default function CaseScreen({ caseStock={}, setCaseStock }) {
               {/* ΥΠΟΛΟΙΠΟ */}
               <View style={[styles.tdWrap, {width:60, alignItems:'center'}]}>
                 <Text style={[styles.qtyCell, {color: availColor}]}>{available}</Text>
-                {entry.qty > 0 && <Text style={{fontSize:9, color:'#aaa'}}>/{entry.qty}</Text>}
+                {entry.qty > 0 && <Text style={{fontSize:12, color:'#666', fontWeight:'600'}}>/{entry.qty}</Text>}
               </View>
               {/* ΔΕΣΜΕΥΣΕΙΣ */}
               <TouchableOpacity
