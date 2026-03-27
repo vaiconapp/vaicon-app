@@ -229,6 +229,7 @@ export default function CustomScreen({ customOrders, setCustomOrders, soldOrders
   const [moniProdTab, setMoniProdTab] = useState('montSasi');
   const [editConfirmModal, setEditConfirmModal] = useState({ visible: false, order: null });
   const [isSaving, setIsSaving] = useState(false);
+  const [borrowModal, setBorrowModal] = useState({ visible: false, order: null, stockType: null, candidates: [] });
 
   const customerRef=useRef(); const orderNoRef=useRef(); const hRef=useRef(); const wRef=useRef(); const qtyEidikiRef=useRef();
   const hingeRef=useRef(); const glassRef=useRef(); const glassNotesRef=useRef(); const lockRef=useRef(); const notesRef=useRef();
@@ -1555,6 +1556,160 @@ export default function CustomScreen({ customOrders, setCustomOrders, soldOrders
       }
     });
   };
+  // ── Δανεισμός δέσμευσης stock ──
+  const handleBorrowRequest = (order, stockType) => {
+    const h = String(order.h), w = String(order.w), side = order.side;
+    const sk = sasiKey(h, w, side);
+
+    // Για κάσα: ψάχνω και στους δύο τύπους κάσας (ΚΛΕΙΣΤΗ + ΑΝΟΙΧΤΗ)
+    // γιατί ΜΟΝΗ και ΔΙΠΛΗ μπορεί να έχουν διαφορετικό caseType
+    const ckKleisto = caseKey(h, w, side, 'ΚΛΕΙΣΤΟΥ ΤΥΠΟΥ');
+    const ckAnoixto = caseKey(h, w, side, 'ΑΝΟΙΧΤΟΥ ΤΥΠΟΥ');
+    // Το ck της τρέχουσας παραγγελίας
+    const ckCurrent = caseKey(h, w, side, order.caseType);
+
+    // Βοηθητική: φιλτράρω υποψήφιες παραγγελίες από reservations
+    const filterCandidates = (reservations) => reservations
+      .map(r => customOrders.find(o => o.orderNo === r.orderNo && o.id !== order.id))
+      .filter(o => {
+        if (!o) return false;
+        // Αποκλείω παραγγελίες που είναι ήδη ΕΤΟΙΜΕΣ ή ΠΩΛΗΜΕΝΕΣ
+        if (o.status === 'STD_READY' || o.status === 'STD_SOLD') return false;
+        // Αποκλείω παραγγελίες που έχουν ξεκινήσει παραγωγή (done φάσεις)
+        if (o.dipliPhases) {
+          const anyDone = Object.values(o.dipliPhases).some(p => p.done);
+          if (anyDone) return false;
+        }
+        if (o.moniPhases) {
+          const anyDone = Object.values(o.moniPhases).some(p => p.done);
+          if (anyDone) return false;
+        }
+        // buildTasks: αποκλείω μόνο αν έχουν ξεκινήσει (κάποιο done=true)
+        if (o.buildTasks) {
+          const anyDone = Object.values(o.buildTasks).some(v => v === true);
+          if (anyDone) return false;
+        }
+        return true;
+      });
+
+    let candidates = [];
+
+    if (stockType === 'case') {
+      // Ψάχνω σε ΟΛΑ τα caseStock entries για αυτή τη διάσταση+φορά
+      // (ΚΛΕΙΣΤΗ + ΑΝΟΙΧΤΗ) — η κάσα είναι κοινή για ΜΟΝΗ και ΔΙΠΛΗ
+      const allReservations = [
+        ...((caseStock[ckKleisto]?.reservations) || []),
+        ...((caseStock[ckAnoixto]?.reservations) || []),
+      ];
+
+      if (allReservations.length === 0) {
+        return Alert.alert('Προσοχή', 'Δεν υπάρχουν δεσμεύσεις κάσας για αυτή τη διάσταση.\n\nΚαμία άλλη παραγγελία δεν έχει δεσμευμένη κάσα για ' + h + 'x' + w + ' ' + (side==='ΑΡΙΣΤΕΡΗ'?'ΑΡ':'ΔΕΞ') + '.');
+      }
+
+      candidates = filterCandidates(allReservations);
+
+      // Αποθηκεύω ποιο ck έχει η κάθε υποψήφια (για να ξέρουμε από πού να πάρουμε)
+      candidates = candidates.map(c => {
+        const cCk = caseKey(String(c.h), String(c.w), c.side, c.caseType);
+        return { ...c, _donorCk: cCk };
+      });
+
+    } else {
+      // stockType === 'sasi'
+      const sasiEntry = sasiStock[sk];
+      const reservations = sasiEntry?.reservations || [];
+
+      if (reservations.length === 0) {
+        return Alert.alert('Προσοχή', 'Δεν υπάρχουν δεσμεύσεις σασί για αυτή τη διάσταση.\n\nΚαμία άλλη παραγγελία δεν έχει δεσμευμένο σασί για ' + h + 'x' + w + ' ' + (side==='ΑΡΙΣΤΕΡΗ'?'ΑΡ':'ΔΕΞ') + '.');
+      }
+
+      candidates = filterCandidates(reservations);
+    }
+
+    if (candidates.length === 0) {
+      return Alert.alert('Δεν βρέθηκαν', 'Δεν υπάρχουν παραγγελίες με διαθέσιμη δέσμευση για αυτή τη διάσταση.\n\nΌλες οι παραγγελίες με δέσμευση έχουν ήδη ξεκινήσει παραγωγή ή είναι έτοιμες.');
+    }
+
+    setBorrowModal({ visible: true, order, stockType, candidates });
+  };
+
+  const handleBorrowConfirm = async (donorOrder) => {
+    const { order, stockType } = borrowModal;
+    setBorrowModal({ visible: false, order: null, stockType: null, candidates: [] });
+
+    const h = String(order.h), w = String(order.w), side = order.side;
+
+    if (stockType === 'case') {
+      // Το ck του donor μπορεί να διαφέρει από το ck της τρέχουσας παραγγελίας
+      // (π.χ. ΔΙΠΛΗ παίρνει από ΜΟΝΗ που έχει διαφορετικό caseType)
+      const donorCk = donorOrder._donorCk || caseKey(h, w, side, donorOrder.caseType);
+      const currentCk = caseKey(h, w, side, order.caseType);
+      try {
+        // Φέρνω το entry του donor
+        const res = await fetch(`${FIREBASE_URL}/case_stock/${donorCk}.json`);
+        const data = await res.json();
+        if (!data) return;
+        // Βρίσκω τη δέσμευση του donor
+        const donorRes = (data.reservations || []).find(r => r.orderNo === donorOrder.orderNo);
+        if (!donorRes) return Alert.alert('Σφάλμα', 'Δεν βρέθηκε η δέσμευση στο stock του donor.');
+        // Αφαιρώ τη δέσμευση από τον donor και την προσθέτω στην τρέχουσα παραγγελία
+        // Ο donor παίρνει flag priorityReservation για αυτόματη αναπλήρωση
+        const orderQty = parseInt(order.qty) || 1;
+        const newRes = {
+          orderNo: order.orderNo,
+          customer: order.customer || '',
+          qty: orderQty,
+          borrowedFrom: donorOrder.orderNo,
+        };
+        const donorResUpdated = {
+          ...donorRes,
+          borrowedTo: order.orderNo,
+          priorityReservation: true,
+        };
+        const updReservations = (data.reservations || []).map(r =>
+          r.orderNo === donorOrder.orderNo ? donorResUpdated : r
+        );
+        // Αν η τρέχουσα παραγγελία δεν έχει ήδη δέσμευση, την προσθέτω
+        const alreadyHas = updReservations.some(r => r.orderNo === order.orderNo);
+        if (!alreadyHas) updReservations.push(newRes);
+        const updEntry = { ...data, reservations: updReservations };
+        await fetch(`${FIREBASE_URL}/case_stock/${donorCk}.json`, { method: 'PUT', body: JSON.stringify(updEntry) });
+        setCaseStock(prev => ({ ...prev, [donorCk]: updEntry }));
+        Alert.alert('✅ Επιτυχία', `Η κάσα δεσμεύτηκε για #${order.orderNo} από την παραγγελία #${donorOrder.orderNo}.\n\nΗ #${donorOrder.orderNo} θα αναπληρωθεί αυτόματα με προτεραιότητα όταν μπει νέο stock.`);
+      } catch(e) { Alert.alert('Σφάλμα', 'Αποτυχία ενημέρωσης stock.'); }
+    } else {
+      const sk = sasiKey(h, w, side);
+      try {
+        const res = await fetch(`${FIREBASE_URL}/sasi_stock/${sk}.json`);
+        const data = await res.json();
+        if (!data) return;
+        const donorRes = (data.reservations || []).find(r => r.orderNo === donorOrder.orderNo);
+        if (!donorRes) return Alert.alert('Σφάλμα', 'Δεν βρέθηκε η δέσμευση.');
+        const orderQty = parseInt(order.qty) || 1;
+        const newRes = {
+          orderNo: order.orderNo,
+          customer: order.customer || '',
+          qty: orderQty,
+          borrowedFrom: donorOrder.orderNo,
+        };
+        const donorResUpdated = {
+          ...donorRes,
+          borrowedTo: order.orderNo,
+          priorityReservation: true,
+        };
+        const updReservations = (data.reservations || []).map(r =>
+          r.orderNo === donorOrder.orderNo ? donorResUpdated : r
+        );
+        const alreadyHas = updReservations.some(r => r.orderNo === order.orderNo);
+        if (!alreadyHas) updReservations.push(newRes);
+        const updEntry = { ...data, reservations: updReservations };
+        await fetch(`${FIREBASE_URL}/sasi_stock/${sk}.json`, { method: 'PUT', body: JSON.stringify(updEntry) });
+        setSasiStock(prev => ({ ...prev, [sk]: updEntry }));
+        Alert.alert('✅ Επιτυχία', `Το σασί δεσμεύτηκε για #${order.orderNo} από την παραγγελία #${donorOrder.orderNo}.\n\nΗ #${donorOrder.orderNo} θα αναπληρωθεί αυτόματα με προτεραιότητα όταν μπει νέο stock.`);
+      } catch(e) { Alert.alert('Σφάλμα', 'Αποτυχία ενημέρωσης stock.'); }
+    }
+  };
+
   const deleteFromArchive = (id) => Alert.alert("Διαγραφή","Διαγραφή από αρχείο;",[{text:"Όχι"},{text:"Ναι",style:"destructive",onPress:async()=>{setSoldOrders(soldOrders.filter(o=>o.id!==id));await deleteFromCloud(id);}}]);
   const toggleSection = (s) => { LayoutAnimation.configureNext(LayoutAnimation.Presets.easeInEaseOut); setExpanded({...expanded,[s]:!expanded[s]}); };
 
@@ -2080,6 +2235,65 @@ export default function CustomScreen({ customOrders, setCustomOrders, soldOrders
         </View>
       </Modal>
 
+      {/* Modal επιλογής δανεισμού δέσμευσης */}
+      <Modal visible={borrowModal.visible} transparent animationType="fade" onRequestClose={()=>setBorrowModal({visible:false,order:null,stockType:null,candidates:[]})}>
+        <View style={{flex:1, backgroundColor:'rgba(0,0,0,0.7)', justifyContent:'center', alignItems:'center'}}>
+          <View style={{backgroundColor:'white', borderRadius:16, padding:20, width:'90%', maxWidth:420, maxHeight:'80%'}}>
+            <Text style={{fontSize:16, fontWeight:'bold', color:'#1565C0', marginBottom:4, textAlign:'center'}}>
+              🔄 Δανεισμός Δέσμευσης
+            </Text>
+            <Text style={{fontSize:13, color:'#444', marginBottom:4, textAlign:'center'}}>
+              Παραγγελία <Text style={{fontWeight:'bold'}}>#{borrowModal.order?.orderNo}</Text>
+            </Text>
+            <Text style={{fontSize:12, color:'#666', marginBottom:4, textAlign:'center'}}>
+              {borrowModal.order?.h}x{borrowModal.order?.w} | {borrowModal.order?.side==='ΑΡΙΣΤΕΡΗ'?'ΑΡ':'ΔΕΞ'} | {borrowModal.stockType==='case'?'ΚΑΣΑ':'ΣΑΣΙ'}
+            </Text>
+            <Text style={{fontSize:12, color:'#888', marginBottom:12, textAlign:'center', lineHeight:18}}>
+              Επιλέξτε από ποια παραγγελία θα πάρετε τη δέσμευση:
+            </Text>
+            <ScrollView style={{maxHeight:300}}>
+              {borrowModal.candidates.map((c, i) => (
+                <TouchableOpacity
+                  key={c.id}
+                  style={{backgroundColor:'#f5f5f5', borderRadius:10, padding:12, marginBottom:8, borderLeftWidth:4, borderLeftColor:'#1565C0'}}
+                  onPress={()=>{
+                    const confirmed = Platform.OS === 'web'
+                      ? window.confirm(`🔄 Δανεισμός Δέσμευσης\n\nΘέλετε να πάρετε τη δέσμευση ${borrowModal.stockType==='case'?'κάσας':'σασί'} από την παραγγελία #${c.orderNo};\n\nΗ #${c.orderNo} θα χάσει τη δέσμευσή της και θα αναπληρωθεί αυτόματα με προτεραιότητα όταν μπει νέο stock.`)
+                      : null;
+                    if (Platform.OS === 'web') {
+                      if (confirmed) handleBorrowConfirm(c);
+                    } else {
+                      Alert.alert(
+                        '🔄 Επιβεβαίωση Δανεισμού',
+                        `Θέλετε να πάρετε τη δέσμευση ${borrowModal.stockType==='case'?'κάσας':'σασί'} από την παραγγελία #${c.orderNo};\n\nΗ #${c.orderNo} θα χάσει τη δέσμευσή της και θα αναπληρωθεί αυτόματα με προτεραιότητα όταν μπει νέο stock.`,
+                        [
+                          {text:'ΑΚΥΡΟ', style:'cancel'},
+                          {text:'ΝΑΙ, ΔΑΝΕΙΣΜΟΣ', onPress:()=>handleBorrowConfirm(c)}
+                        ]
+                      );
+                    }
+                  }}>
+                  <View style={{flexDirection:'row', justifyContent:'space-between', alignItems:'center'}}>
+                    <View style={{flex:1}}>
+                      <Text style={{fontWeight:'bold', fontSize:14, color:'#1a1a1a'}}>#{c.orderNo}</Text>
+                      {c.customer?<Text style={{fontSize:12, color:'#555', marginTop:2}}>👤 {c.customer}</Text>:null}
+                      <Text style={{fontSize:12, color:'#555', marginTop:2}}>{c.h}x{c.w} | {c.side==='ΑΡΙΣΤΕΡΗ'?'ΑΡ':'ΔΕΞ'} | {c.sasiType==='ΔΙΠΛΗ ΘΩΡΑΚΙΣΗ'?'ΔΙΠΛΗ':'ΜΟΝΗ'}</Text>
+                      {c.status?<Text style={{fontSize:11, color:'#888', marginTop:1}}>Κατάσταση: {c.status}</Text>:null}
+                    </View>
+                    <Text style={{fontSize:24, color:'#1565C0'}}>→</Text>
+                  </View>
+                </TouchableOpacity>
+              ))}
+            </ScrollView>
+            <TouchableOpacity
+              style={{backgroundColor:'#f5f5f5', padding:14, borderRadius:10, alignItems:'center', marginTop:8, borderWidth:1, borderColor:'#ddd'}}
+              onPress={()=>setBorrowModal({visible:false,order:null,stockType:null,candidates:[]})}>
+              <Text style={{color:'#555', fontWeight:'bold', fontSize:14}}>ΑΚΥΡΟ</Text>
+            </TouchableOpacity>
+          </View>
+        </View>
+      </Modal>
+
       {/* Loading overlay — μπλοκάρει την οθόνη κατά την ανάρτηση για επεξεργασία */}
       {isSaving && (
         <View style={{position:'absolute', top:0, left:0, right:0, bottom:0, backgroundColor:'rgba(0,0,0,0.5)', justifyContent:'center', alignItems:'center', zIndex:9999}}>
@@ -2551,16 +2765,24 @@ export default function CustomScreen({ customOrders, setCustomOrders, soldOrders
                       </View>
                       <View style={{alignItems:'flex-end', gap:4, marginLeft:8}}>
                         <View style={{flexDirection:'row', gap:4}}>
-                          {/* ΚΑΣΑ */}
-                          <View style={{alignItems:'center', backgroundColor: hasCase?'#e8f5e9':'#ffeaea', borderRadius:5, padding:4, borderWidth:1, borderColor: hasCase?'#00C851':'#ff4444', minWidth:44}}>
+                          {/* ΚΑΣΑ — πατήσιμο αν ❌ για δανεισμό */}
+                          <TouchableOpacity
+                            activeOpacity={hasCase ? 1 : 0.7}
+                            onPress={()=>{ if(!hasCase) handleBorrowRequest(o, 'case'); }}
+                            style={{alignItems:'center', backgroundColor: hasCase?'#e8f5e9':'#ffeaea', borderRadius:5, padding:4, borderWidth:1, borderColor: hasCase?'#00C851':'#ff4444', minWidth:44}}>
                             <Text style={{fontSize:9, fontWeight:'bold', color:'#555'}}>ΚΑΣΑ</Text>
                             <Text style={{fontSize:14}}>{hasCase?'✅':'❌'}</Text>
-                          </View>
-                          {/* ΣΑΣΙ */}
-                          <View style={{alignItems:'center', backgroundColor: sasiOk?'#e8f5e9':'#ffeaea', borderRadius:5, padding:4, borderWidth:1, borderColor: sasiOk?'#00C851':'#ff4444', minWidth:44}}>
+                            {!hasCase&&<Text style={{fontSize:7, color:'#ff4444', fontWeight:'bold'}}>πάτα</Text>}
+                          </TouchableOpacity>
+                          {/* ΣΑΣΙ — πατήσιμο αν ❌ για δανεισμό */}
+                          <TouchableOpacity
+                            activeOpacity={sasiOk ? 1 : 0.7}
+                            onPress={()=>{ if(!sasiOk && sasiActive) handleBorrowRequest(o, 'sasi'); }}
+                            style={{alignItems:'center', backgroundColor: sasiOk?'#e8f5e9':'#ffeaea', borderRadius:5, padding:4, borderWidth:1, borderColor: sasiOk?'#00C851':'#ff4444', minWidth:44}}>
                             <Text style={{fontSize:9, fontWeight:'bold', color:'#555'}}>ΣΑΣΙ</Text>
                             <Text style={{fontSize:14}}>{sasiOk?'✅':'❌'}</Text>
-                          </View>
+                            {!sasiOk&&sasiActive&&<Text style={{fontSize:7, color:'#ff4444', fontWeight:'bold'}}>πάτα</Text>}
+                          </TouchableOpacity>
                         </View>
 
                         {/* ΔΙΑΓΡΑΦΗ */}
@@ -3217,15 +3439,24 @@ export default function CustomScreen({ customOrders, setCustomOrders, soldOrders
                               {/* ΚΑΣΑ + ΣΑΣΙ + ΔΙΑΓΡΑΦΗ — δεξιά */}
                               <View style={{alignItems:'flex-end', gap:4, marginLeft:8}}>
                                 <View style={{flexDirection:'row', gap:4}}>
-                                  <View style={{alignItems:'center', backgroundColor: hasCaseOk?'#e8f5e9':'#ffeaea', borderRadius:5, padding:4, borderWidth:1, borderColor: hasCaseOk?'#00C851':'#ff4444', minWidth:44}}>
+                                  {/* ΚΑΣΑ — πατήσιμο αν ❌ για δανεισμό (ΜΟΝΗ ΠΡΟΣ ΚΑΤΑΣΚΕΥΗ) */}
+                                  <TouchableOpacity
+                                    activeOpacity={hasCaseOk ? 1 : 0.7}
+                                    onPress={()=>{ if(!hasCaseOk) handleBorrowRequest(o, 'case'); }}
+                                    style={{alignItems:'center', backgroundColor: hasCaseOk?'#e8f5e9':'#ffeaea', borderRadius:5, padding:4, borderWidth:1, borderColor: hasCaseOk?'#00C851':'#ff4444', minWidth:44}}>
                                     <Text style={{fontSize:9, fontWeight:'bold', color:'#555'}}>ΚΑΣΑ</Text>
                                     <Text style={{fontSize:14}}>{hasCaseOk?'✅':'❌'}</Text>
-                                  </View>
+                                    {!hasCaseOk&&<Text style={{fontSize:7, color:'#ff4444', fontWeight:'bold'}}>πάτα</Text>}
+                                  </TouchableOpacity>
                                   {hasSasiReserved&&(
-                                    <View style={{alignItems:'center', backgroundColor: hasSasiOk?'#e8f5e9':'#ffeaea', borderRadius:5, padding:4, borderWidth:1, borderColor: hasSasiOk?'#00C851':'#ff4444', minWidth:44}}>
+                                    <TouchableOpacity
+                                      activeOpacity={hasSasiOk ? 1 : 0.7}
+                                      onPress={()=>{ if(!hasSasiOk) handleBorrowRequest(o, 'sasi'); }}
+                                      style={{alignItems:'center', backgroundColor: hasSasiOk?'#e8f5e9':'#ffeaea', borderRadius:5, padding:4, borderWidth:1, borderColor: hasSasiOk?'#00C851':'#ff4444', minWidth:44}}>
                                       <Text style={{fontSize:9, fontWeight:'bold', color:'#555'}}>ΣΑΣΙ</Text>
                                       <Text style={{fontSize:14}}>{hasSasiOk?'✅':'❌'}</Text>
-                                    </View>
+                                      {!hasSasiOk&&<Text style={{fontSize:7, color:'#ff4444', fontWeight:'bold'}}>πάτα</Text>}
+                                    </TouchableOpacity>
                                   )}
                                 </View>
                                 <TouchableOpacity
@@ -3745,10 +3976,15 @@ export default function CustomScreen({ customOrders, setCustomOrders, soldOrders
                                 </View>
                               </View>
                               <View style={{alignItems:'flex-end', gap:4, marginLeft:8}}>
-                                <View style={{alignItems:'center', backgroundColor: hasCaseOk?'#e8f5e9':'#ffeaea', borderRadius:5, padding:4, borderWidth:1, borderColor: hasCaseOk?'#00C851':'#ff4444', minWidth:44}}>
+                                {/* ΚΑΣΑ — πατήσιμο αν ❌ για δανεισμό (ΔΙΠΛΗ ΠΡΟΣ ΚΑΤΑΣΚΕΥΗ) */}
+                                <TouchableOpacity
+                                  activeOpacity={hasCaseOk ? 1 : 0.7}
+                                  onPress={()=>{ if(!hasCaseOk) handleBorrowRequest(o, 'case'); }}
+                                  style={{alignItems:'center', backgroundColor: hasCaseOk?'#e8f5e9':'#ffeaea', borderRadius:5, padding:4, borderWidth:1, borderColor: hasCaseOk?'#00C851':'#ff4444', minWidth:44}}>
                                   <Text style={{fontSize:9, fontWeight:'bold', color:'#555'}}>ΚΑΣΑ</Text>
                                   <Text style={{fontSize:14}}>{hasCaseOk?'✅':'❌'}</Text>
-                                </View>
+                                  {!hasCaseOk&&<Text style={{fontSize:7, color:'#ff4444', fontWeight:'bold'}}>πάτα</Text>}
+                                </TouchableOpacity>
                                 <TouchableOpacity
                                   style={{backgroundColor:'#ff4444', paddingHorizontal:8, paddingVertical:3, borderRadius:5, alignItems:'center'}}
                                   onPress={async()=>{

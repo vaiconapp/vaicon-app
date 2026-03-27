@@ -85,6 +85,28 @@ export default function SasiScreen({ sasiStock={}, setSasiStock }) {
     setQtyModal({ visible:true, key, mode:'sub', label:`- Αφαίρεση από στοκ\n${label}` });
   };
 
+  // ── Αυτόματη αναπλήρωση δανεισμένων δεσμεύσεων με προτεραιότητα ──
+  const replenishPriorityReservations = async (key, updEntry) => {
+    const reservations = updEntry.reservations || [];
+    const priorityRes = reservations.filter(r => r.priorityReservation && r.borrowedTo);
+    if (priorityRes.length === 0) return updEntry;
+
+    const totalQty = parseInt(updEntry.qty) || 0;
+    let cumulative = 0;
+    const newReservations = reservations.map(r => {
+      cumulative += (parseInt(r.qty) || 1);
+      if (r.priorityReservation && r.borrowedTo && cumulative <= totalQty) {
+        // Η παραγγελία αυτή μπορεί τώρα να αναπληρωθεί — αφαιρώ τα flags
+        const { borrowedTo, priorityReservation, ...cleanRes } = r;
+        return cleanRes;
+      }
+      return r;
+    });
+
+    const finalEntry = { ...updEntry, reservations: newReservations };
+    return finalEntry;
+  };
+
   const handleQtyConfirm = async (n) => {
     const { key, mode } = qtyModal;
     setQtyModal(m => ({...m, visible:false}));
@@ -93,6 +115,12 @@ export default function SasiScreen({ sasiStock={}, setSasiStock }) {
       entry.pending = (entry.pending || 0) + n;
     } else if (mode === 'add') {
       entry.qty = (entry.qty || 0) + n;
+      // Αυτόματη αναπλήρωση δανεισμένων δεσμεύσεων
+      const replenished = await replenishPriorityReservations(key, entry);
+      setSasiStock(prev => ({...prev, [key]: replenished}));
+      await fetch(`${FIREBASE_URL}/sasi_stock/${key}.json`, {method:'PUT', body:JSON.stringify(replenished)});
+      await logActivity('ΣΑΣΙ ΣΤΟΚ', 'Προσθήκη', { size: key.replace(/_/g,'x'), qty: String(n) });
+      return;
     } else if (mode === 'pendingIn') {
       // Διαβάζω φρέσκο από Firebase για να έχω το σωστό pending
       try {
