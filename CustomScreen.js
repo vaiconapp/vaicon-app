@@ -227,6 +227,8 @@ export default function CustomScreen({ customOrders, setCustomOrders, soldOrders
   const [printPreview, setPrintPreview] = useState({ visible:false, phaseKey:null, orders:[], copies:1 });
   const [activeProdPhase, setActiveProdPhase] = useState('laser');
   const [moniProdTab, setMoniProdTab] = useState('montSasi');
+  const [editConfirmModal, setEditConfirmModal] = useState({ visible: false, order: null });
+  const [isSaving, setIsSaving] = useState(false);
 
   const customerRef=useRef(); const orderNoRef=useRef(); const hRef=useRef(); const wRef=useRef(); const qtyEidikiRef=useRef();
   const hingeRef=useRef(); const glassRef=useRef(); const glassNotesRef=useRef(); const lockRef=useRef(); const notesRef=useRef();
@@ -453,6 +455,10 @@ export default function CustomScreen({ customOrders, setCustomOrders, soldOrders
     setEditingOrder(order);
     // ΔΕΝ αφαιρούμε από τη λίστα ούτε από το Firebase εδώ —
     // η παραγγελία αφαιρείται μόνο κατά την αποθήκευση (saveOrder)
+  };
+
+  const requestEditOrder = (order) => {
+    setEditConfirmModal({ visible: true, order });
   };
 
   // Μεταφορά PENDING → PROD: αρχικοποιεί τις φάσεις παραγωγής
@@ -2039,6 +2045,53 @@ export default function CustomScreen({ customOrders, setCustomOrders, soldOrders
         onCancel={()=>setConfirmModal(m=>({...m,visible:false}))}
       />
 
+      {/* Modal επιβεβαίωσης ΕΠΕΞΕΡΓΑΣΙΑ */}
+      <Modal visible={editConfirmModal.visible} transparent animationType="fade">
+        <View style={{flex:1, backgroundColor:'rgba(0,0,0,0.7)', justifyContent:'center', alignItems:'center'}}>
+          <View style={{backgroundColor:'white', borderRadius:16, padding:24, width:'85%', maxWidth:400}}>
+            <Text style={{fontSize:18, fontWeight:'bold', color:'#1565C0', marginBottom:8, textAlign:'center'}}>✏️ Επεξεργασία Παραγγελίας</Text>
+            <Text style={{fontSize:14, color:'#444', marginBottom:4, textAlign:'center'}}>
+              Παραγγελία <Text style={{fontWeight:'bold'}}>#{editConfirmModal.order?.orderNo}</Text>
+            </Text>
+            <Text style={{fontSize:13, color:'#666', marginBottom:20, textAlign:'center'}}>
+              Θέλετε να ανοίξετε την παραγγελία για επεξεργασία;
+            </Text>
+            <TouchableOpacity
+              style={{backgroundColor:'#1565C0', padding:14, borderRadius:10, alignItems:'center', marginBottom:8}}
+              onPress={()=>{
+                const order = editConfirmModal.order;
+                setEditConfirmModal({visible:false, order:null});
+                setIsSaving(true);
+                editOrder(order);
+                setTimeout(()=>{
+                  setIsSaving(false);
+                  if(Platform.OS==='web') window.scrollTo({top:0, behavior:'smooth'});
+                  else mainScrollRef.current?.scrollTo({y:0, animated:true});
+                }, 300);
+              }}>
+              <Text style={{color:'white', fontWeight:'bold', fontSize:15}}>✏️ ΝΑΙ, ΕΠΕΞΕΡΓΑΣΙΑ</Text>
+            </TouchableOpacity>
+            <TouchableOpacity
+              style={{backgroundColor:'#f5f5f5', padding:14, borderRadius:10, alignItems:'center', borderWidth:1, borderColor:'#ddd'}}
+              onPress={()=>setEditConfirmModal({visible:false, order:null})}>
+              <Text style={{color:'#555', fontWeight:'bold', fontSize:14}}>ΑΚΥΡΟ</Text>
+            </TouchableOpacity>
+          </View>
+        </View>
+      </Modal>
+
+      {/* Loading overlay — μπλοκάρει την οθόνη κατά την ανάρτηση για επεξεργασία */}
+      {isSaving && (
+        <View style={{position:'absolute', top:0, left:0, right:0, bottom:0, backgroundColor:'rgba(0,0,0,0.5)', justifyContent:'center', alignItems:'center', zIndex:9999}}>
+          <View style={{backgroundColor:'white', borderRadius:16, padding:28, alignItems:'center', minWidth:200}}>
+            <Text style={{fontSize:32, marginBottom:12}}>⏳</Text>
+            <Text style={{fontSize:16, fontWeight:'bold', color:'#1565C0', textAlign:'center'}}>Φόρτωση παραγγελίας...</Text>
+            <Text style={{fontSize:12, color:'#888', marginTop:6, textAlign:'center'}}>Παρακαλώ περιμένετε</Text>
+          </View>
+        </View>
+      )}
+
+
       {/* Modal επιβεβαίωσης ΕΤΟΙΜΗ */}
       <Modal visible={readyConfirmModal.visible} transparent animationType="fade">
         <View style={{flex:1, backgroundColor:'rgba(0,0,0,0.5)', justifyContent:'center', alignItems:'center'}}>
@@ -2427,6 +2480,22 @@ export default function CustomScreen({ customOrders, setCustomOrders, soldOrders
           {/* ΠΑΡΑΓΓΕΛΙΕΣ ΤΥΠΟΠΟΙΗΜΕΝΩΝ — μόνο για ΤΥΠΟΠΟΙΗΜΕΝΗ tab */}
           <>
             <Text style={styles.mainTitle}>ΠΑΡΑΓΓΕΛΙΕΣ ΤΥΠΟΠΟΙΗΜΕΝΩΝ</Text>
+            {/* Editing mode banner */}
+            {editingOrder && (
+              <View style={{alignSelf:'flex-start', width:'25%', backgroundColor:'#1565C0', borderRadius:10, padding:8, marginBottom:8}}>
+                <Text style={{fontSize:11}}>✏️</Text>
+                <Text style={{color:'white', fontWeight:'bold', fontSize:11, marginTop:2}}>ΕΠΕΞΕΡΓΑΣΙΑ</Text>
+                <Text style={{color:'#bbdefb', fontSize:9, marginTop:1}}>#{editingOrder.orderNo}</Text>
+                <TouchableOpacity
+                  style={{backgroundColor:'#ff4444', paddingHorizontal:6, paddingVertical:4, borderRadius:6, marginTop:6, alignItems:'center'}}
+                  onPress={resetForm}>
+                  <Text style={{color:'white', fontWeight:'bold', fontSize:10}}>✕ ΑΚΥΡΟ</Text>
+                </TouchableOpacity>
+              </View>
+            )}
+
+            {/* Wrapper που μπλοκάρει τις παραγγελίες κατά την επεξεργασία */}
+            <View pointerEvents={editingOrder ? 'none' : 'auto'} style={editingOrder ? {opacity:0.35, borderRadius:10, overflow:'hidden'} : {}}>
 
             {/* --- helper για render κάρτας --- */}
             {(()=>{
@@ -2451,13 +2520,7 @@ export default function CustomScreen({ customOrders, setCustomOrders, soldOrders
                           {o.customer?<Text style={{fontSize:14, fontWeight:'bold', color:'#333'}}>{o.customer}</Text>:null}
                           {o.qty&&parseInt(o.qty)>1?<Text style={{fontSize:16,fontWeight:'900',color:'#cc0000'}}>{o.qty}τεμ</Text>:null}
                           <TouchableOpacity
-                            onPress={async()=>{
-                              editOrder(o);
-                              setTimeout(()=>{
-                                if(Platform.OS==='web') window.scrollTo({top:0, behavior:'smooth'});
-                                else mainScrollRef.current?.scrollTo({y:0, animated:true});
-                              }, 150);
-                            }}
+                            onPress={()=>requestEditOrder(o)}
                             style={{backgroundColor:'#1565C0', borderRadius:4, paddingHorizontal:6, paddingVertical:2}}>
                             <Text style={{color:'white', fontSize:10, fontWeight:'bold'}}>✏️ ΕΠΕΞ</Text>
                           </TouchableOpacity>
@@ -3115,13 +3178,7 @@ export default function CustomScreen({ customOrders, setCustomOrders, soldOrders
                                   {o.customer?<Text style={{fontSize:14, fontWeight:'bold', color:'#333'}}>{o.customer}</Text>:null}
                                   {o.qty&&parseInt(o.qty)>1?<Text style={{fontSize:16,fontWeight:'900',color:'#cc0000'}}>{o.qty}τεμ</Text>:null}
                                   <TouchableOpacity
-                                    onPress={async()=>{
-                                      editOrder(o);
-                                      setTimeout(()=>{
-                                        if(Platform.OS==='web') window.scrollTo({top:0, behavior:'smooth'});
-                                        else mainScrollRef.current?.scrollTo({y:0, animated:true});
-                                      }, 150);
-                                    }}
+                                    onPress={()=>requestEditOrder(o)}
                                     style={{backgroundColor:'#1565C0', borderRadius:4, paddingHorizontal:6, paddingVertical:2}}>
                                     <Text style={{color:'white', fontSize:10, fontWeight:'bold'}}>✏️ ΕΠΕΞ</Text>
                                   </TouchableOpacity>
@@ -3643,13 +3700,7 @@ export default function CustomScreen({ customOrders, setCustomOrders, soldOrders
                                   {o.customer?<Text style={{fontSize:14, fontWeight:'bold', color:'#333'}}>{o.customer}</Text>:null}
                                   {o.qty&&parseInt(o.qty)>1?<Text style={{fontSize:16,fontWeight:'900',color:'#cc0000'}}>{o.qty}τεμ</Text>:null}
                                   <TouchableOpacity
-                                    onPress={async()=>{
-                                      editOrder(o);
-                                      setTimeout(()=>{
-                                        if(Platform.OS==='web') window.scrollTo({top:0, behavior:'smooth'});
-                                        else mainScrollRef.current?.scrollTo({y:0, animated:true});
-                                      }, 150);
-                                    }}
+                                    onPress={()=>requestEditOrder(o)}
                                     style={{backgroundColor:'#1565C0', borderRadius:4, paddingHorizontal:6, paddingVertical:2}}>
                                     <Text style={{color:'white', fontSize:10, fontWeight:'bold'}}>✏️ ΕΠΕΞ</Text>
                                   </TouchableOpacity>
@@ -3803,6 +3854,7 @@ export default function CustomScreen({ customOrders, setCustomOrders, soldOrders
                 </>)}
               </>);
             })()}
+            </View>{/* end editing wrapper */}
                 </>
         </View>
       </ScrollView>
