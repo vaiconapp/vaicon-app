@@ -3803,7 +3803,7 @@ export default function CustomScreen({ customOrders, setCustomOrders, soldOrders
                 </>)}
               </>);
             })()}
-          </>)}
+                </>
         </View>
       </ScrollView>
 
