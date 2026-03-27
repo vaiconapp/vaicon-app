@@ -202,7 +202,7 @@ const DIPLI_PHASES = [
   { key:'montDoor', label:'⚫ ΜΟΝΤΑΡΙΣΜΑ/ΕΠΕΝΔΥΣΗ' },
 ];
 
-export default function CustomScreen({ customOrders, setCustomOrders, soldOrders, setSoldOrders, customers, onRequestAddCustomer, sasiStock={}, setSasiStock, caseStock={}, setCaseStock, sasiOrders=[], setSasiOrders, caseOrders=[], setCaseOrders, coatings=[], dipliSasiStock=[], setDipliSasiStock, locks=[], specialOrders=[] }) {
+export default function CustomScreen({ customOrders, setCustomOrders, soldOrders, setSoldOrders, customers, onRequestAddCustomer, sasiStock={}, setSasiStock, caseStock={}, setCaseStock, sasiOrders=[], setSasiOrders, caseOrders=[], setCaseOrders, coatings=[], dipliSasiStock=[], setDipliSasiStock, locks=[], specialOrders=[], formOnly=false }) {
   const [expanded, setExpanded] = useState({ pending:false, prod:false, ready:false, archive:false, stdList:true, stdMoni:true, stdDipli:true, stdReady:true, stdSold:false, stdReadyD:true, stdSoldD:false, stdMoniOpen:true, stdDipliOpen:true, dipliProd:true, dipliSasiStock:false, moniProd:true, moniSasiStock:false, stdBuildMoni:true, stdBuildDipli:true });
   const [showHardwarePicker, setShowHardwarePicker] = useState(false);
   const [showLockPicker, setShowLockPicker] = useState(false);
@@ -230,6 +230,7 @@ export default function CustomScreen({ customOrders, setCustomOrders, soldOrders
   const [editConfirmModal, setEditConfirmModal] = useState({ visible: false, order: null });
   const [isSaving, setIsSaving] = useState(false);
   const [borrowModal, setBorrowModal] = useState({ visible: false, order: null, stockType: null, candidates: [] });
+  const [activeSection, setActiveSection] = useState('form');
 
   const customerRef=useRef(); const orderNoRef=useRef(); const hRef=useRef(); const wRef=useRef(); const qtyEidikiRef=useRef();
   const hingeRef=useRef(); const glassRef=useRef(); const glassNotesRef=useRef(); const lockRef=useRef(); const notesRef=useRef();
@@ -2181,7 +2182,29 @@ export default function CustomScreen({ customOrders, setCustomOrders, soldOrders
 
 
   return (
-    <View style={{flex:1}}>
+    <View style={{flex:1, flexDirection:'row'}}>
+      {/* ══ ΚΆΘΕΤΟ SIDEBAR ΑΡΙΣΤΕΡΑ ══ */}
+      {!formOnly && (
+        <View style={sidebarStyles.sidebar}>
+          <ScrollView showsVerticalScrollIndicator={false} contentContainerStyle={{paddingVertical:8}}>
+            <TouchableOpacity
+              style={[sidebarStyles.navItem, activeSection==='form' && sidebarStyles.navItemActive]}
+              onPress={()=>setActiveSection('form')}>
+              <Text style={[sidebarStyles.navIcon, activeSection==='form' && sidebarStyles.navIconActive]}>✏️</Text>
+              <Text style={[sidebarStyles.navLabel, activeSection==='form' && sidebarStyles.navLabelActive]}>ΚΑΤΑΧ{'\n'}ΩΡΗΣΗ</Text>
+            </TouchableOpacity>
+            <TouchableOpacity
+              style={[sidebarStyles.navItem, activeSection==='lists' && sidebarStyles.navItemActive]}
+              onPress={()=>setActiveSection('lists')}>
+              <Text style={[sidebarStyles.navIcon, activeSection==='lists' && sidebarStyles.navIconActive]}>📋</Text>
+              <Text style={[sidebarStyles.navLabel, activeSection==='lists' && sidebarStyles.navLabelActive]}>ΤΥΠΟ{'\n'}ΠΟΙΗΜ.</Text>
+            </TouchableOpacity>
+          </ScrollView>
+        </View>
+      )}
+
+      {/* ══ ΚΥΡΙΟ ΠΕΡΙΕΧΟΜΕΝΟ ══ */}
+      <View style={{flex:1}}>
       <SellModal visible={sellModal.visible} totalQty={sellModal.totalQty} onConfirm={handleSellConfirm} onCancel={()=>setSellModal({visible:false,orderId:null,totalQty:1})} />
       <DuplicateModal
         visible={dupModal.visible}
@@ -2343,6 +2366,8 @@ export default function CustomScreen({ customOrders, setCustomOrders, soldOrders
 
       <ScrollView ref={mainScrollRef} style={{padding:10}} keyboardShouldPersistTaps="handled">
         <View style={{paddingBottom:120}}>
+          {/* ═══ ΦΟΡΜΑ ΚΑΤΑΧΩΡΗΣΗΣ — εμφανίζεται μόνο στο ΚΑΤΑΧΩΡΗΣΗ tab ═══ */}
+          {(formOnly || activeSection==='form') && (<>
           <Text style={styles.sectionTitle}>ΚΑΤΑΧΩΡΗΣΗ ΤΥΠΟΠΟΙΗΜΕΝΗΣ ΠΑΡΑΓΓΕΛΙΑΣ</Text>
 
 
@@ -2691,8 +2716,9 @@ export default function CustomScreen({ customOrders, setCustomOrders, soldOrders
           </TouchableOpacity>
 
 
-          {/* ΠΑΡΑΓΓΕΛΙΕΣ ΤΥΠΟΠΟΙΗΜΕΝΩΝ — μόνο για ΤΥΠΟΠΟΙΗΜΕΝΗ tab */}
-          <>
+          {/* ΠΑΡΑΓΓΕΛΙΕΣ ΤΥΠΟΠΟΙΗΜΕΝΩΝ — κρύβεται όταν formOnly */}
+          </>)}
+          {!formOnly && activeSection==='lists' && (<>
             <Text style={styles.mainTitle}>ΠΑΡΑΓΓΕΛΙΕΣ ΤΥΠΟΠΟΙΗΜΕΝΩΝ</Text>
             {/* Editing mode banner */}
             {editingOrder && (
@@ -4091,7 +4117,7 @@ export default function CustomScreen({ customOrders, setCustomOrders, soldOrders
               </>);
             })()}
             </View>{/* end editing wrapper */}
-                </>
+          </>)}
         </View>
       </ScrollView>
 
@@ -4373,9 +4399,49 @@ export default function CustomScreen({ customOrders, setCustomOrders, soldOrders
         </View>
       </Modal>
 
+      </View>
     </View>
   );
 }
+
+const sidebarStyles = StyleSheet.create({
+  sidebar: {
+    width: 64,
+    backgroundColor: '#1a1a1a',
+    paddingTop: 8,
+    borderRightWidth: 1,
+    borderRightColor: '#333',
+  },
+  navItem: {
+    alignItems: 'center',
+    justifyContent: 'center',
+    paddingVertical: 14,
+    paddingHorizontal: 4,
+    marginHorizontal: 6,
+    marginBottom: 4,
+    borderRadius: 10,
+  },
+  navItemActive: {
+    backgroundColor: '#8B0000',
+  },
+  navIcon: {
+    fontSize: 20,
+    marginBottom: 4,
+  },
+  navIconActive: {
+    fontSize: 20,
+  },
+  navLabel: {
+    fontSize: 9,
+    fontWeight: '800',
+    color: '#888',
+    textAlign: 'center',
+    letterSpacing: 0.5,
+  },
+  navLabelActive: {
+    color: 'white',
+  },
+});
 
 const vstyles = StyleSheet.create({
   // Header φόρμας

@@ -122,9 +122,10 @@ if (Platform.OS === 'android' && UIManager.setLayoutAnimationEnabledExperimental
   UIManager.setLayoutAnimationEnabledExperimental(true);
 }
 
-const TABS = ['custom', 'sasi', 'cases', 'stats'];
-const TAB_LABELS = { custom: 'ΤΥΠΟΠΟΙΗΜΕΝΕΣ', sasi: 'STOCK ΣΑΣΙ (ΑΠΟΘΗΚΗ)', cases: 'STOCK ΚΑΣΑ (ΑΠΟΘΗΚΗ)', stats: 'ΣΤΑΤΙΣΤΙΚΑ' };
-const NAV_TABS = ['custom', 'sasi', 'cases']; // ΣΤΑΤΙΣΤΙΚΑ → μενού
+const TABS = ['customNew', 'custom', 'sasi', 'cases', 'stats'];
+const TAB_LABELS = { customNew: 'ΚΑΤΑΧΩΡΗΣΗ', custom: 'ΤΥΠΟΠΟΙΗΜΕΝΕΣ', sasi: 'STOCK ΣΑΣΙ', cases: 'STOCK ΚΑΣΑ', stats: 'ΣΤΑΤΙΣΤΙΚΑ' };
+const TAB_ICONS  = { customNew: '✏️', custom: '📋', sasi: '🔧', cases: '🚪', stats: '📊' };
+const NAV_TABS = ['customNew', 'custom', 'sasi', 'cases'];
 
 export default function App() {
   const [isLoggedIn, setIsLoggedIn] = useState(isRemembered());
@@ -255,28 +256,44 @@ export default function App() {
 
   return (
     <View style={{ flex: 1, backgroundColor: '#f5f5f5' }}>
-      <StatusBar barStyle="dark-content" backgroundColor="#f5f5f5" translucent={false} />
-      <View style={styles.container}>
+      <StatusBar barStyle="light-content" backgroundColor="#1a1a2e" translucent={false} />
 
-        {/* ═══ HEADER — 1 γραμμή ═══ */}
-        <View style={styles.header}>
-          <Text style={styles.headerTitle}>VAICON</Text>
-          <View style={styles.headerTabs}>
-            {NAV_TABS.map((tab) => (
-              <TouchableOpacity key={tab} style={[styles.headerTabBtn, TABS[tabIndex]===tab && styles.headerTabActive]} onPress={() => setTabIndex(TABS.indexOf(tab))}>
-                <Text style={[styles.headerTabTxt, TABS[tabIndex]===tab && styles.headerTabTxtActive]}>{TAB_LABELS[tab]}</Text>
-              </TouchableOpacity>
-            ))}
+      {/* ═══ TOP BAR — οριζόντια πάνω ═══ */}
+      <View style={styles.topBar}>
+        <Text style={styles.topBarTitle}>VAICON</Text>
+        <Text style={styles.topBarSub}>Σύστημα Διαχείρισης Τυποποιημένων Παραγγελιών</Text>
+        <TouchableOpacity style={styles.topBarMenu} onPress={() => setMenuOpen(true)}>
+          <Text style={styles.topBarMenuIcon}>☰</Text>
+        </TouchableOpacity>
+      </View>
+
+      <View style={{ flex: 1, flexDirection: 'row' }}>
+
+        {/* ═══ SIDEBAR — κάθετη αριστερά ═══ */}
+        <View style={styles.sidebar}>
+          {/* TAB BUTTONS */}
+          <View style={{ flex: 1 }}>
+            {NAV_TABS.map((tab) => {
+              const isActive = TABS[tabIndex] === tab;
+              return (
+                <TouchableOpacity
+                  key={tab}
+                  style={[styles.sidebarBtn, isActive && styles.sidebarBtnActive]}
+                  onPress={() => setTabIndex(TABS.indexOf(tab))}>
+                  <Text style={styles.sidebarIcon}>{TAB_ICONS[tab]}</Text>
+                  <Text style={[styles.sidebarLabel, isActive && styles.sidebarLabelActive]}>
+                    {TAB_LABELS[tab]}
+                  </Text>
+                </TouchableOpacity>
+              );
+            })}
           </View>
-          <TouchableOpacity style={styles.menuBtn} onPress={() => setMenuOpen(true)}>
-            <Text style={styles.menuIcon}>☰</Text>
-          </TouchableOpacity>
         </View>
 
-        {/* SCREENS με swipe */}
+        {/* ═══ ΚΥΡΙΟ ΠΕΡΙΕΧΟΜΕΝΟ δεξιά ═══ */}
         <View style={{ flex: 1 }} {...panResponder.panHandlers}>
-          <View style={{ flex: 1, display: view === 'custom' ? 'flex' : 'none' }}>
-            <CustomScreen customOrders={customOrders} setCustomOrders={setCustomOrders} soldOrders={soldOrders} setSoldOrders={setSoldOrders} customers={customers} onRequestAddCustomer={(name, cb)=>{ setPendingCustomer(name); setPendingCustomerCallback(()=>cb); setShowCustomers(true); }} sasiStock={sasiStock} setSasiStock={setSasiStock} caseStock={caseStock} setCaseStock={setCaseStock} sasiOrders={sasiOrders} setSasiOrders={setSasiOrders} caseOrders={caseOrders} setCaseOrders={setCaseOrders} coatings={coatings} dipliSasiStock={dipliSasiStock} setDipliSasiStock={setDipliSasiStock} locks={locks} specialOrders={[]} />
+          <View style={{ flex: 1, display: (view === 'custom' || view === 'customNew') ? 'flex' : 'none' }}>
+            <CustomScreen customOrders={customOrders} setCustomOrders={setCustomOrders} soldOrders={soldOrders} setSoldOrders={setSoldOrders} customers={customers} onRequestAddCustomer={(name, cb)=>{ setPendingCustomer(name); setPendingCustomerCallback(()=>cb); setShowCustomers(true); }} sasiStock={sasiStock} setSasiStock={setSasiStock} caseStock={caseStock} setCaseStock={setCaseStock} sasiOrders={sasiOrders} setSasiOrders={setSasiOrders} caseOrders={caseOrders} setCaseOrders={setCaseOrders} coatings={coatings} dipliSasiStock={dipliSasiStock} setDipliSasiStock={setDipliSasiStock} locks={locks} specialOrders={[]} formOnly={view === 'customNew'} />
           </View>
           {view === 'sasi'   && <SasiScreen sasiStock={sasiStock} setSasiStock={setSasiStock} />}
           {view === 'cases'  && <CaseScreen caseStock={caseStock} setCaseStock={setCaseStock} />}
@@ -364,7 +381,8 @@ const styles = StyleSheet.create({
   container: { flex: 1, backgroundColor: '#f5f5f5' },
   loading: { flex: 1, justifyContent: 'center', alignItems: 'center', gap: 12 },
   loadingText: { color: '#555', fontSize: 14 },
-  header: { backgroundColor: '#1565C0', paddingVertical: 8, paddingHorizontal: 10, borderRadius: 18, marginHorizontal: 8, marginTop: (StatusBar.currentHeight || 0) + 6, flexDirection: 'row', alignItems: 'center', gap: 6 },
+  // Παλιά header styles (κρατάμε για συμβατότητα)
+  header: { backgroundColor: '#1565C0', paddingVertical: 8, paddingHorizontal: 10, flexDirection: 'row', alignItems: 'center', gap: 6 },
   headerTitle: { color: '#FFD600', fontSize: 18, fontWeight: '900', fontStyle: 'italic', letterSpacing: 3 },
   headerTabs: { flex: 1, flexDirection: 'row', gap: 4 },
   headerTabBtn: { flex: 1, paddingVertical: 6, paddingHorizontal: 2, borderRadius: 6, backgroundColor: 'rgba(0,0,0,0.1)', alignItems: 'center' },
@@ -383,4 +401,18 @@ const styles = StyleSheet.create({
   menuTitle: { fontSize: 12, fontWeight: 'bold', color: '#999', marginBottom: 12, letterSpacing: 2 },
   menuItem: { padding: 14, borderRadius: 8, backgroundColor: '#f5f5f5', marginBottom: 8 },
   menuItemText: { fontSize: 15, fontWeight: 'bold', color: '#1a1a1a' },
+  // ── TOP BAR styles ──
+  topBar: { backgroundColor: '#1a1a2e', flexDirection: 'row', alignItems: 'center', paddingHorizontal: 16, paddingVertical: 12, paddingTop: (StatusBar.currentHeight || 0) + 12 },
+  topBarTitle: { color: '#E53935', fontSize: 38, fontWeight: '900', fontStyle: 'italic', letterSpacing: 4, marginRight: 14 },
+  topBarSub: { color: 'rgba(255,255,255,0.7)', fontSize: 18, fontWeight: '700', flex: 1 },
+  topBarMenu: { padding: 8 },
+  topBarMenuIcon: { color: 'white', fontSize: 30 },
+  // ── SIDEBAR styles ──
+  sidebar: { width: 300, backgroundColor: '#1a1a2e', flexDirection: 'column', alignItems: 'stretch', paddingVertical: 8, borderRightWidth: 1, borderRightColor: 'rgba(255,255,255,0.08)' },
+  sidebarBtn: { flexDirection: 'row', alignItems: 'center', paddingVertical: 20, paddingHorizontal: 20, borderLeftWidth: 5, borderLeftColor: 'transparent', gap: 14 },
+  sidebarBtnActive: { backgroundColor: 'rgba(255,255,255,0.08)', borderLeftColor: '#E53935' },
+  sidebarIcon: { fontSize: 26 },
+  sidebarLabel: { color: 'rgba(255,255,255,0.5)', fontSize: 16, fontWeight: '700', flex: 1 },
+  sidebarLabelActive: { color: 'white' },
+  sidebarMenuBtn: { width: '100%', alignItems: 'center', paddingVertical: 14, borderTopWidth: 1, borderTopColor: 'rgba(255,255,255,0.1)', marginTop: 4 },
 });
