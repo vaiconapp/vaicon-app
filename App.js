@@ -122,10 +122,10 @@ if (Platform.OS === 'android' && UIManager.setLayoutAnimationEnabledExperimental
   UIManager.setLayoutAnimationEnabledExperimental(true);
 }
 
-const TABS = ['customNew', 'custom', 'sasi', 'cases', 'stats'];
-const TAB_LABELS = { customNew: 'ΚΑΤΑΧΩΡΗΣΗ', custom: 'ΤΥΠΟΠΟΙΗΜΕΝΕΣ', sasi: 'STOCK ΣΑΣΙ', cases: 'STOCK ΚΑΣΑ', stats: 'ΣΤΑΤΙΣΤΙΚΑ' };
-const TAB_ICONS  = { customNew: '✏️', custom: '📋', sasi: '🔧', cases: '🚪', stats: '📊' };
-const NAV_TABS = ['customNew', 'custom', 'sasi', 'cases'];
+const TABS = ['customNew', 'customMoni', 'customDipli', 'sasi', 'cases', 'stats'];
+const TAB_LABELS = { customNew: 'ΚΑΤΑΧΩΡΗΣΗ', customMoni: 'ΤΥΠΟΠΟΙΗΜΕΝΕΣ\nΜΟΝΗ ΘΩΡΑΚΙΣΗ', customDipli: 'ΤΥΠΟΠΟΙΗΜΕΝΕΣ\nΔΙΠΛΗ ΘΩΡΑΚΙΣΗ', sasi: 'STOCK ΣΑΣΙ', cases: 'STOCK ΚΑΣΑ', stats: 'ΣΤΑΤΙΣΤΙΚΑ' };
+const TAB_ICONS  = { customNew: '✏️', customMoni: '🛡️', customDipli: '🔰', sasi: '🔧', cases: '🚪', stats: '📊' };
+const NAV_TABS = ['customNew', 'customMoni', 'customDipli', 'sasi', 'cases'];
 
 export default function App() {
   const [isLoggedIn, setIsLoggedIn] = useState(isRemembered());
@@ -292,8 +292,8 @@ export default function App() {
 
         {/* ═══ ΚΥΡΙΟ ΠΕΡΙΕΧΟΜΕΝΟ δεξιά ═══ */}
         <View style={{ flex: 1 }} {...panResponder.panHandlers}>
-          <View style={{ flex: 1, display: (view === 'custom' || view === 'customNew') ? 'flex' : 'none' }}>
-            <CustomScreen customOrders={customOrders} setCustomOrders={setCustomOrders} soldOrders={soldOrders} setSoldOrders={setSoldOrders} customers={customers} onRequestAddCustomer={(name, cb)=>{ setPendingCustomer(name); setPendingCustomerCallback(()=>cb); setShowCustomers(true); }} sasiStock={sasiStock} setSasiStock={setSasiStock} caseStock={caseStock} setCaseStock={setCaseStock} sasiOrders={sasiOrders} setSasiOrders={setSasiOrders} caseOrders={caseOrders} setCaseOrders={setCaseOrders} coatings={coatings} dipliSasiStock={dipliSasiStock} setDipliSasiStock={setDipliSasiStock} locks={locks} specialOrders={[]} formOnly={view === 'customNew'} />
+          <View style={{ flex: 1, display: (view === 'customMoni' || view === 'customDipli' || view === 'customNew') ? 'flex' : 'none' }}>
+            <CustomScreen customOrders={customOrders} setCustomOrders={setCustomOrders} soldOrders={soldOrders} setSoldOrders={setSoldOrders} customers={customers} onRequestAddCustomer={(name, cb)=>{ setPendingCustomer(name); setPendingCustomerCallback(()=>cb); setShowCustomers(true); }} sasiStock={sasiStock} setSasiStock={setSasiStock} caseStock={caseStock} setCaseStock={setCaseStock} sasiOrders={sasiOrders} setSasiOrders={setSasiOrders} caseOrders={caseOrders} setCaseOrders={setCaseOrders} coatings={coatings} dipliSasiStock={dipliSasiStock} setDipliSasiStock={setDipliSasiStock} locks={locks} specialOrders={[]} formOnly={view === 'customNew'} forcedTab={view === 'customMoni' ? 'ΜΟΝΗ' : view === 'customDipli' ? 'ΔΙΠΛΗ' : null} />
           </View>
           {view === 'sasi'   && <SasiScreen sasiStock={sasiStock} setSasiStock={setSasiStock} />}
           {view === 'cases'  && <CaseScreen caseStock={caseStock} setCaseStock={setCaseStock} />}
