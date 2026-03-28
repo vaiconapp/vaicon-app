@@ -163,11 +163,29 @@ export default function CustomersScreen({ customers, setCustomers, onClose, pref
                 <Text style={styles.customerDate}>📅 {fmtDate(c.createdAt)}</Text>
               </View>
               <View style={{gap:6}}>
-                <TouchableOpacity
-                  style={{backgroundColor:'#007AFF', paddingHorizontal:10, paddingVertical:6, borderRadius:6, alignItems:'center'}}
-                  onPress={()=>setSelectedCustomerOrders(c)}>
-                  <Text style={{color:'white', fontSize:11, fontWeight:'bold'}}>📦 ΠΑΡΑΓΓΕΛΙΕΣ</Text>
-                </TouchableOpacity>
+                <View style={{flexDirection:'row', alignItems:'center', gap:6}}>
+                  <TouchableOpacity
+                    style={{backgroundColor:'#007AFF', paddingHorizontal:10, paddingVertical:6, borderRadius:6, alignItems:'center'}}
+                    onPress={()=>setSelectedCustomerOrders(c)}>
+                    <Text style={{color:'white', fontSize:11, fontWeight:'bold'}}>📦 ΠΑΡΑΓΓΕΛΙΕΣ</Text>
+                  </TouchableOpacity>
+                  {(()=>{
+                    const cnt = allOrders.filter(o => o.customer === c.name).length;
+                    return (
+                      <View style={{
+                        backgroundColor: cnt > 0 ? '#8B0000' : '#bbb',
+                        borderRadius: 12,
+                        minWidth: 24,
+                        height: 24,
+                        justifyContent: 'center',
+                        alignItems: 'center',
+                        paddingHorizontal: 6,
+                      }}>
+                        <Text style={{color:'white', fontSize:12, fontWeight:'bold'}}>{cnt}</Text>
+                      </View>
+                    );
+                  })()}
+                </View>
                 <TouchableOpacity
                   style={styles.deleteBtn}
                   onLongPress={() => deleteCustomer(c.id)}
