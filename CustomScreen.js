@@ -1638,6 +1638,83 @@ export default function CustomScreen({ customOrders, setCustomOrders, soldOrders
     setBorrowModal({ visible: true, order, stockType, candidates });
   };
 
+  // useEffect: όταν κλείσει το borrowModal και υπάρχει pendingConfirm, εμφανίζουμε confirmation
+  useEffect(() => {
+    if (!borrowModal.visible && borrowModal.pendingConfirm && borrowModal.order) {
+      const candidate = borrowModal.pendingConfirm;
+      const order = borrowModal.order;
+      const stockType = borrowModal.stockType;
+      // Καθαρίζουμε το pendingConfirm πριν ανοίξουμε το dialog
+      setBorrowModal({ visible: false, order: null, stockType: null, candidates: [] });
+      // Μικρή καθυστέρηση για να κλείσει πλήρως το modal πριν ανοίξει το confirm
+      setTimeout(() => {
+        if (Platform.OS === 'web') {
+          const confirmed = window.confirm(
+            `🔄 Δανεισμός Δέσμευσης\n\nΘέλετε να πάρετε τη δέσμευση ${stockType==='case'?'κάσας':'σασί'} από την παραγγελία #${candidate.orderNo};\n\nΗ #${candidate.orderNo} θα χάσει τη δέσμευσή της και θα αναπληρωθεί αυτόματα με προτεραιότητα όταν μπει νέο stock.`
+          );
+          if (confirmed) {
+            // Δημιουργούμε ένα προσωρινό borrowModal state για το handleBorrowConfirm
+            setBorrowModal({ visible: false, order, stockType, candidates: [], _confirming: true });
+            handleBorrowConfirmDirect(candidate, order, stockType);
+          }
+        } else {
+          Alert.alert(
+            '🔄 Επιβεβαίωση Δανεισμού',
+            `Θέλετε να πάρετε τη δέσμευση ${stockType==='case'?'κάσας':'σασί'} από την παραγγελία #${candidate.orderNo};\n\nΗ #${candidate.orderNo} θα χάσει τη δέσμευσή της και θα αναπληρωθεί αυτόματα με προτεραιότητα όταν μπει νέο stock.`,
+            [
+              {text:'ΑΚΥΡΟ', style:'cancel'},
+              {text:'ΝΑΙ, ΔΑΝΕΙΣΜΟΣ', onPress:()=>handleBorrowConfirmDirect(candidate, order, stockType)}
+            ]
+          );
+        }
+      }, 150);
+    }
+  }, [borrowModal.visible, borrowModal.pendingConfirm]);
+
+  const handleBorrowConfirmDirect = async (donorOrder, order, stockType) => {
+    const h = String(order.h), w = String(order.w), side = order.side;
+
+    if (stockType === 'case') {
+      const donorCk = donorOrder._donorCk || caseKey(h, w, side, donorOrder.caseType);
+      try {
+        const res = await fetch(`${FIREBASE_URL}/case_stock/${donorCk}.json`);
+        const data = await res.json();
+        if (!data) return;
+        const donorRes = (data.reservations || []).find(r => r.orderNo === donorOrder.orderNo);
+        if (!donorRes) return Alert.alert('Σφάλμα', 'Δεν βρέθηκε η δέσμευση στο stock του donor.');
+        const orderQty = parseInt(order.qty) || 1;
+        const newRes = { orderNo: order.orderNo, customer: order.customer || '', qty: orderQty, borrowedFrom: donorOrder.orderNo };
+        const donorResUpdated = { ...donorRes, borrowedTo: order.orderNo, priorityReservation: true };
+        const updReservations = (data.reservations || []).map(r => r.orderNo === donorOrder.orderNo ? donorResUpdated : r);
+        const alreadyHas = updReservations.some(r => r.orderNo === order.orderNo);
+        if (!alreadyHas) updReservations.push(newRes);
+        const updEntry = { ...data, reservations: updReservations };
+        await fetch(`${FIREBASE_URL}/case_stock/${donorCk}.json`, { method: 'PUT', body: JSON.stringify(updEntry) });
+        setCaseStock(prev => ({ ...prev, [donorCk]: updEntry }));
+        Alert.alert('✅ Επιτυχία', `Η κάσα δεσμεύτηκε για #${order.orderNo} από την παραγγελία #${donorOrder.orderNo}.\n\nΗ #${donorOrder.orderNo} θα αναπληρωθεί αυτόματα με προτεραιότητα όταν μπει νέο stock.`);
+      } catch(e) { Alert.alert('Σφάλμα', 'Αποτυχία ενημέρωσης stock.'); }
+    } else {
+      const sk = sasiKey(h, w, side);
+      try {
+        const res = await fetch(`${FIREBASE_URL}/sasi_stock/${sk}.json`);
+        const data = await res.json();
+        if (!data) return;
+        const donorRes = (data.reservations || []).find(r => r.orderNo === donorOrder.orderNo);
+        if (!donorRes) return Alert.alert('Σφάλμα', 'Δεν βρέθηκε η δέσμευση.');
+        const orderQty = parseInt(order.qty) || 1;
+        const newRes = { orderNo: order.orderNo, customer: order.customer || '', qty: orderQty, borrowedFrom: donorOrder.orderNo };
+        const donorResUpdated = { ...donorRes, borrowedTo: order.orderNo, priorityReservation: true };
+        const updReservations = (data.reservations || []).map(r => r.orderNo === donorOrder.orderNo ? donorResUpdated : r);
+        const alreadyHas = updReservations.some(r => r.orderNo === order.orderNo);
+        if (!alreadyHas) updReservations.push(newRes);
+        const updEntry = { ...data, reservations: updReservations };
+        await fetch(`${FIREBASE_URL}/sasi_stock/${sk}.json`, { method: 'PUT', body: JSON.stringify(updEntry) });
+        setSasiStock(prev => ({ ...prev, [sk]: updEntry }));
+        Alert.alert('✅ Επιτυχία', `Το σασί δεσμεύτηκε για #${order.orderNo} από την παραγγελία #${donorOrder.orderNo}.\n\nΗ #${donorOrder.orderNo} θα αναπληρωθεί αυτόματα με προτεραιότητα όταν μπει νέο stock.`);
+      } catch(e) { Alert.alert('Σφάλμα', 'Αποτυχία ενημέρωσης stock.'); }
+    }
+  };
+
   const handleBorrowConfirm = async (donorOrder) => {
     const { order, stockType } = borrowModal;
     setBorrowModal({ visible: false, order: null, stockType: null, candidates: [] });
@@ -2265,21 +2342,10 @@ export default function CustomScreen({ customOrders, setCustomOrders, soldOrders
                   key={c.id}
                   style={{backgroundColor:'#f5f5f5', borderRadius:10, padding:12, marginBottom:8, borderLeftWidth:4, borderLeftColor:'#1565C0'}}
                   onPress={()=>{
-                    const confirmed = Platform.OS === 'web'
-                      ? window.confirm(`🔄 Δανεισμός Δέσμευσης\n\nΘέλετε να πάρετε τη δέσμευση ${borrowModal.stockType==='case'?'κάσας':'σασί'} από την παραγγελία #${c.orderNo};\n\nΗ #${c.orderNo} θα χάσει τη δέσμευσή της και θα αναπληρωθεί αυτόματα με προτεραιότητα όταν μπει νέο stock.`)
-                      : null;
-                    if (Platform.OS === 'web') {
-                      if (confirmed) handleBorrowConfirm(c);
-                    } else {
-                      Alert.alert(
-                        '🔄 Επιβεβαίωση Δανεισμού',
-                        `Θέλετε να πάρετε τη δέσμευση ${borrowModal.stockType==='case'?'κάσας':'σασί'} από την παραγγελία #${c.orderNo};\n\nΗ #${c.orderNo} θα χάσει τη δέσμευσή της και θα αναπληρωθεί αυτόματα με προτεραιότητα όταν μπει νέο stock.`,
-                        [
-                          {text:'ΑΚΥΡΟ', style:'cancel'},
-                          {text:'ΝΑΙ, ΔΑΝΕΙΣΜΟΣ', onPress:()=>handleBorrowConfirm(c)}
-                        ]
-                      );
-                    }
+                    // Κλείνουμε πρώτα το modal και μετά καλούμε το confirm
+                    // για να αποφύγουμε το πρόβλημα με window.confirm μέσα σε Modal
+                    const selectedCandidate = c;
+                    setBorrowModal({visible:false, order:borrowModal.order, stockType:borrowModal.stockType, candidates:borrowModal.candidates, pendingConfirm: selectedCandidate});
                   }}>
                   <View style={{flexDirection:'row', justifyContent:'space-between', alignItems:'center'}}>
                     <View style={{flex:1}}>
