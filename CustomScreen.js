@@ -389,9 +389,11 @@ export default function CustomScreen({ customOrders, setCustomOrders, soldOrders
       const ck = caseKey(String(newOrder.h), String(newOrder.w), newOrder.side, newOrder.caseType);
       const newRes = { orderNo: newOrder.orderNo, customer: newOrder.customer||'', qty: orderQtyR };
 
-      // Σασί: ΜΟΝΗ STD_PENDING (χωρίς extras), ή ΜΟΝΗ STD_BUILD με σταθερό ή μοντάρισμα
-      const reserveSasi = (newOrder.status === 'STD_PENDING' && isMoni) ||
-                          (newOrder.status === 'STD_BUILD' && isMoni && (hasStaveraForm || hasMontageForm));
+      // Σασί: δεσμεύεται ΜΟΝΟ αν είναι ΜΟΝΗ χωρίς κλειδαριά και χωρίς μείωση ύψους
+      // Αν έχει κλειδαριά ή μείωση ύψους → το σασί κατασκευάζεται, δεν παίρνεται από stock
+      const reserveSasi = isMoni && !isMoniWithLock && !hasHeightReductionForm &&
+                          (newOrder.status === 'STD_PENDING' ||
+                           (newOrder.status === 'STD_BUILD' && (hasStaveraForm || hasMontageForm)));
 
       if (reserveSasi) {
         const existingSasi = sasiStock[sk] || { qty: 0, reservations: [] };
