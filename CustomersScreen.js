@@ -45,22 +45,35 @@ export default function CustomersScreen({ customers, setCustomers, onClose, pref
   const saveCustomer = async () => {
     if (!form.name.trim()) return Alert.alert("Προσοχή", "Βάλτε Όνομα Πελάτη.");
     if (editingId) {
-      const updated = { ...customers.find(c => c.id === editingId), ...form };
+      const prevCustomer = customers.find(c => c.id === editingId);
+      const updated = { ...prevCustomer, ...form };
+      const oldName = (prevCustomer?.name || '').trim();
+      const newName = (updated.name || '').trim();
       setCustomers(customers.map(c => c.id === editingId ? updated : c));
       await syncToCloud(updated);
 
-      // Ενημέρωση παραγγελιών που έχουν αυτόν τον πελάτη
+      // Ενημέρωση παραγγελιών που έχουν αυτόν τον πελάτη (στο cloud: /std_orders/)
       if (setCustomOrders && setSoldOrders) {
+        const matchesCustomer = (o) =>
+          o.customerId === editingId || (!!oldName && o.customer === oldName);
+
         const updateOrder = async (order) => {
-          if (order.customerId !== editingId) return order;
-          const updatedOrder = { ...order, customer: updated.name };
-          // Ενημέρωση Firebase — όλες οι παραγγελίες στο /orders/
-          await fetch(`${FIREBASE_URL}/orders/${order.id}.json`, { method: 'PATCH', body: JSON.stringify({ customer: updated.name }) });
+          if (!matchesCustomer(order)) return order;
+          const patch = { customer: newName };
+          if (!order.customerId) patch.customerId = editingId;
+          const updatedOrder = { ...order, customer: newName, ...(!order.customerId ? { customerId: editingId } : {}) };
+          try {
+            await fetch(`${FIREBASE_URL}/std_orders/${order.id}.json`, {
+              method: 'PATCH',
+              body: JSON.stringify(patch),
+            });
+          } catch {
+            Alert.alert('Σφάλμα', `Δεν ενημερώθηκε η παραγγελία #${order.orderNo || order.id} στο Cloud.`);
+          }
           return updatedOrder;
         };
-        // Ενημέρωση ΚΑΙ active ΚΑΙ sold ΚΑΙ όλα τα orderType (ΕΙΔΙΚΗ/ΤΥΠΟΠΟΙΗΜΕΝΗ)
-        const updatedActive = await Promise.all(allOrders.filter(o=>o.status!=='SOLD').map(updateOrder));
-        const updatedSold = await Promise.all(allOrders.filter(o=>o.status==='SOLD').map(updateOrder));
+        const updatedActive = await Promise.all(allOrders.filter(o => o.status !== 'SOLD').map(updateOrder));
+        const updatedSold = await Promise.all(allOrders.filter(o => o.status === 'SOLD').map(updateOrder));
         setCustomOrders(updatedActive);
         setSoldOrders(updatedSold);
       }

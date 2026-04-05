@@ -207,7 +207,7 @@ export default function CaseScreen({ caseStock={}, setCaseStock }) {
               <TouchableOpacity
                 style={[styles.tdWrap, {flex:1, borderRightWidth:0}]}
                 onPress={()=>hasReservations?setShowReservations(key):null}>
-                <Text style={{fontSize:11, color: hasReservations?'#c62828':'#bbb'}} numberOfLines={2}>
+                <Text style={{fontSize:13, color: hasReservations?'#c62828':'#bbb'}} numberOfLines={2}>
                   {hasReservations
                     ? (entry.reservations||[]).map(r=>`#${r.orderNo}(${r.qty||1})`).join('  ')
                     : '—'
