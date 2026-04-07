@@ -235,12 +235,21 @@ export default function SasiScreen({ sasiStock={}, setSasiStock }) {
       </tr>`;
     })).join('');
     const colHeader = `<tr style="background:#1a1a1a"><th style="color:white;padding:4px 6px;width:45px;text-align:center">PEND.</th><th style="color:white;padding:4px 6px;width:60px">ΔΙΑΣΤΑΣΗ</th><th style="color:white;padding:4px 6px">ΠΑΡΑΤΗΡΗΣΕΙΣ</th></tr>`;
-    const html = `<!DOCTYPE html><html><head><meta charset="utf-8"><style>body{font-family:Arial,sans-serif;margin:6mm;color:#000;}h1{font-size:16px;margin-bottom:2px;font-weight:bold;}h2{font-size:11px;color:#555;margin-top:0;margin-bottom:8px;}.wrapper{display:flex;gap:8mm;}.half{flex:1;}.half h3{font-size:13px;font-weight:bold;background:#333;color:white;padding:5px 8px;margin-bottom:0;}table{width:100%;border-collapse:collapse;font-size:12px;table-layout:fixed;}th{padding:5px 6px;text-align:left;border-bottom:2px solid #000;}td{padding:10px 6px;border-bottom:1px solid #ccc;}@media print{@page{size:A4 landscape;margin:6mm;}}</style></head><body><h1>ΠΑΡΑΓΩΓΗ ΣΑΣΙ</h1><h2>📅 ${dateStr}</h2><div class="wrapper"><div class="half"><h3>◄ ΑΡΙΣΤΕΡΗ</h3><table><thead>${colHeader}</thead><tbody>${buildRows('ΑΡΙΣΤΕΡΗ')}</tbody></table></div><div class="half"><h3>ΔΕΞΙΑ ►</h3><table><thead>${colHeader}</thead><tbody>${buildRows('ΔΕΞΙΑ')}</tbody></table></div></div><script>window.onload=()=>window.print();<\/script></body></html>`;
+    const html = `<!DOCTYPE html><html><head><meta charset="utf-8"><style>body{font-family:Arial,sans-serif;margin:6mm;color:#000;}h1{font-size:16px;margin-bottom:2px;font-weight:bold;}h2{font-size:11px;color:#555;margin-top:0;margin-bottom:8px;}.wrapper{display:flex;gap:8mm;}.half{flex:1;}.half h3{font-size:13px;font-weight:bold;background:#333;color:white;padding:5px 8px;margin-bottom:0;}table{width:100%;border-collapse:collapse;font-size:12px;table-layout:fixed;}th{padding:5px 6px;text-align:left;border-bottom:2px solid #000;}td{padding:10px 6px;border-bottom:1px solid #ccc;}@media print{@page{size:A4 landscape;margin:6mm;}}</style></head><body><h1>ΠΑΡΑΓΩΓΗ ΣΑΣΙ</h1><h2>📅 ${dateStr}</h2><div class="wrapper"><div class="half"><h3>◄ ΑΡΙΣΤΕΡΗ</h3><table><thead>${colHeader}</thead><tbody>${buildRows('ΑΡΙΣΤΕΡΗ')}</tbody></table></div><div class="half"><h3>ΔΕΞΙΑ ►</h3><table><thead>${colHeader}</thead><tbody>${buildRows('ΔΕΞΙΑ')}</tbody></table></div></div></body></html>`;
     if (Platform.OS === 'web') {
-      const win = window.open('', '_blank');
-      if (!win) return Alert.alert('Σφάλμα','Επιτρέψτε τα pop-ups.');
-      win.document.write(html);
-      win.document.close();
+      const iframe = document.createElement('iframe');
+      iframe.style.position = 'absolute';
+      iframe.style.width = '0';
+      iframe.style.height = '0';
+      iframe.style.border = 'none';
+      document.body.appendChild(iframe);
+      const doc = iframe.contentWindow.document;
+      doc.open();
+      doc.write(html);
+      doc.close();
+      iframe.contentWindow.focus();
+      iframe.contentWindow.print();
+      setTimeout(() => document.body.removeChild(iframe), 1000);
     }
   };
 
@@ -263,34 +272,32 @@ export default function SasiScreen({ sasiStock={}, setSasiStock }) {
       </tr>`;
     })).join('');
     const colHeader = `<tr style="background:#1a1a1a"><th style="color:white;padding:4px 4px;width:50px">ΔΙΑΣΤΑΣΗ</th><th style="color:white;padding:4px 4px;width:40px;text-align:center">PEND.</th><th style="color:white;padding:4px 4px;width:45px;text-align:center">ΥΠΟ/ΠΟ</th><th style="color:white;padding:4px 4px">ΔΕΣΜΕΥΣΕΙΣ</th></tr>`;
-    const html = `<!DOCTYPE html><html><head><meta charset="utf-8"><style>body{font-family:Arial,sans-serif;margin:6mm;color:#000;}h1{font-size:16px;margin-bottom:2px;font-weight:bold;}h2{font-size:11px;color:#555;margin-top:0;margin-bottom:8px;}.wrapper{display:flex;gap:8mm;}.half{flex:1;}.half h3{font-size:13px;font-weight:bold;background:#333;color:white;padding:5px 8px;margin-bottom:0;}table{width:100%;border-collapse:collapse;font-size:11px;table-layout:fixed;}th{padding:4px 6px;text-align:left;border-bottom:2px solid #000;overflow:hidden;}td{padding:3px 6px;border-bottom:1px solid #ddd;overflow:hidden;white-space:nowrap;}td:last-child{white-space:normal;}@media print{@page{size:A4 landscape;margin:6mm;}}</style></head><body><h1>STOCK ΣΑΣΙ (ΑΠΟΘΗΚΗ)</h1><h2>📅 ${dateStr}</h2><div class="wrapper"><div class="half"><h3>◄ ΑΡΙΣΤΕΡΗ</h3><table><thead>${colHeader}</thead><tbody>${buildRows('ΑΡΙΣΤΕΡΗ')}</tbody></table></div><div class="half"><h3>ΔΕΞΙΑ ►</h3><table><thead>${colHeader}</thead><tbody>${buildRows('ΔΕΞΙΑ')}</tbody></table></div></div><script>window.onload=()=>window.print();<\/script></body></html>`;
+    const html = `<!DOCTYPE html><html><head><meta charset="utf-8"><style>body{font-family:Arial,sans-serif;margin:6mm;color:#000;}h1{font-size:16px;margin-bottom:2px;font-weight:bold;}h2{font-size:11px;color:#555;margin-top:0;margin-bottom:8px;}.wrapper{display:flex;gap:8mm;}.half{flex:1;}.half h3{font-size:13px;font-weight:bold;background:#333;color:white;padding:5px 8px;margin-bottom:0;}table{width:100%;border-collapse:collapse;font-size:11px;table-layout:fixed;}th{padding:4px 6px;text-align:left;border-bottom:2px solid #000;overflow:hidden;}td{padding:3px 6px;border-bottom:1px solid #ddd;overflow:hidden;white-space:nowrap;}td:last-child{white-space:normal;}@media print{@page{size:A4 landscape;margin:6mm;}}</style></head><body><h1>STOCK ΣΑΣΙ (ΑΠΟΘΗΚΗ)</h1><h2>📅 ${dateStr}</h2><div class="wrapper"><div class="half"><h3>◄ ΑΡΙΣΤΕΡΗ</h3><table><thead>${colHeader}</thead><tbody>${buildRows('ΑΡΙΣΤΕΡΗ')}</tbody></table></div><div class="half"><h3>ΔΕΞΙΑ ►</h3><table><thead>${colHeader}</thead><tbody>${buildRows('ΔΕΞΙΑ')}</tbody></table></div></div></body></html>`;
     if (Platform.OS === 'web') {
-      const win = window.open('', '_blank');
-      if (!win) return Alert.alert('Σφάλμα','Επιτρέψτε τα pop-ups.');
-      win.document.write(html);
-      win.document.close();
+      const iframe = document.createElement('iframe');
+      iframe.style.position = 'absolute';
+      iframe.style.width = '0';
+      iframe.style.height = '0';
+      iframe.style.border = 'none';
+      document.body.appendChild(iframe);
+      const doc = iframe.contentWindow.document;
+      doc.open();
+      doc.write(html);
+      doc.close();
+      iframe.contentWindow.focus();
+      iframe.contentWindow.print();
+      setTimeout(() => document.body.removeChild(iframe), 1000);
     }
   };
 
   return (
-    <View style={{flex:1, backgroundColor:'#f5f5f5'}}>
+    <View style={{flex:1, backgroundColor:'#f5f5f5', flexDirection:'row'}}>
+      {/* ΚΥΡΙΑ ΠΕΡΙΟΧΗ - ΠΙΝΑΚΕΣ */}
       <ScrollView style={{flex:1, padding:10}}>
 
-        {/* ΑΡΙΣΤΕΡΗ — με κουμπί εκτύπωσης */}
-        <View style={[styles.sectionHeader, {flexDirection:'row', alignItems:'center', justifyContent:'space-between'}]}>
+        {/* ΑΡΙΣΤΕΡΗ */}
+        <View style={styles.sectionHeader}>
           <Text style={styles.sectionTitle}>◄ ΑΡΙΣΤΕΡΗ</Text>
-          <View style={{flexDirection:'row', gap:6}}>
-            <TouchableOpacity
-              style={{backgroundColor:'#e65100', paddingHorizontal:8, paddingVertical:5, borderRadius:6}}
-              onPress={handlePrintProd}>
-              <Text style={{color:'white', fontWeight:'bold', fontSize:11}}>🖨️ ΠΑΡΑΓΩΓΗ</Text>
-            </TouchableOpacity>
-            <TouchableOpacity
-              style={{backgroundColor:'white', paddingHorizontal:8, paddingVertical:5, borderRadius:6}}
-              onPress={handlePrint}>
-              <Text style={{color:'#1a1a1a', fontWeight:'bold', fontSize:11}}>🖨️ ΑΠΟΘΗΚΗ</Text>
-            </TouchableOpacity>
-          </View>
         </View>
         {renderTable('ΑΡΙΣΤΕΡΗ')}
 
@@ -302,6 +309,22 @@ export default function SasiScreen({ sasiStock={}, setSasiStock }) {
 
         <View style={{height:40}}/>
       </ScrollView>
+
+      {/* ΣΤΑΘΕΡΗ ΔΕΞΙΑ ΜΠΑΡΑ - ΚΟΥΜΠΙΑ ΕΚΤΥΠΩΣΗΣ */}
+      <View style={{width:110, backgroundColor:'#2c2c2c', padding:10, gap:10, justifyContent:'flex-start', alignItems:'center'}}>
+        <TouchableOpacity
+          style={{backgroundColor:'#e65100', paddingHorizontal:12, paddingVertical:14, borderRadius:8, width:'100%', alignItems:'center'}}
+          onPress={handlePrintProd}>
+          <Text style={{color:'white', fontWeight:'bold', fontSize:11, textAlign:'center'}}>🖨️</Text>
+          <Text style={{color:'white', fontWeight:'bold', fontSize:10, marginTop:4, textAlign:'center'}}>ΠΑΡΑΓΩΓΗ</Text>
+        </TouchableOpacity>
+        <TouchableOpacity
+          style={{backgroundColor:'white', paddingHorizontal:12, paddingVertical:14, borderRadius:8, width:'100%', alignItems:'center'}}
+          onPress={handlePrint}>
+          <Text style={{color:'#1a1a1a', fontWeight:'bold', fontSize:11, textAlign:'center'}}>🖨️</Text>
+          <Text style={{color:'#1a1a1a', fontWeight:'bold', fontSize:10, marginTop:4, textAlign:'center'}}>ΑΠΟΘΗΚΗ</Text>
+        </TouchableOpacity>
+      </View>
 
       {/* Modal επιλογής ΠΑΡΑΓΩΓΗ / ΑΠΟΘΗΚΗ */}
       <Modal visible={choiceModal.visible} transparent animationType="fade">
