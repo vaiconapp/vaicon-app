@@ -194,7 +194,7 @@ const DIPLI_PHASES = [
   { key:'montDoor', label:'⚫ ΜΟΝΤΑΡΙΣΜΑ/ΕΠΕΝΔΥΣΗ' },
 ];
 
-export default function CustomScreen({ customOrders, setCustomOrders, soldOrders, setSoldOrders, customers, onRequestAddCustomer, sasiStock={}, setSasiStock, caseStock={}, setCaseStock, sasiOrders=[], setSasiOrders, caseOrders=[], setCaseOrders, coatings=[], dipliSasiStock=[], setDipliSasiStock, locks=[], formOnly=false, forcedTab=null }) {
+export default function CustomScreen({ customOrders, setCustomOrders, soldOrders, setSoldOrders, customers, onRequestAddCustomer, sasiStock={}, setSasiStock, caseStock={}, setCaseStock, sasiOrders=[], setSasiOrders, caseOrders=[], setCaseOrders, coatings=[], dipliSasiStock=[], setDipliSasiStock, locks=[], formOnly=false, forcedTab=null, setTabIndex }) {
   const [expanded, setExpanded] = useState({ pending:false, prod:false, ready:false, archive:false, stdList:true, stdMoni:true, stdDipli:true, stdReady:true, stdSold:false, stdReadyD:true, stdSoldD:false, stdMoniOpen:true, stdDipliOpen:true, dipliProd:true, dipliSasiStock:false, moniProd:true, moniSasiStock:false, stdBuildMoni:true, stdBuildDipli:true });
   const [showHardwarePicker, setShowHardwarePicker] = useState(false);
   const [showLockPicker, setShowLockPicker] = useState(false);
@@ -222,6 +222,9 @@ export default function CustomScreen({ customOrders, setCustomOrders, soldOrders
   const [editConfirmModal, setEditConfirmModal] = useState({ visible: false, order: null });
   const [isSaving, setIsSaving] = useState(false);
   const [borrowModal, setBorrowModal] = useState({ visible: false, order: null, stockType: null, candidates: [] });
+  const [returnConfirmModal, setReturnConfirmModal] = useState({ visible: false, order: null });
+  const [saveConfirmModal, setSaveConfirmModal] = useState({ visible: false });
+  const [scrollPosition, setScrollPosition] = useState(0);
   const [borrowConfirmModal, setBorrowConfirmModal] = useState({ visible: false, candidate: null, order: null, stockType: null });
   const [borrowSuccessModal, setBorrowSuccessModal] = useState({ visible: false, message: '' });
   const [stockRefreshKey, setStockRefreshKey] = useState(0);
@@ -2330,6 +2333,76 @@ export default function CustomScreen({ customOrders, setCustomOrders, soldOrders
         onCancel={()=>setConfirmModal(m=>({...m,visible:false}))}
       />
 
+      {/* Modal επιβεβαίωσης ΕΠΙΣΤΡΟΦΗ */}
+      <Modal visible={returnConfirmModal.visible} transparent animationType="fade">
+        <View style={{flex:1, backgroundColor:'rgba(0,0,0,0.7)', justifyContent:'center', alignItems:'center'}}>
+          <View style={{backgroundColor:'white', borderRadius:16, padding:24, width:'85%', maxWidth:400}}>
+            <Text style={{fontSize:18, fontWeight:'bold', color:'#ff9800', marginBottom:8, textAlign:'center'}}>↩ Επιστροφή Παραγγελίας</Text>
+            <Text style={{fontSize:14, color:'#444', marginBottom:4, textAlign:'center'}}>
+              Παραγγελία <Text style={{fontWeight:'bold'}}>#{returnConfirmModal.order?.orderNo}</Text>
+            </Text>
+            <Text style={{fontSize:13, color:'#666', marginBottom:20, textAlign:'center'}}>
+              Θέλεις να επιστρέψεις την παραγγελία για διόρθωση;
+            </Text>
+            <TouchableOpacity
+              style={{backgroundColor:'#ff9800', padding:14, borderRadius:10, alignItems:'center', marginBottom:8}}
+              onPress={()=>{
+                const order = returnConfirmModal.order;
+                setReturnConfirmModal({visible:false, order:null});
+                editOrder(order);
+                // Αλλαγή tab στην καταχώρηση (index 0)
+                if (setTabIndex) {
+                  setTabIndex(0);
+                }
+                setTimeout(()=>{
+                  if(Platform.OS==='web') window.scrollTo({top:0, behavior:'smooth'});
+                  else mainScrollRef.current?.scrollTo({y:0, animated:true});
+                }, 150);
+              }}>
+              <Text style={{color:'white', fontWeight:'bold', fontSize:15}}>✅ ΕΠΙΒΕΒΑΙΩΣΗ</Text>
+            </TouchableOpacity>
+            <TouchableOpacity
+              style={{backgroundColor:'#f5f5f5', padding:14, borderRadius:10, alignItems:'center', borderWidth:1, borderColor:'#ddd'}}
+              onPress={()=>setReturnConfirmModal({visible:false, order:null})}>
+              <Text style={{color:'#555', fontWeight:'bold', fontSize:14}}>ΑΚΥΡΟ</Text>
+            </TouchableOpacity>
+          </View>
+        </View>
+      </Modal>
+
+      {/* Modal επιβεβαίωσης ΑΠΟΘΗΚΕΥΣΗ (όταν είναι σε editing mode) */}
+      <Modal visible={saveConfirmModal.visible} transparent animationType="fade">
+        <View style={{flex:1, backgroundColor:'rgba(0,0,0,0.7)', justifyContent:'center', alignItems:'center'}}>
+          <View style={{backgroundColor:'white', borderRadius:16, padding:24, width:'85%', maxWidth:400}}>
+            <Text style={{fontSize:18, fontWeight:'bold', color:'#8B0000', marginBottom:8, textAlign:'center'}}>💾 Αποθήκευση Αλλαγών</Text>
+            <Text style={{fontSize:14, color:'#444', marginBottom:20, textAlign:'center'}}>
+              Είσαι σίγουρος για τις αλλαγές;
+            </Text>
+            <TouchableOpacity
+              style={{backgroundColor:'#8B0000', padding:14, borderRadius:10, alignItems:'center', marginBottom:8}}
+              onPress={async()=>{
+                setSaveConfirmModal({visible:false});
+                await saveOrder();
+                // Επιστροφή στο αποθηκευμένο scroll position
+                setTimeout(()=>{
+                  if(Platform.OS==='web') {
+                    window.scrollTo({top:scrollPosition, behavior:'smooth'});
+                  } else {
+                    mainScrollRef.current?.scrollTo({y:scrollPosition, animated:true});
+                  }
+                }, 300);
+              }}>
+              <Text style={{color:'white', fontWeight:'bold', fontSize:15}}>✅ ΕΠΙΒΕΒΑΙΩΣΗ</Text>
+            </TouchableOpacity>
+            <TouchableOpacity
+              style={{backgroundColor:'#f5f5f5', padding:14, borderRadius:10, alignItems:'center', borderWidth:1, borderColor:'#ddd'}}
+              onPress={()=>setSaveConfirmModal({visible:false})}>
+              <Text style={{color:'#555', fontWeight:'bold', fontSize:14}}>ΑΚΥΡΟ</Text>
+            </TouchableOpacity>
+          </View>
+        </View>
+      </Modal>
+
       {/* Modal επιβεβαίωσης ΕΠΕΞΕΡΓΑΣΙΑ */}
       <Modal visible={editConfirmModal.visible} transparent animationType="fade">
         <View style={{flex:1, backgroundColor:'rgba(0,0,0,0.7)', justifyContent:'center', alignItems:'center'}}>
@@ -2865,33 +2938,50 @@ export default function CustomScreen({ customOrders, setCustomOrders, soldOrders
 
           
 
-          <TouchableOpacity style={[styles.saveBtn,{backgroundColor:'#8B0000'}]} onPress={()=>{
-            Keyboard.dismiss();
-            saveOrder();
-          }}>
-            <Text style={{color:'white',fontWeight:'bold',fontSize:15}}>
-              📐 ΑΠΟΘΗΚΕΥΣΗ ΠΑΡΑΓΓΕΛΙΑΣ
-            </Text>
-          </TouchableOpacity>
+          {/* Κουμπιά αποθήκευσης — διαφορετικά για editing mode */}
+          {editingOrder ? (
+            <View style={{flexDirection:'row', gap:8, marginTop:4}}>
+              <TouchableOpacity
+                style={[styles.saveBtn, {flex:1, backgroundColor:'#888'}]}
+                onPress={()=>{
+                  Keyboard.dismiss();
+                  resetForm();
+                  // Επιστροφή στο αποθηκευμένο scroll position
+                  setTimeout(()=>{
+                    if(Platform.OS==='web') {
+                      window.scrollTo({top:scrollPosition, behavior:'smooth'});
+                    } else {
+                      mainScrollRef.current?.scrollTo({y:scrollPosition, animated:true});
+                    }
+                  }, 150);
+                }}>
+                <Text style={{color:'white', fontWeight:'bold', fontSize:15}}>✕ ΑΚΥΡΟ</Text>
+              </TouchableOpacity>
+              <TouchableOpacity
+                style={[styles.saveBtn, {flex:1, backgroundColor:'#8B0000'}]}
+                onPress={()=>{
+                  Keyboard.dismiss();
+                  setSaveConfirmModal({visible:true});
+                }}>
+                <Text style={{color:'white', fontWeight:'bold', fontSize:15}}>💾 ΑΠΟΘΗΚΕΥΣΗ</Text>
+              </TouchableOpacity>
+            </View>
+          ) : (
+            <TouchableOpacity
+              style={[styles.saveBtn, {backgroundColor:'#8B0000'}]}
+              onPress={()=>{
+                Keyboard.dismiss();
+                saveOrder();
+              }}>
+              <Text style={{color:'white', fontWeight:'bold', fontSize:15}}>📐 ΑΠΟΘΗΚΕΥΣΗ ΠΑΡΑΓΓΕΛΙΑΣ</Text>
+            </TouchableOpacity>
+          )}
 
 
           {/* ΠΑΡΑΓΓΕΛΙΕΣ ΤΥΠΟΠΟΙΗΜΕΝΩΝ — κρύβεται όταν formOnly */}
           </>)}
           {!formOnly && (<>
             <Text style={styles.mainTitle}>ΠΑΡΑΓΓΕΛΙΕΣ ΤΥΠΟΠΟΙΗΜΕΝΩΝ</Text>
-            {/* Editing mode banner */}
-            {editingOrder && (
-              <View style={{alignSelf:'flex-start', width:'25%', backgroundColor:'#1565C0', borderRadius:10, padding:8, marginBottom:8}}>
-                <Text style={{fontSize:11}}>✏️</Text>
-                <Text style={{color:'white', fontWeight:'bold', fontSize:11, marginTop:2}}>ΕΠΕΞΕΡΓΑΣΙΑ</Text>
-                <Text style={{color:'#bbdefb', fontSize:9, marginTop:1}}>#{editingOrder.orderNo}</Text>
-                <TouchableOpacity
-                  style={{backgroundColor:'#ff4444', paddingHorizontal:6, paddingVertical:4, borderRadius:6, marginTop:6, alignItems:'center'}}
-                  onPress={resetForm}>
-                  <Text style={{color:'white', fontWeight:'bold', fontSize:10}}>✕ ΑΚΥΡΟ</Text>
-                </TouchableOpacity>
-              </View>
-            )}
 
             {/* Wrapper που μπλοκάρει τις παραγγελίες κατά την επεξεργασία */}
             <View pointerEvents={editingOrder ? 'none' : 'auto'} style={editingOrder ? {opacity:0.35, borderRadius:10, overflow:'hidden'} : {}}>
@@ -2969,6 +3059,24 @@ export default function CustomScreen({ customOrders, setCustomOrders, soldOrders
                             {!sasiOk&&sasiActive&&<Text style={{fontSize:7, color:'#ff4444', fontWeight:'bold'}}>πάτα</Text>}
                           </TouchableOpacity>
                         </View>
+
+                        {/* ΕΠΙΣΤΡΟΦΗ */}
+                        <TouchableOpacity
+                          style={{backgroundColor:'#ff9800', paddingHorizontal:8, paddingVertical:3, borderRadius:5, alignSelf:'stretch', alignItems:'center'}}
+                          onPress={()=>{
+                            // Αποθηκεύω scroll position
+                            if(Platform.OS==='web') {
+                              setScrollPosition(window.pageYOffset || document.documentElement.scrollTop);
+                            } else {
+                              mainScrollRef.current?.measure((x, y, width, height, pageX, pageY) => {
+                                setScrollPosition(pageY);
+                              });
+                            }
+                            // Ανοίγω confirmation modal
+                            setReturnConfirmModal({ visible: true, order: o });
+                          }}>
+                          <Text style={{color:'white', fontSize:10, fontWeight:'bold'}}>↩ ΕΠΙΣΤΡ</Text>
+                        </TouchableOpacity>
 
                         {/* ΔΙΑΓΡΑΦΗ */}
                         <TouchableOpacity
@@ -3644,6 +3752,24 @@ export default function CustomScreen({ customOrders, setCustomOrders, soldOrders
                                     </TouchableOpacity>
                                   )}
                                 </View>
+                                {/* ΕΠΙΣΤΡΟΦΗ */}
+                                <TouchableOpacity
+                                  style={{backgroundColor:'#ff9800', paddingHorizontal:8, paddingVertical:3, borderRadius:5, alignItems:'center'}}
+                                  onPress={()=>{
+                                    // Αποθηκεύω scroll position
+                                    if(Platform.OS==='web') {
+                                      setScrollPosition(window.pageYOffset || document.documentElement.scrollTop);
+                                    } else {
+                                      mainScrollRef.current?.measure((x, y, width, height, pageX, pageY) => {
+                                        setScrollPosition(pageY);
+                                      });
+                                    }
+                                    // Ανοίγω confirmation modal
+                                    setReturnConfirmModal({ visible: true, order: o });
+                                  }}>
+                                  <Text style={{color:'white', fontSize:10, fontWeight:'bold'}}>↩ ΕΠΙΣΤΡ</Text>
+                                </TouchableOpacity>
+
                                 <TouchableOpacity
                                   style={{backgroundColor:'#ff4444', paddingHorizontal:8, paddingVertical:3, borderRadius:5, alignItems:'center'}}
                                   onPress={async()=>{
@@ -4170,6 +4296,25 @@ export default function CustomScreen({ customOrders, setCustomOrders, soldOrders
                                   <Text style={{fontSize:14}}>{hasCaseOk?'✅':'❌'}</Text>
                                   {!hasCaseOk&&<Text style={{fontSize:7, color:'#ff4444', fontWeight:'bold'}}>πάτα</Text>}
                                 </TouchableOpacity>
+
+                                {/* ΕΠΙΣΤΡΟΦΗ */}
+                                <TouchableOpacity
+                                  style={{backgroundColor:'#ff9800', paddingHorizontal:8, paddingVertical:3, borderRadius:5, alignItems:'center'}}
+                                  onPress={()=>{
+                                    // Αποθηκεύω scroll position
+                                    if(Platform.OS==='web') {
+                                      setScrollPosition(window.pageYOffset || document.documentElement.scrollTop);
+                                    } else {
+                                      mainScrollRef.current?.measure((x, y, width, height, pageX, pageY) => {
+                                        setScrollPosition(pageY);
+                                      });
+                                    }
+                                    // Ανοίγω confirmation modal
+                                    setReturnConfirmModal({ visible: true, order: o });
+                                  }}>
+                                  <Text style={{color:'white', fontSize:10, fontWeight:'bold'}}>↩ ΕΠΙΣΤΡ</Text>
+                                </TouchableOpacity>
+
                                 <TouchableOpacity
                                   style={{backgroundColor:'#ff4444', paddingHorizontal:8, paddingVertical:3, borderRadius:5, alignItems:'center'}}
                                   onPress={async()=>{
