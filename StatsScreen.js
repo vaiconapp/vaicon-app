@@ -3,13 +3,11 @@ import { StyleSheet, Text, View, ScrollView, TouchableOpacity } from 'react-nati
 
 const PERIODS = ['ΣΗΜΕΡΑ', 'ΕΒΔΟΜΑΔΑ', 'ΜΗΝΑΣ', 'ΟΛΕΣ'];
 
-export default function StatsScreen({ customOrders, soldOrders, sasiOrders, soldSasiOrders, caseOrders, soldCaseOrders }) {
+export default function StatsScreen({ customOrders, soldOrders, sasiOrders, soldSasiOrders }) {
   const [period, setPeriod] = useState('ΜΗΝΑΣ');
 
   sasiOrders = sasiOrders || [];
   soldSasiOrders = soldSasiOrders || [];
-  caseOrders = caseOrders || [];
-  soldCaseOrders = soldCaseOrders || [];
 
   // Πόρτες = ειδικές + σασι. Κάσες ΔΕΝ μετράνε στα στατιστικά
   const allOrders = [...customOrders, ...soldOrders, ...sasiOrders, ...soldSasiOrders];

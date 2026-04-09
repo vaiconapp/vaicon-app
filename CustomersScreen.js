@@ -10,7 +10,7 @@ const fmtDate = (ts) => {
 
 const INIT = { name: '', phone: '', identifier: '' };
 
-export default function CustomersScreen({ customers, setCustomers, onClose, prefillName, onCustomerAdded, customOrders=[], allOrders=[], setCustomOrders, setSoldOrders }) {
+export default function CustomersScreen({ customers, setCustomers, onClose, prefillName, onCustomerAdded, allOrders=[], setCustomOrders, setSoldOrders }) {
   const [form, setForm] = useState(prefillName ? { name: prefillName, phone: '', identifier: '' } : INIT);
   const [editingId, setEditingId] = useState(null);
   const [search, setSearch] = useState('');

@@ -298,7 +298,7 @@ export default function App() {
           </View>
           {view === 'sasi'   && <SasiScreen sasiStock={sasiStock} setSasiStock={setSasiStock} />}
           {view === 'cases'  && <CaseScreen caseStock={caseStock} setCaseStock={setCaseStock} />}
-          {view === 'stats'  && <StatsScreen customOrders={customOrders} soldOrders={soldOrders} sasiOrders={sasiOrders} soldSasiOrders={soldSasiOrders} caseOrders={caseOrders} soldCaseOrders={soldCaseOrders} />}
+          {view === 'stats'  && <StatsScreen customOrders={customOrders} soldOrders={soldOrders} sasiOrders={sasiOrders} soldSasiOrders={soldSasiOrders} />}
         </View>
 
         {/* HAMBURGER MENU */}
@@ -359,7 +359,6 @@ export default function App() {
           <CustomersScreen
             customers={customers}
             setCustomers={setCustomers}
-            customOrders={[...customOrders, ...soldOrders]}
             allOrders={[...customOrders, ...soldOrders]}
             setCustomOrders={setCustomOrders}
             setSoldOrders={setSoldOrders}
