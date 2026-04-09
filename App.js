@@ -1,8 +1,8 @@
 import React, { useState, useEffect, useRef } from 'react';
 import {
   StyleSheet, Text, View, ActivityIndicator, Platform, UIManager,
-  StatusBar, TouchableOpacity, ScrollView, Modal, TextInput,
-  Animated, PanResponder, Dimensions, Alert, BackHandler
+  StatusBar, TouchableOpacity, Modal, TextInput,
+  PanResponder, Alert, BackHandler
 } from 'react-native';
 import CustomScreen from './CustomScreen';
 import SasiScreen from './SasiScreen';
