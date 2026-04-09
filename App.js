@@ -378,24 +378,8 @@ export default function App() {
 }
 
 const styles = StyleSheet.create({
-  container: { flex: 1, backgroundColor: '#f5f5f5' },
   loading: { flex: 1, justifyContent: 'center', alignItems: 'center', gap: 12 },
   loadingText: { color: '#555', fontSize: 14 },
-  // Παλιά header styles (κρατάμε για συμβατότητα)
-  header: { backgroundColor: '#1565C0', paddingVertical: 8, paddingHorizontal: 10, flexDirection: 'row', alignItems: 'center', gap: 6 },
-  headerTitle: { color: '#FFD600', fontSize: 18, fontWeight: '900', fontStyle: 'italic', letterSpacing: 3 },
-  headerTabs: { flex: 1, flexDirection: 'row', gap: 4 },
-  headerTabBtn: { flex: 1, paddingVertical: 6, paddingHorizontal: 2, borderRadius: 6, backgroundColor: 'rgba(0,0,0,0.1)', alignItems: 'center' },
-  headerTabActive: { backgroundColor: '#1a1a1a' },
-  headerTabTxt: { color: 'rgba(0,0,0,0.6)', fontSize: 11, fontWeight: '700' },
-  headerTabTxtActive: { color: 'white' },
-  menuBtn: { padding: 4 },
-  menuIcon: { color: '#1a1a1a', fontSize: 22 },
-  nav: { flexDirection: 'row', backgroundColor: '#fff', borderBottomWidth: 1, borderColor: '#ddd' },
-  navBtn: { flex: 1, paddingVertical: 14, alignItems: 'center' },
-  activeNav: { borderBottomWidth: 3, borderBottomColor: '#1565C0' },
-  navText: { fontWeight: '700', fontSize: 13, color: '#888' },
-  activeNavText: { color: '#1565C0' },
   menuOverlay: { flex: 1, backgroundColor: 'rgba(0,0,0,0.5)', justifyContent: 'flex-start', alignItems: 'flex-end' },
   menuPanel: { backgroundColor: '#fff', width: 220, marginTop: 80, marginRight: 10, borderRadius: 12, padding: 16, elevation: 10 },
   menuTitle: { fontSize: 12, fontWeight: 'bold', color: '#999', marginBottom: 12, letterSpacing: 2 },
@@ -414,5 +398,4 @@ const styles = StyleSheet.create({
   sidebarIcon: { fontSize: 26 },
   sidebarLabel: { color: 'rgba(255,255,255,0.5)', fontSize: 16, fontWeight: '700', flex: 1 },
   sidebarLabelActive: { color: 'white' },
-  sidebarMenuBtn: { width: '100%', alignItems: 'center', paddingVertical: 14, borderTopWidth: 1, borderTopColor: 'rgba(255,255,255,0.1)', marginTop: 4 },
 });
