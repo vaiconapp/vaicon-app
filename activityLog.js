@@ -43,11 +43,15 @@ export const cleanOldLogs = async () => {
     const data = await res.json();
     if (!data) return;
     const cutoff = Date.now() - 7 * 24 * 60 * 60 * 1000;
+    const toDelete = {};
     for (const key of Object.keys(data)) {
-      if (data[key].ts < cutoff) {
-        await fetch(`${FIREBASE_URL}/activity_log/${key}.json`, { method: 'DELETE' });
-      }
+      if (data[key].ts < cutoff) toDelete[key] = null;
     }
+    if (Object.keys(toDelete).length === 0) return;
+    await fetch(`${FIREBASE_URL}/activity_log.json`, {
+      method: 'PATCH',
+      body: JSON.stringify(toDelete),
+    });
   } catch(e) {}
 };
 
