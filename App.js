@@ -14,8 +14,6 @@ import LocksScreen from './LocksScreen';
 import ActivityScreen from './ActivityScreen';
 import { FIREBASE_URL } from './firebaseConfig';
 
-export { FIREBASE_URL };
-
 // ============================================================
 //  🔐 ΚΩΔΙΚΟΣ ΠΡΟΣΒΑΣΗΣ — αλλάξτε εδώ τον κωδικό σας
 // ============================================================

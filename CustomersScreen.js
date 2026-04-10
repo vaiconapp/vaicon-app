@@ -1,12 +1,7 @@
 import React, { useState } from 'react';
 import { StyleSheet, Text, View, ScrollView, TouchableOpacity, TextInput, Alert, Modal } from 'react-native';
-import { FIREBASE_URL } from './App';
-
-const fmtDate = (ts) => {
-  if (!ts) return '';
-  const d = new Date(ts);
-  return `${String(d.getDate()).padStart(2,'0')}/${String(d.getMonth()+1).padStart(2,'0')}/${d.getFullYear()}`;
-};
+import { FIREBASE_URL } from './firebaseConfig';
+import { fmtDate } from './utils';
 
 const INIT = { name: '', phone: '', identifier: '' };
 

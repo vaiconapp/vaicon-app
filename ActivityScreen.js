@@ -1,7 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import { StyleSheet, Text, View, ScrollView, TouchableOpacity, Alert } from 'react-native';
 import { loadActivityLog, cleanOldLogs, fmtDateTime } from './activityLog';
-import { FIREBASE_URL as FB_URL } from './App';
+import { FIREBASE_URL as FB_URL } from './firebaseConfig';
 
 const SECTION_COLORS = {
   'ΕΙΔΙΚΗ':        '#8B0000',

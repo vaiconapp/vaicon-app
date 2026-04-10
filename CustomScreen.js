@@ -1,8 +1,9 @@
 import React, { useState, useRef, useEffect } from 'react';
 import { StyleSheet, Text, View, ScrollView, TouchableOpacity, TextInput, Alert, LayoutAnimation, Modal, Dimensions, Platform, Keyboard } from 'react-native';
 const SCREEN_WIDTH = Dimensions.get('window').width;
-import { FIREBASE_URL } from './App';
+import { FIREBASE_URL } from './firebaseConfig';
 import { logActivity } from './activityLog';
+import { fmtDate, fmtDateTime } from './utils';
 import * as Print from 'expo-print';
 import * as Sharing from 'expo-sharing';
 
@@ -80,8 +81,6 @@ const stockAvailable = (stockMap, key) => {
   return (parseInt(entry.qty)||0) - reserved;
 };
 
-const fmtDate = (ts) => { if (!ts) return null; const d = new Date(ts); return `${String(d.getDate()).padStart(2,'0')}/${String(d.getMonth()+1).padStart(2,'0')}/${d.getFullYear()}`; };
-const fmtDateTime = (ts) => { if (!ts) return null; const d = new Date(ts); return `${String(d.getDate()).padStart(2,'0')}/${String(d.getMonth()+1).padStart(2,'0')}/${d.getFullYear()} ${String(d.getHours()).padStart(2,'0')}:${String(d.getMinutes()).padStart(2,'0')}`; };
 
 const STD_HEIGHTS = ['208','213','218','223'];
 const STD_WIDTHS  = ['83','88','93','98'];

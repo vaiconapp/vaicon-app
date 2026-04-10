@@ -1,6 +1,6 @@
 import React, { useState } from 'react';
 import { StyleSheet, Text, View, ScrollView, TouchableOpacity, TextInput, Alert } from 'react-native';
-import { FIREBASE_URL } from './App';
+import { FIREBASE_URL } from './firebaseConfig';
 
 export default function LocksScreen({ locks, setLocks, onClose }) {
   const [form, setForm] = useState('');

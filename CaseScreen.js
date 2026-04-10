@@ -1,6 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { StyleSheet, Text, View, ScrollView, TouchableOpacity, TextInput, Alert, Modal, Platform } from 'react-native';
-import { FIREBASE_URL } from './App';
+import { FIREBASE_URL } from './firebaseConfig';
 import { logActivity } from './activityLog';
 
 const HEIGHTS = ['208', '213', '218', '223'];
