@@ -17,11 +17,11 @@ export default function CustomersScreen({ customers, setCustomers, onClose, pref
     if (order.status==='STD_PENDING') return { label:'📐 Τυποποιημένη', color:'#8B0000' };
     if (order.status==='READY') return { label:'✅ Έτοιμη Αποθήκης', color:'#00C851' };
     if (order.status==='PROD') {
-      const activePhasesLabels = ['laser','cases','sasi','mounting','painting']
+      const activePhasesLabels = ['laser','cases','montSasi','vafio','montDoor']
         .map(k => order.phases?.[k])
         .filter(p => p?.active && !p?.done)
         .map(p => p?.label||'');
-      const doneCount = ['laser','cases','sasi','mounting','painting'].filter(k=>order.phases?.[k]?.done).length;
+      const doneCount = ['laser','cases','montSasi','vafio','montDoor'].filter(k=>order.phases?.[k]?.done).length;
       return { label:`🔨 Παραγωγή (${doneCount} φάσεις done)`, color:'#ffbb33' };
     }
     return { label:'—', color:'#999' };
