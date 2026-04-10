@@ -10,8 +10,14 @@ export default function StatsScreen({ customOrders, soldOrders, sasiOrders, sold
   soldSasiOrders = soldSasiOrders || [];
 
   // Πόρτες = ειδικές + σασι. Κάσες ΔΕΝ μετράνε στα στατιστικά
-  const allOrders = [...customOrders, ...soldOrders, ...sasiOrders, ...soldSasiOrders];
-  const allSold = [...soldOrders, ...soldSasiOrders];
+  const allOrders = useMemo(
+    () => [...customOrders, ...soldOrders, ...sasiOrders, ...soldSasiOrders],
+    [customOrders, soldOrders, sasiOrders, soldSasiOrders]
+  );
+  const allSold = useMemo(
+    () => [...soldOrders, ...soldSasiOrders],
+    [soldOrders, soldSasiOrders]
+  );
 
   const now = Date.now();
   const periodMs = {
