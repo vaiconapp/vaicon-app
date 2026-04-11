@@ -25,7 +25,7 @@ export default function LocksScreen({ locks, setLocks, onClose }) {
         const matchExact = order.lock === oldName;
         const matchWithType = order.lock.startsWith(oldName + ' (');
         if (matchExact || matchWithType) {
-          const suffix = order.lock.slice(oldName.length); // "" ή " (type)"
+          const suffix = order.lock.slice(oldName.length);
           patch[id] = { ...order, lock: newName + suffix };
         }
       }

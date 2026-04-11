@@ -39,7 +39,6 @@ export default function CoatingsScreen({ coatings, setCoatings, onClose }) {
     const swapIndex = index + direction;
     if (swapIndex < 0 || swapIndex >= newList.length) return;
     [newList[index], newList[swapIndex]] = [newList[swapIndex], newList[index]];
-    // Αποθήκευση νέας σειράς με order field
     const withOrder = newList.map((c, i) => ({ ...c, order: i }));
     setCoatings(withOrder);
     await Promise.all(withOrder.map(c => fetch(`${FIREBASE_URL}/coatings/${c.id}.json`, { method: 'PATCH', body: JSON.stringify({ order: c.order }) })));
@@ -82,11 +81,10 @@ export default function CoatingsScreen({ coatings, setCoatings, onClose }) {
     ]);
   };
 
-  // Αυτόματο χρώμα βάσει ονόματος
   const getCoatingBg = (name) => {
     const n = name?.toLowerCase() || '';
-    if (n.includes('μέσα') || n.includes('μεσα')) return '#E8F4FD'; // ανοιχτό μπλε = ΜΕΣΑ
-    if (n.includes('έξω') || n.includes('εξω')) return '#FFF3E0';   // ανοιχτό πορτοκαλί = ΕΞΩ
+    if (n.includes('μέσα') || n.includes('μεσα')) return '#E8F4FD';
+    if (n.includes('έξω') || n.includes('εξω')) return '#FFF3E0';
     return '#ffffff';
   };
 
@@ -96,6 +94,7 @@ export default function CoatingsScreen({ coatings, setCoatings, onClose }) {
     if (n.includes('έξω') || n.includes('εξω')) return '#FFCC80';
     return '#007AFF';
   };
+
   const sorted = [...coatings].sort((a, b) => (a.order ?? a.createdAt) - (b.order ?? b.createdAt));
   const filtered = sorted.filter(c => c.name.toLowerCase().includes(search.toLowerCase()));
 
