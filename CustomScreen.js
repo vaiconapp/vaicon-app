@@ -6,6 +6,7 @@ import { logActivity } from './activityLog';
 import { fmtDate, fmtDateTime } from './utils';
 import { sasiKey, caseKey, stockAvailable } from './stockUtils';
 import { SellModal, ConfirmModal, DuplicateModal } from './CustomFormModals';
+import { HardwarePickerModal, LockPickerModal, CoatingsPickerModal, DatePickerModal } from './CustomPickers';
 import { printHTML, buildPrintHTML } from './printUtils';
 
 // ── Helpers για νέο stock σύστημα ──
@@ -4055,212 +4056,48 @@ export default function CustomScreen({ customOrders, setCustomOrders, soldOrders
       </Modal>
 
       {/* MODAL ΧΡΩΜΑ ΕΞΑΡΤΗΜΑΤΩΝ */}
-      <Modal visible={showHardwarePicker} transparent animationType="slide" onRequestClose={()=>setShowHardwarePicker(false)}>
-        <View style={{flex:1,backgroundColor:'rgba(0,0,0,0.5)',justifyContent:'flex-end'}}>
-          <View style={{backgroundColor:'#fff',borderTopLeftRadius:16,borderTopRightRadius:16}}>
-            <View style={{backgroundColor:'#8B0000',padding:16,borderTopLeftRadius:16,borderTopRightRadius:16,flexDirection:'row',justifyContent:'space-between',alignItems:'center'}}>
-              <Text style={{color:'white',fontWeight:'bold',fontSize:16}}>Χρώμα Εξαρτημάτων</Text>
-              <TouchableOpacity onPress={()=>setShowHardwarePicker(false)}>
-                <Text style={{color:'white',fontSize:20,fontWeight:'bold'}}>✕</Text>
-              </TouchableOpacity>
-            </View>
-            {['Nikel','Bronze','Nikel Best','Bronze Best','Best Παραγγελία',''].map((c,i)=>(
-              <TouchableOpacity key={i}
-                style={{padding:16,borderBottomWidth:1,borderBottomColor:'#eee',flexDirection:'row',alignItems:'center',justifyContent:'space-between'}}
-                onPress={()=>{
-                  if(c===''){
-                    setShowCustomHardwareInput(true);
-                    setCustomHardwareText('');
-                  } else {
-                    setCustomForm({...customForm,hardware:c});
-                    setShowCustomHardwareInput(false);
-                    setShowHardwarePicker(false);
-                  }
-                }}>
-                <Text style={{fontSize:15,color:c?'#000':'#888'}}>{c||'Άλλο (γράψτε εδώ)...'}</Text>
-                {customForm.hardware===c&&c!==''&&<Text style={{color:'#00C851',fontSize:18}}>✓</Text>}
-              </TouchableOpacity>
-            ))}
-            {showCustomHardwareInput&&(
-              <View style={{padding:12}}>
-                <TextInput
-                  autoFocus
-                  style={{backgroundColor:'#f5f5f5',padding:12,borderRadius:8,borderWidth:1,borderColor:'#8B0000',fontSize:15}}
-                  placeholder="Γράψτε χρώμα εξαρτημάτων..."
-                  value={customHardwareText}
-                  onChangeText={v=>setCustomHardwareText(v)}
-                  returnKeyType="done"
-                />
-                <TouchableOpacity
-                  style={{backgroundColor:'#8B0000',padding:12,borderRadius:8,alignItems:'center',marginTop:8}}
-                  onPress={()=>{
-                    if(customHardwareText.trim()){
-                      setCustomForm({...customForm,hardware:customHardwareText.trim()});
-                    }
-                    setShowCustomHardwareInput(false);
-                    setShowHardwarePicker(false);
-                  }}>
-                  <Text style={{color:'white',fontWeight:'bold'}}>ΟΚ</Text>
-                </TouchableOpacity>
-              </View>
-            )}
-            <View style={{height:20}}/>
-          </View>
-        </View>
-      </Modal>
+      <HardwarePickerModal
+        visible={showHardwarePicker}
+        onClose={()=>setShowHardwarePicker(false)}
+        customForm={customForm}
+        setCustomForm={setCustomForm}
+        showCustomHardwareInput={showCustomHardwareInput}
+        setShowCustomHardwareInput={setShowCustomHardwareInput}
+        customHardwareText={customHardwareText}
+        setCustomHardwareText={setCustomHardwareText}
+      />
 
       {/* MODAL ΚΛΕΙΔΑΡΙΕΣ */}
-      <Modal visible={showLockPicker} transparent animationType="slide" onRequestClose={()=>setShowLockPicker(false)}>
-        <View style={{flex:1,backgroundColor:'rgba(0,0,0,0.5)',justifyContent:'flex-end'}}>
-          <View style={{backgroundColor:'#fff',borderTopLeftRadius:16,borderTopRightRadius:16,maxHeight:'60%'}}>
-            <View style={{backgroundColor:'#8B0000',padding:16,borderTopLeftRadius:16,borderTopRightRadius:16,flexDirection:'row',justifyContent:'space-between',alignItems:'center'}}>
-              <Text style={{color:'white',fontWeight:'bold',fontSize:16}}>🔒 Κλειδαριά</Text>
-              <TouchableOpacity onPress={()=>setShowLockPicker(false)}>
-                <Text style={{color:'white',fontSize:20,fontWeight:'bold'}}>✕</Text>
-              </TouchableOpacity>
-            </View>
-            <ScrollView>
-              <TouchableOpacity
-                style={{padding:16,borderBottomWidth:1,borderBottomColor:'#eee',flexDirection:'row',alignItems:'center',justifyContent:'space-between'}}
-                onPress={()=>{setCustomForm({...customForm,lock:''});setShowLockPicker(false);}}>
-                <Text style={{fontSize:15,color:'#888'}}>— Χωρίς κλειδαριά</Text>
-                {!customForm.lock&&<Text style={{color:'#00C851',fontSize:18}}>✓</Text>}
-              </TouchableOpacity>
-              {(locks||[]).map(l=>(
-                <TouchableOpacity key={l.id}
-                  style={{padding:16,borderBottomWidth:1,borderBottomColor:'#eee',flexDirection:'row',alignItems:'center',justifyContent:'space-between'}}
-                  onPress={()=>{setCustomForm({...customForm,lock:l.name+(l.type?' ('+l.type+')':'')});setShowLockPicker(false);}}>
-                  <View>
-                    <Text style={{fontSize:15,color:'#000',fontWeight:'600'}}>{l.name}</Text>
-                    {l.type?<Text style={{fontSize:12,color:'#666'}}>{l.type}</Text>:null}
-                  </View>
-                  {customForm.lock===l.name+(l.type?' ('+l.type+')':'')&&<Text style={{color:'#00C851',fontSize:18}}>✓</Text>}
-                </TouchableOpacity>
-              ))}
-              {(locks||[]).length===0&&<Text style={{textAlign:'center',color:'#aaa',padding:24}}>Δεν υπάρχουν καταχωρημένες κλειδαριές.</Text>}
-            </ScrollView>
-            <View style={{height:20}}/>
-          </View>
-        </View>
-      </Modal>
+      <LockPickerModal
+        visible={showLockPicker}
+        onClose={()=>setShowLockPicker(false)}
+        customForm={customForm}
+        setCustomForm={setCustomForm}
+        locks={locks}
+      />
 
       {/* MODAL ΕΠΕΝΔΥΣΕΙΣ */}
-      <Modal visible={showCoatingsPicker} transparent animationType="slide" onRequestClose={()=>setShowCoatingsPicker(false)}>
-        <View style={{flex:1,backgroundColor:'rgba(0,0,0,0.5)',justifyContent:'flex-end'}}>
-          <View style={{backgroundColor:'#fff',borderTopLeftRadius:16,borderTopRightRadius:16,maxHeight:'60%'}}>
-            <View style={{backgroundColor:'#007AFF',padding:16,borderTopLeftRadius:16,borderTopRightRadius:16,flexDirection:'row',justifyContent:'space-between',alignItems:'center'}}>
-              <Text style={{color:'white',fontWeight:'bold',fontSize:16}}>🎨 Επένδυση Πόρτας</Text>
-              <TouchableOpacity onPress={()=>setShowCoatingsPicker(false)}>
-                <Text style={{color:'white',fontSize:20,fontWeight:'bold'}}>✕</Text>
-              </TouchableOpacity>
-            </View>
-            <ScrollView>
-              {coatings.length===0 && (
-                <Text style={{padding:20,color:'#aaa',textAlign:'center'}}>Δεν υπάρχουν επενδύσεις. Προσθέστε από το μενού ☰.</Text>
-              )}
-              {coatings.map(c=>{
-                const selected = (customForm.coatings||[]).includes(c.name);
-                const n = c.name?.toLowerCase()||'';
-                const bg = n.includes('μέσα')||n.includes('μεσα') ? '#E8F4FD' : n.includes('έξω')||n.includes('εξω') ? '#FFF3E0' : '#fff';
-                return (
-                  <TouchableOpacity key={c.id}
-                    style={{padding:16,borderBottomWidth:1,borderBottomColor:'#eee',flexDirection:'row',alignItems:'center',justifyContent:'space-between', backgroundColor: bg}}
-                    onPress={()=>{
-                      const current = customForm.coatings||[];
-                      const updated = selected ? current.filter(x=>x!==c.name) : [...current,c.name];
-                      setCustomForm({...customForm,coatings:updated});
-                      if (!selected && updated.length >= 2) {
-                        setTimeout(()=>setShowCoatingsPicker(false), 150);
-                      }
-                    }}>
-                    <Text style={{fontSize:15,color:'#000'}}>{c.name}</Text>
-                    {selected && <Text style={{color:'#007AFF',fontSize:18,fontWeight:'bold'}}>✓</Text>}
-                  </TouchableOpacity>
-                );
-              })}
-              {/* Κουμπί εκκαθάρισης */}
-              {(customForm.coatings||[]).length>0&&(
-                <TouchableOpacity
-                  style={{margin:12,padding:12,backgroundColor:'#ff4444',borderRadius:8,alignItems:'center'}}
-                  onPress={()=>setCustomForm({...customForm,coatings:[]})}>
-                  <Text style={{color:'white',fontWeight:'bold'}}>ΕΚΚΑΘΑΡΙΣΗ ΕΠΙΛΟΓΩΝ</Text>
-                </TouchableOpacity>
-              )}
-            </ScrollView>
-            <TouchableOpacity
-              style={{margin:12,padding:14,backgroundColor:'#007AFF',borderRadius:8,alignItems:'center'}}
-              onPress={()=>setShowCoatingsPicker(false)}>
-              <Text style={{color:'white',fontWeight:'bold',fontSize:15}}>ΟΛΟΚΛΗΡΩΣΗ</Text>
-            </TouchableOpacity>
-          </View>
-        </View>
-      </Modal>
+      <CoatingsPickerModal
+        visible={showCoatingsPicker}
+        onClose={()=>setShowCoatingsPicker(false)}
+        customForm={customForm}
+        setCustomForm={setCustomForm}
+        coatings={coatings}
+      />
 
       {/* MODAL ΗΜΕΡΟΜΗΝΙΑ ΠΑΡΑΔΟΣΗΣ */}
-      <Modal visible={showDatePicker} transparent animationType="slide" onRequestClose={()=>setShowDatePicker(false)}>
-        <View style={{flex:1,backgroundColor:'rgba(0,0,0,0.5)',justifyContent:'flex-end'}}>
-          <View style={{backgroundColor:'#fff',borderTopLeftRadius:16,borderTopRightRadius:16,padding:16}}>
-            <View style={{flexDirection:'row',justifyContent:'space-between',alignItems:'center',marginBottom:16}}>
-              <Text style={{fontWeight:'bold',fontSize:16}}>📅 Ημερομηνία Παράδοσης</Text>
-              <TouchableOpacity onPress={()=>setShowDatePicker(false)}>
-                <Text style={{fontSize:20,fontWeight:'bold',color:'#888'}}>✕</Text>
-              </TouchableOpacity>
-            </View>
-            {(()=>{
-              const months = ['ΙΑΝ','ΦΕΒ','ΜΑΡ','ΑΠΡ','ΜΑΙ','ΙΟΥΝ','ΙΟΥΛ','ΑΥΓ','ΣΕΠ','ΟΚΤ','ΝΟΕ','ΔΕΚ'];
-              const now = new Date();
-              const selDay = datePickerDay;
-              const setSelDay = setDatePickerDay;
-              const selMonth = datePickerMonth;
-              const setSelMonth = setDatePickerMonth;
-              const selYear = datePickerYear;
-              const setSelYear = setDatePickerYear;
-              const days = Array.from({length:31},(_,i)=>String(i+1));
-              const years = [String(now.getFullYear()),String(now.getFullYear()+1)];
-              return (<>
-                <Text style={{fontWeight:'bold',color:'#555',marginBottom:6}}>Ημέρα:</Text>
-                <ScrollView horizontal showsHorizontalScrollIndicator={false} style={{marginBottom:12}}>
-                  <View style={{flexDirection:'row',gap:6}}>
-                    {days.map(d=>(
-                      <TouchableOpacity key={d} onPress={()=>setSelDay(d)}
-                        style={{width:36,height:36,borderRadius:18,backgroundColor:selDay===d?'#8B0000':'#eee',alignItems:'center',justifyContent:'center'}}>
-                        <Text style={{color:selDay===d?'white':'#333',fontWeight:'bold',fontSize:12}}>{d}</Text>
-                      </TouchableOpacity>
-                    ))}
-                  </View>
-                </ScrollView>
-                <Text style={{fontWeight:'bold',color:'#555',marginBottom:6}}>Μήνας:</Text>
-                <View style={{flexDirection:'row',flexWrap:'wrap',gap:6,marginBottom:12}}>
-                  {months.map((m,i)=>(
-                    <TouchableOpacity key={m} onPress={()=>setSelMonth(String(i+1))}
-                      style={{paddingHorizontal:10,paddingVertical:6,borderRadius:6,backgroundColor:selMonth===String(i+1)?'#8B0000':'#eee'}}>
-                      <Text style={{color:selMonth===String(i+1)?'white':'#333',fontWeight:'bold',fontSize:12}}>{m}</Text>
-                    </TouchableOpacity>
-                  ))}
-                </View>
-                <Text style={{fontWeight:'bold',color:'#555',marginBottom:6}}>Έτος:</Text>
-                <View style={{flexDirection:'row',gap:6,marginBottom:16}}>
-                  {years.map(y=>(
-                    <TouchableOpacity key={y} onPress={()=>setSelYear(y)}
-                      style={{paddingHorizontal:16,paddingVertical:8,borderRadius:6,backgroundColor:selYear===y?'#8B0000':'#eee'}}>
-                      <Text style={{color:selYear===y?'white':'#333',fontWeight:'bold'}}>{y}</Text>
-                    </TouchableOpacity>
-                  ))}
-                </View>
-                <TouchableOpacity
-                  style={{backgroundColor:'#8B0000',padding:14,borderRadius:8,alignItems:'center'}}
-                  onPress={()=>{
-                    setCustomForm({...customForm,deliveryDate:`${selDay}/${selMonth}/${selYear}`});
-                    setShowDatePicker(false);
-                  }}>
-                  <Text style={{color:'white',fontWeight:'bold',fontSize:15}}>ΕΠΙΛΟΓΗ</Text>
-                </TouchableOpacity>
-              </>);
-            })()}
-            <View style={{height:20}}/>
-          </View>
-        </View>
-      </Modal>
+      <DatePickerModal
+        visible={showDatePicker}
+        onClose={()=>setShowDatePicker(false)}
+        customForm={customForm}
+        setCustomForm={setCustomForm}
+        datePickerDay={datePickerDay}
+        setDatePickerDay={setDatePickerDay}
+        datePickerMonth={datePickerMonth}
+        setDatePickerMonth={setDatePickerMonth}
+        datePickerYear={datePickerYear}
+        setDatePickerYear={setDatePickerYear}
+      />
 
       </View>
     </View>
