@@ -175,8 +175,8 @@ export default function App() {
       const dataStd = await resStd.json();
       if (dataStd) {
         const loadedStd = Object.keys(dataStd).map(key => ({ id: key, ...dataStd[key] }));
-        setCustomOrders(loadedStd.filter(o => o.status !== 'SOLD'));
-        setSoldOrders(loadedStd.filter(o => o.status === 'SOLD'));
+        setCustomOrders(loadedStd.filter(o => o.status !== 'SOLD' && o.status !== 'STD_SOLD'));
+        setSoldOrders(loadedStd.filter(o => o.status === 'SOLD' || o.status === 'STD_SOLD'));
       }
       const res2 = await fetch(`${FIREBASE_URL}/sasi_orders.json`);
       const data2 = await res2.json();
