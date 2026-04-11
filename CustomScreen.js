@@ -297,7 +297,6 @@ export default function CustomScreen({ customOrders, setCustomOrders, soldOrders
       const orderQtyR = parseInt(newOrder.qty)||1;
       const sk = sasiKey(String(newOrder.h), String(newOrder.w), newOrder.side);
       const ck = caseKey(String(newOrder.h), String(newOrder.w), newOrder.side, newOrder.caseType);
-      console.log('[DEBUG case reservation] h=', newOrder.h, 'ck=', ck, 'heightReduction=', newOrder.heightReduction);
       const newRes = { orderNo: newOrder.orderNo, customer: newOrder.customer||'', qty: orderQtyR };
 
       // Σασί: δεσμεύεται ΜΟΝΟ αν είναι ΜΟΝΗ χωρίς κλειδαριά και χωρίς μείωση ύψους
