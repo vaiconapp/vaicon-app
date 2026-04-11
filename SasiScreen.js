@@ -2,12 +2,11 @@ import React, { useState, useEffect } from 'react';
 import { StyleSheet, Text, View, ScrollView, TouchableOpacity, TextInput, Alert, Modal, Platform } from 'react-native';
 import { FIREBASE_URL } from './firebaseConfig';
 import { logActivity } from './activityLog';
+import { sasiKey as stockKey } from './stockUtils';
 
 const HEIGHTS = ['208', '213', '218', '223'];
 const WIDTHS  = ['83', '88', '93', '98'];
 const SIDES   = ['ΑΡΙΣΤΕΡΗ', 'ΔΕΞΙΑ'];
-
-const stockKey = (h, w, side) => `${h}_${w}_${side}`;
 
 // Αρχικοποίηση κενού πίνακα για όλες τις διαστάσεις
 const initStockMap = () => {

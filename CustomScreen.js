@@ -4,6 +4,7 @@ const SCREEN_WIDTH = Dimensions.get('window').width;
 import { FIREBASE_URL } from './firebaseConfig';
 import { logActivity } from './activityLog';
 import { fmtDate, fmtDateTime } from './utils';
+import { sasiKey, caseKey, stockAvailable } from './stockUtils';
 import * as Print from 'expo-print';
 import * as Sharing from 'expo-sharing';
 
@@ -72,14 +73,6 @@ const printHTML = async (html, title) => {
 };
 
 // ── Helpers για νέο stock σύστημα ──
-const sasiKey = (h, w, side) => `${h}_${w}_${side}`;
-const caseKey = (h, w, side, caseType) => `${h}_${w}_${side}_${(caseType||'').includes('ΑΝΟΙΧΤΟΥ')||caseType==='ΚΑΣΑ ΑΝΟΙΧΤΗ'?'AN':'KL'}`;
-const stockAvailable = (stockMap, key) => {
-  const entry = stockMap?.[key];
-  if (!entry) return 0;
-  const reserved = (entry.reservations||[]).reduce((s,r)=>s+(parseInt(r.qty)||1),0);
-  return (parseInt(entry.qty)||0) - reserved;
-};
 
 
 const STD_HEIGHTS = ['208','213','218','223'];

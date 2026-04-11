@@ -2,13 +2,12 @@ import React, { useState, useEffect } from 'react';
 import { StyleSheet, Text, View, ScrollView, TouchableOpacity, TextInput, Alert, Modal, Platform } from 'react-native';
 import { FIREBASE_URL } from './firebaseConfig';
 import { logActivity } from './activityLog';
+import { caseKey as stockKey } from './stockUtils';
 
 const HEIGHTS = ['208', '213', '218', '223'];
 const WIDTHS  = ['83', '88', '93', '98'];
 const SIDES   = ['ΑΡΙΣΤΕΡΗ', 'ΔΕΞΙΑ'];
 const CASE_TYPES = ['ΚΑΣΑ ΚΛΕΙΣΤΗ', 'ΚΑΣΑ ΑΝΟΙΧΤΗ'];
-
-const stockKey = (h, w, side, caseType) => `${h}_${w}_${side}_${caseType==='ΚΑΣΑ ΚΛΕΙΣΤΗ'?'KL':'AN'}`;
 
 const initStockMap = () => {
   const map = {};
