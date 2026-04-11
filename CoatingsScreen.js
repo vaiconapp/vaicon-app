@@ -35,7 +35,7 @@ export default function CoatingsScreen({ coatings, setCoatings, onClose }) {
   };
 
   const moveCoating = async (index, direction) => {
-    const newList = [...coatings];
+    const newList = [...sorted];
     const swapIndex = index + direction;
     if (swapIndex < 0 || swapIndex >= newList.length) return;
     [newList[index], newList[swapIndex]] = [newList[swapIndex], newList[index]];
@@ -132,27 +132,30 @@ export default function CoatingsScreen({ coatings, setCoatings, onClose }) {
         <Text style={styles.count}>Σύνολο: {coatings.length} επενδύσεις</Text>
 
         <ScrollView>
-          {filtered.map((c, index) => (
-            <View key={c.id} style={[styles.card, {backgroundColor: getCoatingBg(c.name), borderLeftColor: getCoatingBorder(c.name)}]}>
-              <View style={styles.orderBtns}>
-                <TouchableOpacity onPress={() => moveCoating(sorted.indexOf(c), -1)} disabled={sorted.indexOf(c) === 0}>
-                  <Text style={[styles.orderBtn, sorted.indexOf(c) === 0 && {opacity:0.2}]}>▲</Text>
-                </TouchableOpacity>
-                <TouchableOpacity onPress={() => moveCoating(sorted.indexOf(c), 1)} disabled={sorted.indexOf(c) === sorted.length - 1}>
-                  <Text style={[styles.orderBtn, sorted.indexOf(c) === sorted.length - 1 && {opacity:0.2}]}>▼</Text>
-                </TouchableOpacity>
+          {sorted.map((c, sortedIdx) => {
+            if (!c.name.toLowerCase().includes(search.toLowerCase())) return null;
+            return (
+              <View key={c.id} style={[styles.card, {backgroundColor: getCoatingBg(c.name), borderLeftColor: getCoatingBorder(c.name)}]}>
+                <View style={styles.orderBtns}>
+                  <TouchableOpacity onPress={() => moveCoating(sortedIdx, -1)} disabled={sortedIdx === 0}>
+                    <Text style={[styles.orderBtn, sortedIdx === 0 && {opacity:0.2}]}>▲</Text>
+                  </TouchableOpacity>
+                  <TouchableOpacity onPress={() => moveCoating(sortedIdx, 1)} disabled={sortedIdx === sorted.length - 1}>
+                    <Text style={[styles.orderBtn, sortedIdx === sorted.length - 1 && {opacity:0.2}]}>▼</Text>
+                  </TouchableOpacity>
+                </View>
+                <Text style={styles.cardName}>{c.name}</Text>
+                <View style={styles.cardBtns}>
+                  <TouchableOpacity style={styles.editBtn} onPress={() => editCoating(c)}>
+                    <Text style={styles.editTxt}>✏️</Text>
+                  </TouchableOpacity>
+                  <TouchableOpacity style={styles.deleteBtn} onPress={() => deleteCoating(c.id)}>
+                    <Text style={styles.deleteTxt}>🗑</Text>
+                  </TouchableOpacity>
+                </View>
               </View>
-              <Text style={styles.cardName}>{c.name}</Text>
-              <View style={styles.cardBtns}>
-                <TouchableOpacity style={styles.editBtn} onPress={() => editCoating(c)}>
-                  <Text style={styles.editTxt}>✏️</Text>
-                </TouchableOpacity>
-                <TouchableOpacity style={styles.deleteBtn} onPress={() => deleteCoating(c.id)}>
-                  <Text style={styles.deleteTxt}>🗑</Text>
-                </TouchableOpacity>
-              </View>
-            </View>
-          ))}
+            );
+          })}
           {filtered.length === 0 && <Text style={styles.empty}>Δεν βρέθηκαν επενδύσεις.</Text>}
         </ScrollView>
       </View>

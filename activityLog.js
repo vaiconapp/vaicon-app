@@ -54,5 +54,3 @@ export const cleanOldLogs = async () => {
     });
   } catch(e) {}
 };
-
-export { fmtDateTime } from './utils';

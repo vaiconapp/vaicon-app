@@ -1,6 +1,7 @@
 import { Platform, Alert } from 'react-native';
 import * as Print from 'expo-print';
 import * as Sharing from 'expo-sharing';
+import { parseDateStr } from './utils';
 
 // Helper εκτύπωσης — web: κατευθείαν print dialog, mobile: expo-print + sharing
 export const printHTML = async (html, title) => {
@@ -18,6 +19,7 @@ export const printHTML = async (html, title) => {
   }
 };
 
+
 // Βοηθητική: δημιουργεί HTML πίνακα από λίστα παραγγελιών με τίτλο
 export const buildPrintHTML = (copies, phaseKey=null) => {
   const isMounting = phaseKey==='montDoor';
@@ -27,7 +29,7 @@ export const buildPrintHTML = (copies, phaseKey=null) => {
   const isSasi     = phaseKey==='montSasi';
   const isMontDoor = phaseKey==='montDoor';
   const isVafio    = phaseKey==='vafio';
-  const isLaser = copies.some(c => c.title && c.title.includes('LASER') || c.title.includes('ΚΑΣΣΕΣ') || c.title.includes('ΣΑΣΙ') || c.title.includes('ΠΡΟΦΙΛ') || c.title.includes('ΠΡΟΓΡΑΜΜΑ ΕΙΔΙΚΩΝ'));
+  const isLaser = copies.some(c => c.title && (c.title.includes('LASER') || c.title.includes('ΚΑΣΕΣ') || c.title.includes('ΣΑΣΙ') || c.title.includes('ΠΡΟΦΙΛ') || c.title.includes('ΠΡΟΓΡΑΜΜΑ ΕΙΔΙΚΩΝ')));
   const tableCSS = `
     body{font-family:Arial,sans-serif;margin:5mm;color:#000;background:#fff;}
     h1{font-size:22px;margin-bottom:2px;font-weight:bold;}
@@ -46,7 +48,7 @@ export const buildPrintHTML = (copies, phaseKey=null) => {
       const mentesedesVal = (!o.hinges||o.hinges==='2')?'':o.hinges;
       const kleidaria = o.lock||'—';
       const createdFmt = o.createdAt ? new Date(o.createdAt).toLocaleDateString('el-GR',{day:'2-digit',month:'2-digit',year:'2-digit'}) : '';
-      const deliveryFmt = o.deliveryDate ? new Date(o.deliveryDate).toLocaleDateString('el-GR',{day:'2-digit',month:'2-digit',year:'2-digit'}) : '';
+      const deliveryFmt = o.deliveryDate ? (parseDateStr(o.deliveryDate)||new Date()).toLocaleDateString('el-GR',{day:'2-digit',month:'2-digit',year:'2-digit'}) : '';
       const datesLine = [createdFmt, deliveryFmt].filter(Boolean).join('    ');
       return `<tr>
         <td style="font-weight:bold;font-size:20px">${o.orderNo||'—'}</td>
@@ -73,7 +75,7 @@ export const buildPrintHTML = (copies, phaseKey=null) => {
       const tzami = o.orderType==="ΤΥΠΟΠΟΙΗΜΕΝΗ"?"—":((o.glassDim||"")+(o.glassNotes?` ${o.glassNotes}`:""))||"—";
       const kleidaria = o.orderType==='ΤΥΠΟΠΟΙΗΜΕΝΗ'?'—':(o.lock||'—');
       const createdFmt = o.createdAt ? new Date(o.createdAt).toLocaleDateString('el-GR',{day:'2-digit',month:'2-digit',year:'2-digit'}) : '';
-      const deliveryFmt = o.deliveryDate ? new Date(o.deliveryDate).toLocaleDateString('el-GR',{day:'2-digit',month:'2-digit',year:'2-digit'}) : '';
+      const deliveryFmt = o.deliveryDate ? (parseDateStr(o.deliveryDate)||new Date()).toLocaleDateString('el-GR',{day:'2-digit',month:'2-digit',year:'2-digit'}) : '';
       const datesLine = [createdFmt, deliveryFmt].filter(Boolean).join('    ');
       return `<tr>
         <td style="font-weight:bold;font-size:20px">${o.orderNo||'—'}</td>
@@ -101,7 +103,7 @@ export const buildPrintHTML = (copies, phaseKey=null) => {
       const kleidaria = o.orderType==='ΤΥΠΟΠΟΙΗΜΕΝΗ'?'—':(o.lock||'—');
       const coatings = (o.coatings&&o.coatings.length>0)?o.coatings.join(', '):'';
       const createdFmt = o.createdAt ? new Date(o.createdAt).toLocaleDateString('el-GR',{day:'2-digit',month:'2-digit',year:'2-digit'}) : '';
-      const deliveryFmt = o.deliveryDate ? new Date(o.deliveryDate).toLocaleDateString('el-GR',{day:'2-digit',month:'2-digit',year:'2-digit'}) : '';
+      const deliveryFmt = o.deliveryDate ? (parseDateStr(o.deliveryDate)||new Date()).toLocaleDateString('el-GR',{day:'2-digit',month:'2-digit',year:'2-digit'}) : '';
       const datesLine = [createdFmt, deliveryFmt].filter(Boolean).join('    ');
       return `<tr>
         <td style="font-weight:bold;font-size:17px">${o.orderNo||'—'}</td>
@@ -129,7 +131,7 @@ export const buildPrintHTML = (copies, phaseKey=null) => {
       const mentesedesVal = (!o.hinges||o.hinges==='2')?'':o.hinges;
       const qtyVal = o.qty&&parseInt(o.qty)>1?`<span style="font-size:15px;font-weight:900;color:#cc0000">${o.qty}</span>`:'';
       const createdFmt = o.createdAt ? new Date(o.createdAt).toLocaleDateString('el-GR',{day:'2-digit',month:'2-digit',year:'2-digit'}) : '';
-      const deliveryFmt = o.deliveryDate ? new Date(o.deliveryDate).toLocaleDateString('el-GR',{day:'2-digit',month:'2-digit',year:'2-digit'}) : '';
+      const deliveryFmt = o.deliveryDate ? (parseDateStr(o.deliveryDate)||new Date()).toLocaleDateString('el-GR',{day:'2-digit',month:'2-digit',year:'2-digit'}) : '';
       const datesLine = [createdFmt, deliveryFmt].filter(Boolean).join('    ');
       return `<tr>
         <td style="font-weight:bold;font-size:17px">${o.orderNo||'—'}</td>
@@ -153,17 +155,9 @@ export const buildPrintHTML = (copies, phaseKey=null) => {
   const totalQty = (orders) => orders.reduce((sum,o)=>sum+(parseInt(o.qty)||1),0);
 
   const buildLaserTable = (orders, copyTitle) => {
-    const isKasses  = copyTitle && copyTitle.includes('ΚΑΣΣΕΣ');
+    const isKasses  = copyTitle && copyTitle.includes('ΚΑΣΕΣ');
     const isSasi    = copyTitle && copyTitle.includes('ΣΑΣΙ');
-    const isProfil  = false; // ΠΡΟΦΙΛ ίδιο με ΠΡΟΓΡΑΜΜΑ
-
-    // ΠΡΟΦΙΛ: μόνο διαστάσεις
-    if (isProfil) {
-      const rows = orders.map(o=>`<tr><td style="font-size:18px;font-weight:900;padding:7px 6px">${dimCell(o)}</td></tr>`).join('');
-      return `<table><thead><tr><th>Διάσταση</th></tr></thead><tbody>${rows}</tbody></table>`;
-    }
-
-    // ΚΑΣΣΕΣ: χοντρή γραμμή όταν αλλάζει caseMaterial
+    // ΚΑΣΕΣ: χοντρή γραμμή όταν αλλάζει caseMaterial
     if (isKasses) {
       let prevMat = null;
       const rows = orders.map(o=>{
@@ -251,7 +245,7 @@ export const buildPrintHTML = (copies, phaseKey=null) => {
       const tzami = o.orderType==="ΤΥΠΟΠΟΙΗΜΕΝΗ"?"—":((o.glassDim||"")+(o.glassNotes?` ${o.glassNotes}`:""))||"—";
       const qtyVal = o.qty&&parseInt(o.qty)>1?`&nbsp;<span style="font-size:15px;font-weight:900;color:#cc0000">${o.qty}</span>`:'';
       const createdFmt = o.createdAt ? new Date(o.createdAt).toLocaleDateString('el-GR',{day:'2-digit',month:'2-digit',year:'2-digit'}) : '';
-      const deliveryFmt = o.deliveryDate ? new Date(o.deliveryDate).toLocaleDateString('el-GR',{day:'2-digit',month:'2-digit',year:'2-digit'}) : '';
+      const deliveryFmt = o.deliveryDate ? (parseDateStr(o.deliveryDate)||new Date()).toLocaleDateString('el-GR',{day:'2-digit',month:'2-digit',year:'2-digit'}) : '';
       const datesLine = createdFmt ? (createdFmt + (deliveryFmt ? `&nbsp;&nbsp;&nbsp;&nbsp;${deliveryFmt}` : '')) : '';
       return `<tr>
         <td style="font-weight:bold;font-size:13px">${o.orderNo||'—'}</td>

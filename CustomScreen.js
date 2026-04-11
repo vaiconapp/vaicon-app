@@ -1,10 +1,10 @@
-﻿import React, { useState, useRef, useEffect } from 'react';
+﻿import React, { useState, useRef, useEffect, useMemo } from 'react';
 import { StyleSheet, Text, View, ScrollView, TouchableOpacity, TextInput, Alert, LayoutAnimation, Modal, Dimensions, Platform, Keyboard } from 'react-native';
-const SCREEN_WIDTH = Dimensions.get('window').width;
 import { FIREBASE_URL } from './firebaseConfig';
+const SCREEN_WIDTH = Dimensions.get('window').width;
 import { logActivity } from './activityLog';
-import { fmtDate, fmtDateTime } from './utils';
-import { sasiKey, caseKey, stockAvailable } from './stockUtils';
+import { fmtDate, fmtDateTime, parseDateStr } from './utils';
+import { sasiKey, caseKey } from './stockUtils';
 import { SellModal, ConfirmModal, DuplicateModal } from './CustomFormModals';
 import { HardwarePickerModal, LockPickerModal, CoatingsPickerModal, DatePickerModal } from './CustomPickers';
 import { PrintPreviewModal, PHASES } from './PrintPreview';
@@ -32,7 +32,7 @@ const computeSuggested = (base, allOrders, editingId) => {
 
 const DIPLI_PHASES = [
   { key:'laser',    label:'🔴 LASER ΚΟΠΕΣ' },
-  { key:'cases',    label:'🟡 ΚΑΣΣΕΣ' },
+  { key:'cases',    label:'🟡 ΚΑΣΕΣ' },
   { key:'montSasi', label:'🔵 ΚΑΤΑΡΤΙΣΗ ΣΑΣΙ' },
   { key:'vafio',    label:'🟢 ΒΑΦΕΙΟ' },
   { key:'montDoor', label:'⚫ ΜΟΝΤΑΡΙΣΜΑ/ΕΠΕΝΔΥΣΗ' },
@@ -71,20 +71,16 @@ export default function CustomScreen({ customOrders, setCustomOrders, soldOrders
   const [scrollPosition, setScrollPosition] = useState(0);
   const [borrowConfirmModal, setBorrowConfirmModal] = useState({ visible: false, candidate: null, order: null, stockType: null });
   const [borrowSuccessModal, setBorrowSuccessModal] = useState({ visible: false, message: '' });
-  const [stockRefreshKey, setStockRefreshKey] = useState(0);
   const [datePickerDay, setDatePickerDay] = useState(String(new Date().getDate()));
   const [datePickerMonth, setDatePickerMonth] = useState(String(new Date().getMonth()+1));
   const [datePickerYear, setDatePickerYear] = useState(String(new Date().getFullYear()));
 
-  const customerRef=useRef(); const orderNoRef=useRef(); const hRef=useRef(); const wRef=useRef(); const qtyEidikiRef=useRef();
-  const hingeRef=useRef(); const glassRef=useRef(); const glassNotesRef=useRef(); const lockRef=useRef(); const notesRef=useRef();
+  const customerRef=useRef(); const orderNoRef=useRef(); const hRef=useRef();
   const customerSelectedRef = useRef(false);
   const prodScrollRef = useRef(null);
   const mainScrollRef = useRef(null);
-  const staveraWidthRefs = useRef({});
-  const staveraNoteRefs = useRef({});
+  const menonNotesTimers = useRef({});
   const staveraHRefs = useRef({});
-  const staveraWRefs = useRef({});
   const staveraGridNoteRefs = useRef({});
   const [pageWidth, setPageWidth] = useState(SCREEN_WIDTH);
 
@@ -102,6 +98,7 @@ export default function CustomScreen({ customOrders, setCustomOrders, soldOrders
 
   useEffect(() => {
     let updated = false;
+    const pendingSync = [];
     const newOrders = customOrders.map(o=>{
       if(o.orderType!=='ΤΥΠΟΠΟΙΗΜΕΝΗ') return o;
       const isMoniNoLock = (o.sasiType==='ΜΟΝΗ ΘΩΡΑΚΙΣΗ'||!o.sasiType) && !o.lock;
@@ -109,8 +106,6 @@ export default function CustomScreen({ customOrders, setCustomOrders, soldOrders
       const hasStavera = o.stavera && o.stavera.length > 0;
       const sk = sasiKey(String(o.h), String(o.w), o.side);
       const ck = caseKey(String(o.h), String(o.w), o.side, o.caseType);
-      const sasiAvail = stockAvailable(sasiStock, sk);
-      const caseAvail = stockAvailable(caseStock, ck);
 
       // GUARD CLAUSE: Αν είναι ήδη STD_READY ή stdInProd===true, το κλειδώνουμε
       if (o.status === 'STD_READY' || o.stdInProd) return o;
@@ -139,12 +134,12 @@ export default function CustomScreen({ customOrders, setCustomOrders, soldOrders
           if(o.stdInProd) return o;
           updated = true;
           const upd = {...o, stdInProd:true};
-          syncToCloud(upd);
+          pendingSync.push(upd);
           return upd;
         } else {
           updated = true;
           const upd = {...o, status:'STD_READY', readyAt:Date.now(), staveraPendingAtReady:true};
-          syncToCloud(upd);
+          pendingSync.push(upd);
           return upd;
         }
       }
@@ -158,10 +153,13 @@ export default function CustomScreen({ customOrders, setCustomOrders, soldOrders
       if(!hasCaseOk2) return o;
       updated = true;
       const upd2 = {...o, status:'STD_READY', readyAt:Date.now(), ...(staveraPending?{staveraPendingAtReady:true}:{})};
-      syncToCloud(upd2);
+      pendingSync.push(upd2);
       return upd2;
     });
-    if(updated) setCustomOrders(newOrders);
+    if(updated) {
+      setCustomOrders(newOrders);
+      (async () => { for (const upd of pendingSync) await syncToCloud(upd); })();
+    }
   }, [customOrders, caseStock, sasiStock]);
 
   const saveOrder = async () => {
@@ -389,7 +387,7 @@ export default function CustomScreen({ customOrders, setCustomOrders, soldOrders
     if (phaseLabel.includes('LASER')) {
       const copy1 = [...orders].sort((a,b) => (parseInt(a.orderNo)||0)-(parseInt(b.orderNo)||0));
 
-      // ΚΑΣΣΕΣ: 1) Υλικό (DKP→ΓΑΛΒΑΝΙΖΕ) 2) Τύπος (ΑΝΟΙΧΤΟΥ→ΚΛΕΙΣΤΟΥ) 3) Διάσταση
+      // ΚΑΣΕΣ: 1) Υλικό (DKP→ΓΑΛΒΑΝΙΖΕ) 2) Τύπος (ΑΝΟΙΧΤΟΥ→ΚΛΕΙΣΤΟΥ) 3) Διάσταση
       const copy2 = [...orders].sort((a,b) => {
         const matA = a.caseMaterial||'DKP';
         const matB = b.caseMaterial||'DKP';
@@ -421,7 +419,7 @@ export default function CustomScreen({ customOrders, setCustomOrders, soldOrders
 
       return [
         { title:`VAICON — ${dateStr} — ΠΡΟΓΡΑΜΜΑ ΕΙΔΙΚΩΝ ΠΑΡΑΓΓΕΛΙΩΝ`, orders:copy1 },
-        { title:`VAICON — ${dateStr} — ΚΑΣΣΕΣ`, orders:copy2 },
+        { title:`VAICON — ${dateStr} — ΚΑΣΕΣ`, orders:copy2 },
         { title:`VAICON — ${dateStr} — ΣΑΣΙ`, orders:copy3 },
         { title:`VAICON — ${dateStr} — ΠΡΟΦΙΛ`, orders:copy4 },
       ];
@@ -469,7 +467,7 @@ export default function CustomScreen({ customOrders, setCustomOrders, soldOrders
             <td style="font-size:13px">${o.caseType||'—'}</td>
             <td style="font-size:20px;font-weight:900">${s.dim||'—'}</td>
             <td style="font-size:13px;min-width:180px">${s.note||''}</td>
-            <td style="font-size:12px;color:#444">${o.deliveryDate?new Date(o.deliveryDate).toLocaleDateString('el-GR',{day:'2-digit',month:'2-digit',year:'2-digit'}):''}</td>
+            <td style="font-size:12px;color:#444">${o.deliveryDate?(parseDateStr(o.deliveryDate)||new Date()).toLocaleDateString('el-GR',{day:'2-digit',month:'2-digit',year:'2-digit'}):''}</td>
           </tr>`)
         ).join('');
         const html = `<html><head><meta charset="utf-8"><style>
@@ -910,9 +908,7 @@ export default function CustomScreen({ customOrders, setCustomOrders, soldOrders
   // (useEffect για pendingConfirm αφαιρέθηκε — χρησιμοποιούμε borrowConfirmModal αντί για window.confirm)
 
   const handleBorrowConfirmDirect = async (donorOrder, order, stockType) => {
-    console.log('[BORROW] START', { donorOrder, order, stockType });
     if (!donorOrder || !order || !stockType) {
-      console.error('[BORROW] Missing params!', { donorOrder, order, stockType });
       if (Platform.OS === 'web') window.alert('Σφάλμα: Λείπουν δεδομένα δανεισμού.');
       else Alert.alert('Σφάλμα', 'Λείπουν δεδομένα δανεισμού.');
       return;
@@ -930,176 +926,62 @@ export default function CustomScreen({ customOrders, setCustomOrders, soldOrders
 
     if (stockType === 'case') {
       const donorCk = donorOrder._donorCk || caseKey(h, w, side, donorOrder.caseType);
-      console.log('[BORROW] case donorCk=', donorCk, 'FIREBASE_URL=', FIREBASE_URL);
       try {
         const res = await fetch(`${FIREBASE_URL}/case_stock/${donorCk}.json`);
         const data = await res.json();
-        console.log('[BORROW] case data=', data);
         if (!data) { showAlert('Σφάλμα', 'Δεν βρέθηκε το stock κάσας.'); return; }
         const donorRes = (data.reservations || []).find(r => r.orderNo === donorOrder.orderNo);
-        console.log('[BORROW] donorRes=', donorRes);
-        console.log('[BORROW] all reservations before=', JSON.stringify(data.reservations));
         if (!donorRes) { showAlert('Σφάλμα', 'Δεν βρέθηκε η δέσμευση στο stock του donor.'); return; }
         const orderQty = parseInt(order.qty) || 1;
         const newRes = { orderNo: order.orderNo, customer: order.customer || '', qty: orderQty, borrowedFrom: donorOrder.orderNo };
         const donorResUpdated = { ...donorRes, borrowedTo: order.orderNo, priorityReservation: true };
-        // 1. Αφαιρούμε ΠΡΩΤΑ:
-        //    α) οποιαδήποτε υπάρχουσα reservation για την τρέχουσα παραγγελία
-        //    β) οποιαδήποτε reservation που έχει borrowedFrom: donorOrder.orderNo
-        //       (από προηγούμενη αποτυχημένη προσπάθεια δανεισμού από τον ίδιο donor)
         const cleanedReservations = (data.reservations || []).filter(r =>
           r.orderNo !== order.orderNo &&
           r.borrowedFrom !== donorOrder.orderNo
         );
-        // 2. Αντικαθιστούμε τον donor με τη νέα reservation στην ίδια θέση (FIFO)
         const updReservations = cleanedReservations.map(r => r.orderNo === donorOrder.orderNo ? newRes : r);
-        // 3. Προσθέτουμε τον donor στο τέλος με priorityReservation για αυτόματη αναπλήρωση
         updReservations.push(donorResUpdated);
-        console.log('[BORROW] cleaned reservations:', JSON.stringify(cleanedReservations));
-        console.log('[BORROW] final updReservations:', JSON.stringify(updReservations));
         const updEntry = { ...data, reservations: updReservations };
-        console.log('[BORROW] updEntry=', updEntry);
-        const putRes = await fetch(`${FIREBASE_URL}/case_stock/${donorCk}.json`, { method: 'PUT', body: JSON.stringify(updEntry) });
-        console.log('[BORROW] PUT status=', putRes.status);
-        // Ενημερώνουμε το local state για το donorCk
+        await fetch(`${FIREBASE_URL}/case_stock/${donorCk}.json`, { method: 'PUT', body: JSON.stringify(updEntry) });
         setCaseStock(prev => ({ ...prev, [donorCk]: updEntry }));
-        // Re-fetch όλο το case_stock από Firebase για να ανανεωθεί το UI
         try {
           const allCaseRes = await fetch(`${FIREBASE_URL}/case_stock.json`);
           const allCaseData = await allCaseRes.json();
-          if (allCaseData) {
-            console.log('[BORROW] Re-fetched case_stock, keys:', Object.keys(allCaseData));
-            setCaseStock(allCaseData);
-          }
-        } catch(fetchErr) {
-          console.error('[BORROW] Re-fetch error:', fetchErr);
-        }
+          if (allCaseData) setCaseStock(allCaseData);
+        } catch(fetchErr) {}
         showAlert('✅ Επιτυχία', `Η κάσα δεσμεύτηκε για #${order.orderNo} από την παραγγελία #${donorOrder.orderNo}.\n\nΗ #${donorOrder.orderNo} θα αναπληρωθεί αυτόματα με προτεραιότητα όταν μπει νέο stock.`);
       } catch(e) {
-        console.error('[BORROW] case error:', e);
         showAlert('Σφάλμα', 'Αποτυχία ενημέρωσης stock: ' + e.message);
       }
     } else {
       const sk = sasiKey(h, w, side);
-      console.log('[BORROW] sasi sk=', sk, 'FIREBASE_URL=', FIREBASE_URL);
       try {
         const res = await fetch(`${FIREBASE_URL}/sasi_stock/${sk}.json`);
         const data = await res.json();
-        console.log('[BORROW] sasi data=', data);
         if (!data) { showAlert('Σφάλμα', 'Δεν βρέθηκε το stock σασί.'); return; }
         const donorRes = (data.reservations || []).find(r => r.orderNo === donorOrder.orderNo);
-        console.log('[BORROW] sasi donorRes=', donorRes);
-        console.log('[BORROW] sasi all reservations before=', JSON.stringify(data.reservations));
         if (!donorRes) { showAlert('Σφάλμα', 'Δεν βρέθηκε η δέσμευση σασί.'); return; }
         const orderQty = parseInt(order.qty) || 1;
         const newRes = { orderNo: order.orderNo, customer: order.customer || '', qty: orderQty, borrowedFrom: donorOrder.orderNo };
         const donorResUpdated = { ...donorRes, borrowedTo: order.orderNo, priorityReservation: true };
-        // 1. Αφαιρούμε ΠΡΩΤΑ οποιαδήποτε υπάρχουσα reservation για την τρέχουσα παραγγελία
         const cleanedSasiReservations = (data.reservations || []).filter(r => r.orderNo !== order.orderNo);
-        // 2. Αντικαθιστούμε τον donor με τη νέα reservation στην ίδια θέση (FIFO)
         const updReservations = cleanedSasiReservations.map(r => r.orderNo === donorOrder.orderNo ? newRes : r);
-        // 3. Προσθέτουμε τον donor στο τέλος με priorityReservation
         updReservations.push(donorResUpdated);
         const updEntry = { ...data, reservations: updReservations };
-        console.log('[BORROW] sasi updEntry=', updEntry);
-        const putRes = await fetch(`${FIREBASE_URL}/sasi_stock/${sk}.json`, { method: 'PUT', body: JSON.stringify(updEntry) });
-        console.log('[BORROW] sasi PUT status=', putRes.status);
+        await fetch(`${FIREBASE_URL}/sasi_stock/${sk}.json`, { method: 'PUT', body: JSON.stringify(updEntry) });
         setSasiStock(prev => ({ ...prev, [sk]: updEntry }));
-        // Re-fetch όλο το sasi_stock από Firebase για να ανανεωθεί το UI
         try {
           const allSasiRes = await fetch(`${FIREBASE_URL}/sasi_stock.json`);
           const allSasiData = await allSasiRes.json();
-          if (allSasiData) {
-            console.log('[BORROW] Re-fetched sasi_stock, keys:', Object.keys(allSasiData));
-            setSasiStock(allSasiData);
-          }
-        } catch(fetchErr) {
-          console.error('[BORROW] sasi Re-fetch error:', fetchErr);
-        }
+          if (allSasiData) setSasiStock(allSasiData);
+        } catch(fetchErr) {}
         showAlert('✅ Επιτυχία', `Το σασί δεσμεύτηκε για #${order.orderNo} από την παραγγελία #${donorOrder.orderNo}.\n\nΗ #${donorOrder.orderNo} θα αναπληρωθεί αυτόματα με προτεραιότητα όταν μπει νέο stock.`);
       } catch(e) {
-        console.error('[BORROW] sasi error:', e);
         showAlert('Σφάλμα', 'Αποτυχία ενημέρωσης stock: ' + e.message);
       }
     }
   };
 
-  const handleBorrowConfirm = async (donorOrder) => {
-    const { order, stockType } = borrowModal;
-    setBorrowModal({ visible: false, order: null, stockType: null, candidates: [] });
-
-    const h = String(order.h), w = String(order.w), side = order.side;
-
-    if (stockType === 'case') {
-      // Το ck του donor μπορεί να διαφέρει από το ck της τρέχουσας παραγγελίας
-      // (π.χ. ΔΙΠΛΗ παίρνει από ΜΟΝΗ που έχει διαφορετικό caseType)
-      const donorCk = donorOrder._donorCk || caseKey(h, w, side, donorOrder.caseType);
-      const currentCk = caseKey(h, w, side, order.caseType);
-      try {
-        // Φέρνω το entry του donor
-        const res = await fetch(`${FIREBASE_URL}/case_stock/${donorCk}.json`);
-        const data = await res.json();
-        if (!data) return;
-        // Βρίσκω τη δέσμευση του donor
-        const donorRes = (data.reservations || []).find(r => r.orderNo === donorOrder.orderNo);
-        if (!donorRes) return Alert.alert('Σφάλμα', 'Δεν βρέθηκε η δέσμευση στο stock του donor.');
-        // Αφαιρώ τη δέσμευση από τον donor και την προσθέτω στην τρέχουσα παραγγελία
-        // Ο donor παίρνει flag priorityReservation για αυτόματη αναπλήρωση
-        const orderQty = parseInt(order.qty) || 1;
-        const newRes = {
-          orderNo: order.orderNo,
-          customer: order.customer || '',
-          qty: orderQty,
-          borrowedFrom: donorOrder.orderNo,
-        };
-        const donorResUpdated = {
-          ...donorRes,
-          borrowedTo: order.orderNo,
-          priorityReservation: true,
-        };
-        const updReservations = (data.reservations || []).map(r =>
-          r.orderNo === donorOrder.orderNo ? donorResUpdated : r
-        );
-        // Αν η τρέχουσα παραγγελία δεν έχει ήδη δέσμευση, την προσθέτω
-        const alreadyHas = updReservations.some(r => r.orderNo === order.orderNo);
-        if (!alreadyHas) updReservations.push(newRes);
-        const updEntry = { ...data, reservations: updReservations };
-        await fetch(`${FIREBASE_URL}/case_stock/${donorCk}.json`, { method: 'PUT', body: JSON.stringify(updEntry) });
-        setCaseStock(prev => ({ ...prev, [donorCk]: updEntry }));
-        Alert.alert('✅ Επιτυχία', `Η κάσα δεσμεύτηκε για #${order.orderNo} από την παραγγελία #${donorOrder.orderNo}.\n\nΗ #${donorOrder.orderNo} θα αναπληρωθεί αυτόματα με προτεραιότητα όταν μπει νέο stock.`);
-      } catch(e) { Alert.alert('Σφάλμα', 'Αποτυχία ενημέρωσης stock.'); }
-    } else {
-      const sk = sasiKey(h, w, side);
-      try {
-        const res = await fetch(`${FIREBASE_URL}/sasi_stock/${sk}.json`);
-        const data = await res.json();
-        if (!data) return;
-        const donorRes = (data.reservations || []).find(r => r.orderNo === donorOrder.orderNo);
-        if (!donorRes) return Alert.alert('Σφάλμα', 'Δεν βρέθηκε η δέσμευση.');
-        const orderQty = parseInt(order.qty) || 1;
-        const newRes = {
-          orderNo: order.orderNo,
-          customer: order.customer || '',
-          qty: orderQty,
-          borrowedFrom: donorOrder.orderNo,
-        };
-        const donorResUpdated = {
-          ...donorRes,
-          borrowedTo: order.orderNo,
-          priorityReservation: true,
-        };
-        const updReservations = (data.reservations || []).map(r =>
-          r.orderNo === donorOrder.orderNo ? donorResUpdated : r
-        );
-        const alreadyHas = updReservations.some(r => r.orderNo === order.orderNo);
-        if (!alreadyHas) updReservations.push(newRes);
-        const updEntry = { ...data, reservations: updReservations };
-        await fetch(`${FIREBASE_URL}/sasi_stock/${sk}.json`, { method: 'PUT', body: JSON.stringify(updEntry) });
-        setSasiStock(prev => ({ ...prev, [sk]: updEntry }));
-        Alert.alert('✅ Επιτυχία', `Το σασί δεσμεύτηκε για #${order.orderNo} από την παραγγελία #${donorOrder.orderNo}.\n\nΗ #${donorOrder.orderNo} θα αναπληρωθεί αυτόματα με προτεραιότητα όταν μπει νέο stock.`);
-      } catch(e) { Alert.alert('Σφάλμα', 'Αποτυχία ενημέρωσης stock.'); }
-    }
-  };
 
   const deleteFromArchive = (id) => Alert.alert("Διαγραφή","Διαγραφή από αρχείο;",[{text:"Όχι"},{text:"Ναι",style:"destructive",onPress:async()=>{setSoldOrders(soldOrders.filter(o=>o.id!==id));await deleteFromCloud(id);}}]);
   const toggleSection = (s) => { LayoutAnimation.configureNext(LayoutAnimation.Presets.easeInEaseOut); setExpanded({...expanded,[s]:!expanded[s]}); };
@@ -1181,7 +1063,7 @@ export default function CustomScreen({ customOrders, setCustomOrders, soldOrders
             <Text style={[styles.cardDetails,{fontWeight:'bold'}]}>#{order.orderNo}</Text>
           </View>
           {order.customer?<Text style={[styles.cardSubDetails,{marginTop:2}]}>👤 {order.customer}</Text>:null}
-          <Text style={styles.cardDetails}>{order.h}x{order.w} | {order.side}{!isStd?` | ${order.armor} ΘΩΡ.`:''}</Text>
+          <Text style={styles.cardDetails}>{order.h}x{order.w} | {order.side}{!isStd?` | ${order.armor||'ΜΟΝΗ'} ΘΩΡ.`:''}</Text>
           {!isStd&&<Text style={styles.cardSubDetails}>Μεντ: {order.hinges}{order.glassDim?` | Τζ: ${order.glassDim}${order.glassNotes?' '+order.glassNotes:''}`:''} | Κλειδ: {order.lock||'—'}</Text>}
           {!isStd&&<Text style={styles.cardSubDetails}>Κάσα: {order.caseType==='ΑΝΟΙΧΤΟΥ ΤΥΠΟΥ'?'ΑΝΟΙΧΤΗ':'ΚΛΕΙΣΤΗ'} | {order.caseMaterial||'DKP'} | {order.hardware||'—'}</Text>}
           {!isStd&&order.installation==='ΝΑΙ'&&<View style={{flexDirection:'row',marginTop:2}}><View style={{backgroundColor:'#E65100',borderRadius:5,paddingHorizontal:8,paddingVertical:2,alignSelf:'flex-start'}}><Text style={{color:'white',fontWeight:'bold',fontSize:13}}>🪛 ΜΟΝΤΑΡΙΣΜΑ</Text></View></View>}
@@ -1357,19 +1239,12 @@ export default function CustomScreen({ customOrders, setCustomOrders, soldOrders
 
   // Ενότητα ΣΤΗΝ ΠΑΡΑΓΩΓΗ με υποκαρτέλες
   const renderProdSection = () => {
-    const prodOrders = customOrders.filter(o=>o.status==='PROD').sort((a,b)=>(b.prodAt||0)-(a.prodAt||0));
     const maxPhaseCount = prodOrders.length === 0 ? 0 : Math.max(...PHASES.map(ph =>
       prodOrders.filter(o => o.phases?.[ph.key]?.active && !o.phases?.[ph.key]?.done).length
     ));
 
     const phaseKeys = [...PHASES.map(p=>p.key), 'stavera'];
 
-    const handlePageScroll = (e) => {
-      const page = Math.round(e.nativeEvent.contentOffset.x / SCREEN_WIDTH);
-      if (page >= 0 && page < phaseKeys.length) {
-        setActiveProdPhase(phaseKeys[page]);
-      }
-    };
     return (
       <View>
         <TouchableOpacity style={[styles.listHeader,{backgroundColor:'#ffbb33', flexDirection:'row', alignItems:'center', justifyContent:'space-between'}]} onPress={()=>toggleSection('prod')}>
@@ -1570,6 +1445,24 @@ export default function CustomScreen({ customOrders, setCustomOrders, soldOrders
     );
   };
 
+
+  // ── Memoized derived lists — υπολογίζονται μόνο όταν αλλάζουν τα customOrders/sasiOrders/caseOrders ──
+  const prodOrders = useMemo(() => customOrders.filter(o=>o.status==='PROD').sort((a,b)=>(b.prodAt||0)-(a.prodAt||0)), [customOrders]);
+  const sasiReady = useMemo(() => sasiOrders.filter(o=>o.status==='READY'), [sasiOrders]);
+  const caseReady = useMemo(() => caseOrders.filter(o=>o.status==='READY'), [caseOrders]);
+  const moniOrders = useMemo(() => customOrders.filter(o=>o.orderType==='ΤΥΠΟΠΟΙΗΜΕΝΗ'&&(o.sasiType==='ΜΟΝΗ ΘΩΡΑΚΙΣΗ'||!o.sasiType)&&((o.status==='STD_PENDING'||!o.status)||(o.status==='STD_READY'&&o.staveraPendingAtReady))).sort((a,b)=>(parseInt(a.orderNo)||0)-(parseInt(b.orderNo)||0)), [customOrders]);
+  const stdBuildMoniOrders = useMemo(() => customOrders.filter(o=>o.orderType==='ΤΥΠΟΠΟΙΗΜΕΝΗ'&&(o.sasiType==='ΜΟΝΗ ΘΩΡΑΚΙΣΗ'||!o.sasiType)&&o.status==='STD_BUILD').sort((a,b)=>(parseInt(a.orderNo)||0)-(parseInt(b.orderNo)||0)), [customOrders]);
+  const stdBuildDipliOrders = useMemo(() => customOrders.filter(o=>o.orderType==='ΤΥΠΟΠΟΙΗΜΕΝΗ'&&o.sasiType==='ΔΙΠΛΗ ΘΩΡΑΚΙΣΗ'&&o.status==='STD_BUILD').sort((a,b)=>(parseInt(a.orderNo)||0)-(parseInt(b.orderNo)||0)), [customOrders]);
+  const moniProdOrders = useMemo(() => customOrders.filter(o=>o.orderType==='ΤΥΠΟΠΟΙΗΜΕΝΗ'&&(o.sasiType==='ΜΟΝΗ ΘΩΡΑΚΙΣΗ'||!o.sasiType)&&o.status==='MONI_PROD').sort((a,b)=>(parseInt(a.orderNo)||0)-(parseInt(b.orderNo)||0)), [customOrders]);
+  const staveraTabOrders = useMemo(() => customOrders.filter(o=>o.orderType==='ΤΥΠΟΠΟΙΗΜΕΝΗ'&&(o.sasiType==='ΜΟΝΗ ΘΩΡΑΚΙΣΗ'||!o.sasiType)&&o.stavera&&o.stavera.filter(s=>s.dim).length>0&&(o.status==='STD_PENDING'||o.status==='MONI_PROD'||(o.status==='STD_READY'&&o.staveraPendingAtReady))&&!o.staveraDone).sort((a,b)=>(parseInt(a.orderNo)||0)-(parseInt(b.orderNo)||0)), [customOrders]);
+  const montageTabOrders = useMemo(() => customOrders.filter(o=>o.orderType==='ΤΥΠΟΠΟΙΗΜΕΝΗ'&&(o.sasiType==='ΜΟΝΗ ΘΩΡΑΚΙΣΗ'||!o.sasiType)&&!o.lock&&o.installation==='ΝΑΙ'&&o.stdInProd&&!o.stdMontDone).sort((a,b)=>(parseInt(a.orderNo)||0)-(parseInt(b.orderNo)||0)), [customOrders]);
+  const dipliOrders = useMemo(() => customOrders.filter(o=>o.orderType==='ΤΥΠΟΠΟΙΗΜΕΝΗ'&&o.sasiType==='ΔΙΠΛΗ ΘΩΡΑΚΙΣΗ'&&(o.status==='STD_PENDING'||!o.status||o.status==='PENDING')&&o.status!=='STD_BUILD').sort((a,b)=>(parseInt(a.orderNo)||0)-(parseInt(b.orderNo)||0)), [customOrders]);
+  const readyOrders = useMemo(() => customOrders.filter(o=>o.orderType==='ΤΥΠΟΠΟΙΗΜΕΝΗ'&&(o.sasiType==='ΜΟΝΗ ΘΩΡΑΚΙΣΗ'||!o.sasiType)&&o.status==='STD_READY').sort((a,b)=>(parseInt(a.orderNo)||0)-(parseInt(b.orderNo)||0)), [customOrders]);
+  const moniSoldOrders = useMemo(() => customOrders.filter(o=>o.orderType==='ΤΥΠΟΠΟΙΗΜΕΝΗ'&&(o.sasiType==='ΜΟΝΗ ΘΩΡΑΚΙΣΗ'||!o.sasiType)&&o.status==='STD_SOLD').sort((a,b)=>(b.soldAt||0)-(a.soldAt||0)), [customOrders]);
+  const dipliReadyOrders = useMemo(() => customOrders.filter(o=>o.orderType==='ΤΥΠΟΠΟΙΗΜΕΝΗ'&&o.sasiType==='ΔΙΠΛΗ ΘΩΡΑΚΙΣΗ'&&o.status==='STD_READY').sort((a,b)=>(parseInt(a.orderNo)||0)-(parseInt(b.orderNo)||0)), [customOrders]);
+  const dipliSoldOrders = useMemo(() => customOrders.filter(o=>o.orderType==='ΤΥΠΟΠΟΙΗΜΕΝΗ'&&o.sasiType==='ΔΙΠΛΗ ΘΩΡΑΚΙΣΗ'&&o.status==='STD_SOLD').sort((a,b)=>(b.soldAt||0)-(a.soldAt||0)), [customOrders]);
+  const moniTotal = useMemo(() => customOrders.filter(o=>o.orderType==='ΤΥΠΟΠΟΙΗΜΕΝΗ'&&(o.sasiType==='ΜΟΝΗ ΘΩΡΑΚΙΣΗ'||!o.sasiType)&&(o.status==='STD_PENDING'||o.status==='STD_BUILD'||!o.status)).length, [customOrders]);
+  const dipliTotal = useMemo(() => customOrders.filter(o=>o.orderType==='ΤΥΠΟΠΟΙΗΜΕΝΗ'&&o.sasiType==='ΔΙΠΛΗ ΘΩΡΑΚΙΣΗ'&&(o.status==='STD_PENDING'||o.status==='STD_BUILD'||!o.status)).length, [customOrders]);
 
   return (
     <View style={{flex:1, flexDirection:'row'}}>
@@ -2344,7 +2237,7 @@ export default function CustomScreen({ customOrders, setCustomOrders, soldOrders
                           style={{backgroundColor:'#ff4444', paddingHorizontal:8, paddingVertical:3, borderRadius:5, alignSelf:'stretch', alignItems:'center'}}
                           onPress={async()=>{
                             if(!window.confirm(`Διαγραφή παραγγελίας #${o.orderNo};`)) return;
-                                await handleDeleteAndRelease(o);
+                            await handleDeleteAndRelease(o);
                           }}>
                           <Text style={{color:'white', fontSize:10, fontWeight:'bold'}}>✕ ΔΙΑ/ΦΗ</Text>
                         </TouchableOpacity>
@@ -2369,11 +2262,7 @@ export default function CustomScreen({ customOrders, setCustomOrders, soldOrders
                                   if(caseItem){const updCase={...caseItem,reservedBy:label,reservedOrderNo:o.orderNo,reservedAt:Date.now()};setCaseOrders(prev=>prev.map(s=>s.id===caseItem.id?updCase:s));await fetch(`${FIREBASE_URL}/case_orders/${caseItem.id}.json`,{method:"PUT",body:JSON.stringify(updCase)});}
                                   await logActivity('ΤΥΠΟΠΟΙΗΜΕΝΗ','Φάση → ΕΤΟΙΜΟ',{orderNo:o.orderNo,customer:o.customer,size:`${o.h}x${o.w}`});
                                 };
-                                if(Platform.OS==='web'){
-                                  if(window.confirm(`ΕΤΟΙΜΗ\nΠαραγγελία #${o.orderNo}${o.customer?" - "+o.customer:""}\n${o.h}x${o.w} | ${o.side}\n\nΕπιβεβαίωση;`)) await doReady();
-                                } else {
-                                  setReadyConfirmModal({visible:true, order:o, sasiItem, caseItem});
-                                }
+                                setReadyConfirmModal({visible:true, order:o, sasiItem, caseItem});
                               }}>
                               <Text style={{color:'white', fontSize:11, fontWeight:'bold'}}>{canMount?'✅ ΕΤΟΙΜΗ':'⏳ ΑΝΑΜΟΝΗ'}</Text>
                             </TouchableOpacity>
@@ -2486,7 +2375,7 @@ export default function CustomScreen({ customOrders, setCustomOrders, soldOrders
                                 await syncToCloud(upd);
                               }
                             });
-                          } else if(o.installation==='NAI'){
+                          } else if(o.installation==='ΝΑΙ'){
                             setConfirmModal({
                               visible:true,
                               title:'Επιστροφή στο μοντάρισμα',
@@ -2821,21 +2710,7 @@ export default function CustomScreen({ customOrders, setCustomOrders, soldOrders
                 </View>
               );
 
-              const sasiReady = sasiOrders.filter(o=>o.status==='READY');
-              const caseReady = caseOrders.filter(o=>o.status==='READY');
-
-              // Φιλτράρω ανά status
-              const moniOrders = customOrders.filter(o=>o.orderType==='ΤΥΠΟΠΟΙΗΜΕΝΗ'&&(o.sasiType==='ΜΟΝΗ ΘΩΡΑΚΙΣΗ'||!o.sasiType)&&((o.status==='STD_PENDING'||!o.status)||(o.status==='STD_READY'&&o.staveraPendingAtReady))).sort((a,b)=>(parseInt(a.orderNo)||0)-(parseInt(b.orderNo)||0));
-              const stdBuildMoniOrders = customOrders.filter(o=>o.orderType==='ΤΥΠΟΠΟΙΗΜΕΝΗ'&&(o.sasiType==='ΜΟΝΗ ΘΩΡΑΚΙΣΗ'||!o.sasiType)&&o.status==='STD_BUILD').sort((a,b)=>(parseInt(a.orderNo)||0)-(parseInt(b.orderNo)||0));
-              const stdBuildDipliOrders = customOrders.filter(o=>o.orderType==='ΤΥΠΟΠΟΙΗΜΕΝΗ'&&o.sasiType==='ΔΙΠΛΗ ΘΩΡΑΚΙΣΗ'&&o.status==='STD_BUILD').sort((a,b)=>(parseInt(a.orderNo)||0)-(parseInt(b.orderNo)||0));
-              const moniProdOrders = customOrders.filter(o=>o.orderType==='ΤΥΠΟΠΟΙΗΜΕΝΗ'&&(o.sasiType==='ΜΟΝΗ ΘΩΡΑΚΙΣΗ'||!o.sasiType)&&o.status==='MONI_PROD').sort((a,b)=>(parseInt(a.orderNo)||0)-(parseInt(b.orderNo)||0));
-              const staveraTabOrders = customOrders.filter(o=>o.orderType==='ΤΥΠΟΠΟΙΗΜΕΝΗ'&&(o.sasiType==='ΜΟΝΗ ΘΩΡΑΚΙΣΗ'||!o.sasiType)&&o.stavera&&o.stavera.filter(s=>s.dim).length>0&&(o.status==='STD_PENDING'||o.status==='MONI_PROD'||(o.status==='STD_READY'&&o.staveraPendingAtReady))&&!o.staveraDone).sort((a,b)=>(parseInt(a.orderNo)||0)-(parseInt(b.orderNo)||0));
-              const montageTabOrders = customOrders.filter(o=>o.orderType==='ΤΥΠΟΠΟΙΗΜΕΝΗ'&&(o.sasiType==='ΜΟΝΗ ΘΩΡΑΚΙΣΗ'||!o.sasiType)&&!o.lock&&o.installation==='ΝΑΙ'&&o.stdInProd&&!o.stdMontDone).sort((a,b)=>(parseInt(a.orderNo)||0)-(parseInt(b.orderNo)||0));
-              const dipliOrders = customOrders.filter(o=>o.orderType==='ΤΥΠΟΠΟΙΗΜΕΝΗ'&&o.sasiType==='ΔΙΠΛΗ ΘΩΡΑΚΙΣΗ'&&(o.status==='STD_PENDING'||!o.status||o.status==='PENDING')&&o.status!=='STD_BUILD').sort((a,b)=>(parseInt(a.orderNo)||0)-(parseInt(b.orderNo)||0));
-              const readyOrders = customOrders.filter(o=>o.orderType==='ΤΥΠΟΠΟΙΗΜΕΝΗ'&&(o.sasiType==='ΜΟΝΗ ΘΩΡΑΚΙΣΗ'||!o.sasiType)&&o.status==='STD_READY').sort((a,b)=>(parseInt(a.orderNo)||0)-(parseInt(b.orderNo)||0));
-              const moniSoldOrders = customOrders.filter(o=>o.orderType==='ΤΥΠΟΠΟΙΗΜΕΝΗ'&&(o.sasiType==='ΜΟΝΗ ΘΩΡΑΚΙΣΗ'||!o.sasiType)&&o.status==='STD_SOLD').sort((a,b)=>(b.soldAt||0)-(a.soldAt||0));
-              const dipliReadyOrders = customOrders.filter(o=>o.orderType==='ΤΥΠΟΠΟΙΗΜΕΝΗ'&&o.sasiType==='ΔΙΠΛΗ ΘΩΡΑΚΙΣΗ'&&o.status==='STD_READY').sort((a,b)=>(parseInt(a.orderNo)||0)-(parseInt(b.orderNo)||0));
-              const dipliSoldOrders = customOrders.filter(o=>o.orderType==='ΤΥΠΟΠΟΙΗΜΕΝΗ'&&o.sasiType==='ΔΙΠΛΗ ΘΩΡΑΚΙΣΗ'&&o.status==='STD_SOLD').sort((a,b)=>(b.soldAt||0)-(a.soldAt||0));
+              // Φιλτράρω ανά status — οι λίστες είναι memoized στο component level
 
               // ΜΟΝΗ — έλεγχος με βάση reservations[]
               const moniCards = moniOrders.map(o=>{
@@ -2877,9 +2752,7 @@ export default function CustomScreen({ customOrders, setCustomOrders, soldOrders
                 return renderStdCard(o, false, hasCase, false);
               });
 
-              // Counters για tabs — STD_PENDING + STD_BUILD
-              const moniTotal = customOrders.filter(o=>o.orderType==='ΤΥΠΟΠΟΙΗΜΕΝΗ'&&(o.sasiType==='ΜΟΝΗ ΘΩΡΑΚΙΣΗ'||!o.sasiType)&&(o.status==='STD_PENDING'||o.status==='STD_BUILD'||!o.status)).length;
-              const dipliTotal = customOrders.filter(o=>o.orderType==='ΤΥΠΟΠΟΙΗΜΕΝΗ'&&o.sasiType==='ΔΙΠΛΗ ΘΩΡΑΚΙΣΗ'&&(o.status==='STD_PENDING'||o.status==='STD_BUILD'||!o.status)).length;
+              // Counters για tabs — memoized στο component level
 
               return (<>
                 {/* TABS ΜΟΝΗ / ΔΙΠΛΗ — κρύβονται όταν έρχεται από sidebar */}
@@ -3422,10 +3295,13 @@ export default function CustomScreen({ customOrders, setCustomOrders, soldOrders
                             placeholderTextColor="#bbb"
                             multiline
                             value={s.menonNotes||''}
-                            onChangeText={async(v)=>{
+                            onChangeText={(v)=>{
                               const upd = {...s, menonNotes:v};
                               setDipliSasiStock(prev=>prev.map(x=>x.id===s.id?upd:x));
-                              await fetch(`${FIREBASE_URL}/dipli_sasi_stock/${s.id}.json`,{method:'PUT',body:JSON.stringify(upd)});
+                              clearTimeout(menonNotesTimers.current[s.id]);
+                              menonNotesTimers.current[s.id] = setTimeout(() => {
+                                fetch(`${FIREBASE_URL}/dipli_sasi_stock/${s.id}.json`,{method:'PUT',body:JSON.stringify(upd)});
+                              }, 500);
                             }}
                           />
                         </View>
@@ -3650,10 +3526,13 @@ export default function CustomScreen({ customOrders, setCustomOrders, soldOrders
                             placeholderTextColor="#bbb"
                             multiline
                             value={s.menonNotes||''}
-                            onChangeText={async(v)=>{
+                            onChangeText={(v)=>{
                               const upd = {...s, menonNotes:v};
                               setDipliSasiStock(prev=>prev.map(x=>x.id===s.id?upd:x));
-                              await fetch(`${FIREBASE_URL}/dipli_sasi_stock/${s.id}.json`,{method:'PUT',body:JSON.stringify(upd)});
+                              clearTimeout(menonNotesTimers.current[s.id]);
+                              menonNotesTimers.current[s.id] = setTimeout(() => {
+                                fetch(`${FIREBASE_URL}/dipli_sasi_stock/${s.id}.json`,{method:'PUT',body:JSON.stringify(upd)});
+                              }, 500);
                             }}
                           />
                         </View>
@@ -3745,7 +3624,7 @@ export default function CustomScreen({ customOrders, setCustomOrders, soldOrders
                     fromMenon: true,
                     menonNotes: s.menonNotes||'',
                   };
-                  setCustomOrders(prev=>[soldEntry,...prev]);
+                  setSoldOrders(prev=>[soldEntry,...prev]);
                   await fetch(`${FIREBASE_URL}/std_orders/${soldEntry.id}.json`,{method:'PUT',body:JSON.stringify(soldEntry)});
                   setDipliSasiStock(prev=>prev.filter(x=>x.id!==s.id));
                   await fetch(`${FIREBASE_URL}/dipli_sasi_stock/${s.id}.json`,{method:'DELETE'});

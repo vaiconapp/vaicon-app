@@ -15,9 +15,10 @@ import ActivityScreen from './ActivityScreen';
 import { FIREBASE_URL } from './firebaseConfig';
 
 // ============================================================
-//  🔐 ΚΩΔΙΚΟΣ ΠΡΟΣΒΑΣΗΣ — αλλάξτε εδώ τον κωδικό σας
+//  🔐 ΚΩΔΙΚΟΣ ΠΡΟΣΒΑΣΗΣ — ορίζεται στο αρχείο .env
+//  EXPO_PUBLIC_VAICON_PASSWORD=vaicon2024
 // ============================================================
-const VAICON_PASSWORD = "vaicon2024";
+const VAICON_PASSWORD = process.env.EXPO_PUBLIC_VAICON_PASSWORD || '';
 const STORAGE_KEY = "vaicon_auth_v1";
 
 // Έλεγχος αν ο browser θυμάται τη σύνδεση
@@ -140,7 +141,6 @@ export default function App() {
 
   const [customOrders, setCustomOrders] = useState([]);
   const [soldOrders, setSoldOrders] = useState([]);
-  const [stdSoldOrders, setStdSoldOrders] = useState([]);
   const [sasiOrders, setSasiOrders] = useState([]);
   const [soldSasiOrders, setSoldSasiOrders] = useState([]);
   const [caseOrders, setCaseOrders] = useState([]);
@@ -152,7 +152,12 @@ export default function App() {
   const [sasiStock, setSasiStock] = useState({});
   const [caseStock, setCaseStock] = useState({});
 
-  useEffect(() => { fetchData(); }, []);
+  const fetchAbortRef = useRef(null);
+
+  useEffect(() => {
+    fetchData();
+    return () => { if (fetchAbortRef.current) fetchAbortRef.current.abort(); };
+  }, []);
 
   // Back button handler
   useEffect(() => {
@@ -170,61 +175,62 @@ export default function App() {
   }, [menuOpen, showActivity, showCoatings, showLocks, showCustomers, tabIndex]);
 
   const fetchData = async () => {
-    try {
+    if (fetchAbortRef.current) fetchAbortRef.current.abort();
+    const controller = new AbortController();
+    fetchAbortRef.current = controller;
+    const { signal } = controller;
 
-      const resStd = await fetch(`${FIREBASE_URL}/std_orders.json`);
-      const dataStd = await resStd.json();
+    const fetchJSON = (url) => fetch(url, { signal }).then(r => {
+      if (!r.ok) throw new Error(`Firebase error ${r.status}: ${url}`);
+      return r.json();
+    });
+    try {
+      const [
+        dataStd, data2, data3, data4, data5, data6, data7, dataSasiStock, dataCaseStock
+      ] = await Promise.all([
+        fetchJSON(`${FIREBASE_URL}/std_orders.json`),
+        fetchJSON(`${FIREBASE_URL}/sasi_orders.json`),
+        fetchJSON(`${FIREBASE_URL}/case_orders.json`),
+        fetchJSON(`${FIREBASE_URL}/customers.json`),
+        fetchJSON(`${FIREBASE_URL}/coatings.json`),
+        fetchJSON(`${FIREBASE_URL}/dipli_sasi_stock.json`),
+        fetchJSON(`${FIREBASE_URL}/locks.json`),
+        fetchJSON(`${FIREBASE_URL}/sasi_stock.json`),
+        fetchJSON(`${FIREBASE_URL}/case_stock.json`),
+      ]);
+
       if (dataStd) {
         const loadedStd = Object.keys(dataStd).map(key => ({ id: key, ...dataStd[key] }));
-        setCustomOrders(loadedStd.filter(o => o.status !== 'SOLD'));
+        setCustomOrders(loadedStd.filter(o => o.status !== 'SOLD' && o.status !== 'STD_SOLD'));
         setSoldOrders(loadedStd.filter(o => o.status === 'SOLD' || o.status === 'STD_SOLD'));
-        setStdSoldOrders(loadedStd.filter(o => o.status === 'STD_SOLD'));
       }
-      const res2 = await fetch(`${FIREBASE_URL}/sasi_orders.json`);
-      const data2 = await res2.json();
       if (data2) {
         const loaded2 = Object.keys(data2).map(key => ({ id: key, ...data2[key] }));
         setSasiOrders(loaded2.filter(o => o.status !== 'SOLD'));
         setSoldSasiOrders(loaded2.filter(o => o.status === 'SOLD'));
       }
-      const res3 = await fetch(`${FIREBASE_URL}/case_orders.json`);
-      const data3 = await res3.json();
       if (data3) {
         const loaded3 = Object.keys(data3).map(key => ({ id: key, ...data3[key] }));
         setCaseOrders(loaded3.filter(o => o.status !== 'SOLD'));
         setSoldCaseOrders(loaded3.filter(o => o.status === 'SOLD'));
       }
-      const res4 = await fetch(`${FIREBASE_URL}/customers.json`);
-      const data4 = await res4.json();
       if (data4) {
         const loaded4 = Object.keys(data4).map(key => ({ id: key, ...data4[key] }));
         setCustomers(loaded4);
       }
-      const res5 = await fetch(`${FIREBASE_URL}/coatings.json`);
-      const data5 = await res5.json();
       if (data5) {
         const loaded5 = Object.keys(data5).map(key => ({ id: key, ...data5[key] }));
         setCoatings(loaded5);
       }
-      const res6 = await fetch(`${FIREBASE_URL}/dipli_sasi_stock.json`);
-      const data6 = await res6.json();
       if (data6) {
         const loaded6 = Object.keys(data6).map(key => ({ id: key, ...data6[key] }));
         setDipliSasiStock(loaded6);
       }
-      const res7 = await fetch(`${FIREBASE_URL}/locks.json`);
-      const data7 = await res7.json();
       if (data7) {
         const loaded7 = Object.keys(data7).map(key => ({ id: key, ...data7[key] }));
         setLocks(loaded7);
       }
-      // Φόρτωση νέου stock
-      const resSasiStock = await fetch(`${FIREBASE_URL}/sasi_stock.json`);
-      const dataSasiStock = await resSasiStock.json();
       if (dataSasiStock) setSasiStock(dataSasiStock);
-
-      const resCaseStock = await fetch(`${FIREBASE_URL}/case_stock.json`);
-      const dataCaseStock = await resCaseStock.json();
       if (dataCaseStock) setCaseStock(dataCaseStock);
 
     } catch (error) {
@@ -325,10 +331,16 @@ export default function App() {
                 <Text style={styles.menuItemText}>🔄 ΑΝΑΝΕΩΣΗ</Text>
               </TouchableOpacity>
               <TouchableOpacity style={[styles.menuItem, { backgroundColor: '#fff0f0', marginTop: 12 }]} onPress={() => {
-                Alert.alert("🔐 Αποσύνδεση", "Θέλεις να αποσυνδεθείς;\n\nΤην επόμενη φορά θα ζητηθεί ξανά κωδικός σε αυτόν τον υπολογιστή.", [
-                  { text: "ΑΚΥΡΟ", style: "cancel" },
-                  { text: "ΑΠΟΣΥΝΔΕΣΗ", style: "destructive", onPress: () => { forgetLogin(); setIsLoggedIn(false); setMenuOpen(false); } }
-                ]);
+                setMenuOpen(false);
+                const doLogout = () => { forgetLogin(); setIsLoggedIn(false); };
+                if (Platform.OS === 'web') {
+                  if (window.confirm('Θέλεις να αποσυνδεθείς;\n\nΤην επόμενη φορά θα ζητηθεί ξανά κωδικός σε αυτόν τον υπολογιστή.')) doLogout();
+                } else {
+                  Alert.alert("Αποσύνδεση", "Θέλεις να αποσυνδεθείς;\n\nΤην επόμενη φορά θα ζητηθεί ξανά κωδικός.", [
+                    { text: "ΑΚΥΡΟ", style: "cancel" },
+                    { text: "ΑΠΟΣΥΝΔΕΣΗ", style: "destructive", onPress: doLogout }
+                  ]);
+                }
               }}>
                 <Text style={[styles.menuItemText, { color: '#8B0000' }]}>🔐 ΑΠΟΣΥΝΔΕΣΗ</Text>
               </TouchableOpacity>

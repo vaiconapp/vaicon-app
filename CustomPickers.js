@@ -12,7 +12,7 @@ export function HardwarePickerModal({ visible, onClose, customForm, setCustomFor
               <Text style={{color:'white',fontSize:20,fontWeight:'bold'}}>✕</Text>
             </TouchableOpacity>
           </View>
-          {['Nikel','Bronze','Nikel Best','Bronze Best','Best Παραγγελία',''].map((c,i)=>(
+          {['Nickel','Bronze','Nickel Best','Bronze Best','Best Παραγγελία',''].map((c,i)=>(
             <TouchableOpacity key={i}
               style={{padding:16,borderBottomWidth:1,borderBottomColor:'#eee',flexDirection:'row',alignItems:'center',justifyContent:'space-between'}}
               onPress={()=>{

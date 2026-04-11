@@ -6,17 +6,17 @@ const PERIODS = ['ΣΗΜΕΡΑ', 'ΕΒΔΟΜΑΔΑ', 'ΜΗΝΑΣ', 'ΟΛΕΣ'];
 export default function StatsScreen({ customOrders, soldOrders, sasiOrders, soldSasiOrders }) {
   const [period, setPeriod] = useState('ΜΗΝΑΣ');
 
-  sasiOrders = sasiOrders || [];
-  soldSasiOrders = soldSasiOrders || [];
+  const sasiOrdersSafe = sasiOrders || [];
+  const soldSasiOrdersSafe = soldSasiOrders || [];
 
   // Πόρτες = ειδικές + σασι. Κάσες ΔΕΝ μετράνε στα στατιστικά
   const allOrders = useMemo(
-    () => [...customOrders, ...soldOrders, ...sasiOrders, ...soldSasiOrders],
-    [customOrders, soldOrders, sasiOrders, soldSasiOrders]
+    () => [...customOrders, ...soldOrders, ...sasiOrdersSafe, ...soldSasiOrdersSafe],
+    [customOrders, soldOrders, sasiOrdersSafe, soldSasiOrdersSafe]
   );
   const allSold = useMemo(
-    () => [...soldOrders, ...soldSasiOrders],
-    [soldOrders, soldSasiOrders]
+    () => [...soldOrders, ...soldSasiOrdersSafe],
+    [soldOrders, soldSasiOrdersSafe]
   );
 
   const now = Date.now();
@@ -29,7 +29,7 @@ export default function StatsScreen({ customOrders, soldOrders, sasiOrders, sold
 
   const filtered = useMemo(() => {
     const ms = periodMs[period];
-    return allOrders.filter(o => o.createdAt && (now - o.createdAt) <= ms);
+    return allOrders.filter(o => ms === Infinity || (o.createdAt && (now - o.createdAt) <= ms));
   }, [period, allOrders]);
 
   const filteredSold = useMemo(() => {
@@ -37,11 +37,19 @@ export default function StatsScreen({ customOrders, soldOrders, sasiOrders, sold
     return allSold.filter(o => o.soldAt && (now - o.soldAt) <= ms);
   }, [period, allSold]);
 
-  const liveCustom = customOrders.length;
-  const liveStandard = sasiOrders.length;
-  const pendingCount = [...customOrders, ...sasiOrders].filter(o => o.status === 'PENDING').length;
-  const prodCount = [...customOrders, ...sasiOrders].filter(o => o.status === 'PROD').length;
-  const readyCount = [...customOrders, ...sasiOrders].filter(o => o.status === 'READY').length;
+  const liveStd = customOrders.length;
+  const liveSasi = sasiOrdersSafe.length;
+  // Τυποποιημένες παραγγελίες χρησιμοποιούν STD_PENDING/STD_BUILD/MONI_PROD/STD_READY
+  // Παραγγελίες σασι χρησιμοποιούν PENDING/PROD/READY
+  const pendingCount = customOrders.filter(o =>
+    o.status === 'STD_PENDING' || o.status === 'STD_BUILD' || !o.status
+  ).length + sasiOrdersSafe.filter(o => o.status === 'PENDING').length;
+  const prodCount = customOrders.filter(o =>
+    o.status === 'MONI_PROD' || o.status === 'PROD'
+  ).length + sasiOrdersSafe.filter(o => o.status === 'PROD').length;
+  const readyCount = customOrders.filter(o =>
+    o.status === 'STD_READY' || o.status === 'READY'
+  ).length + sasiOrdersSafe.filter(o => o.status === 'READY').length;
 
   const avgTime = useMemo(() => {
     const calcAvg = (orders, fromKey, toKey) => {
@@ -50,27 +58,27 @@ export default function StatsScreen({ customOrders, soldOrders, sasiOrders, sold
       const total = valid.reduce((sum, o) => sum + (o[toKey] - o[fromKey]), 0);
       return Math.round(total / valid.length / 3600000);
     };
-    const all = [...customOrders, ...soldOrders, ...sasiOrders, ...soldSasiOrders];
+    const all = [...customOrders, ...soldOrders, ...sasiOrdersSafe, ...soldSasiOrdersSafe];
     return {
       toProd: calcAvg(all, 'createdAt', 'prodAt'),
       toReady: calcAvg(all, 'prodAt', 'readyAt'),
       toSold: calcAvg(all, 'readyAt', 'soldAt'),
     };
-  }, [customOrders, soldOrders, sasiOrders, soldSasiOrders]);
+  }, [customOrders, soldOrders, sasiOrdersSafe, soldSasiOrdersSafe]);
 
   // Δημοφιλέστερα μοντέλα (μόνο σασι)
   const topModels = useMemo(() => {
     const counts = {};
-    [...sasiOrders, ...soldSasiOrders].forEach(o => {
+    [...sasiOrdersSafe, ...soldSasiOrdersSafe].forEach(o => {
       if (o.model) counts[o.model] = (counts[o.model] || 0) + 1;
     });
     return Object.entries(counts).sort((a, b) => b[1] - a[1]).slice(0, 5);
-  }, [sasiOrders, soldSasiOrders]);
+  }, [sasiOrdersSafe, soldSasiOrdersSafe]);
 
   // Δημοφιλέστερα μεγέθη — μόνο από πωλήσεις πορτών, top 20
   const topSizes = useMemo(() => {
     const counts = {};
-    [...soldOrders, ...soldSasiOrders].forEach(o => {
+    [...soldOrders, ...soldSasiOrdersSafe].forEach(o => {
       const size = o.size || (o.w && o.h ? `${o.h}x${o.w}` : null);
       const side = o.side || '—';
       const armor = o.armor || o.model || '—';
@@ -80,7 +88,7 @@ export default function StatsScreen({ customOrders, soldOrders, sasiOrders, sold
       }
     });
     return Object.entries(counts).sort((a, b) => b[1] - a[1]).slice(0, 20);
-  }, [soldOrders, soldSasiOrders]);
+  }, [soldOrders, soldSasiOrdersSafe]);
 
   // Πωλήσεις ανά ημέρα (τελευταίες 7 ημέρες)
   const salesByDay = useMemo(() => {
@@ -138,8 +146,8 @@ export default function StatsScreen({ customOrders, soldOrders, sasiOrders, sold
           <StatusRow label="🟡 Στην Παραγωγή" value={prodCount} />
           <StatusRow label="🟢 Έτοιμα Αποθήκης" value={readyCount} />
           <View style={styles.divider} />
-          <StatusRow label="📦 Ειδικές (ενεργές)" value={liveCustom} />
-          <StatusRow label="📋 Τυποποιημένες (ενεργές)" value={liveStandard} />
+          <StatusRow label="🚪 Τυποποιημένες πόρτες (ενεργές)" value={liveStd} />
+          <StatusRow label="🔧 Παραγγελίες Σασί (ενεργές)" value={liveSasi} />
         </View>
 
         {/* ΜΕΣΟΣ ΧΡΟΝΟΣ */}
@@ -192,8 +200,8 @@ export default function StatsScreen({ customOrders, soldOrders, sasiOrders, sold
         <Text style={styles.sectionTitle}>💰 ΑΡΧΕΙΟ ΠΩΛΗΣΕΩΝ</Text>
         <View style={styles.card}>
           <StatusRow label="Ειδικές πωλήσεις" value={soldOrders.length} />
-          <StatusRow label="Τυποποιημένες πωλήσεις" value={soldSasiOrders.length} />
-          <StatusRow label="Σύνολο πωλήσεων" value={soldOrders.length + soldSasiOrders.length} bold />
+          <StatusRow label="Τυποποιημένες πωλήσεις" value={soldSasiOrdersSafe.length} />
+          <StatusRow label="Σύνολο πωλήσεων" value={soldOrders.length + soldSasiOrdersSafe.length} bold />
         </View>
 
       </View>

@@ -23,7 +23,7 @@ export default function LocksScreen({ locks, setLocks, onClose }) {
       for (const [id, order] of Object.entries(data)) {
         if (!order.lock) continue;
         const matchExact = order.lock === oldName;
-        const matchWithType = order.lock.startsWith(oldName + ' (');
+        const matchWithType = typeof order.lock === 'string' && order.lock.startsWith(oldName + ' (');
         if (matchExact || matchWithType) {
           const suffix = order.lock.slice(oldName.length);
           patch[id] = { ...order, lock: newName + suffix };
@@ -38,8 +38,8 @@ export default function LocksScreen({ locks, setLocks, onClose }) {
     try { await fetch(`${FIREBASE_URL}/locks/${id}.json`, { method: 'DELETE' }); } catch(e) {}
   };
 
-  const movelock = async (index, direction) => {
-    const newList = [...locks];
+  const moveLock = async (index, direction) => {
+    const newList = [...sorted];
     const swapIndex = index + direction;
     if (swapIndex < 0 || swapIndex >= newList.length) return;
     [newList[index], newList[swapIndex]] = [newList[swapIndex], newList[index]];
@@ -109,27 +109,30 @@ export default function LocksScreen({ locks, setLocks, onClose }) {
         <TextInput style={styles.search} placeholder="🔍 Αναζήτηση..." value={search} onChangeText={setSearch} />
         <Text style={styles.count}>Σύνολο: {locks.length} κλειδαριές</Text>
         <ScrollView>
-          {filtered.map((l, index) => (
-            <View key={l.id} style={styles.card}>
-              <View style={styles.orderBtns}>
-                <TouchableOpacity onPress={() => movelock(sorted.indexOf(l), -1)} disabled={sorted.indexOf(l) === 0}>
-                  <Text style={[styles.orderBtn, sorted.indexOf(l) === 0 && {opacity:0.2}]}>▲</Text>
-                </TouchableOpacity>
-                <TouchableOpacity onPress={() => movelock(sorted.indexOf(l), 1)} disabled={sorted.indexOf(l) === sorted.length - 1}>
-                  <Text style={[styles.orderBtn, sorted.indexOf(l) === sorted.length - 1 && {opacity:0.2}]}>▼</Text>
-                </TouchableOpacity>
+          {sorted.map((l, sortedIdx) => {
+            if (!l.name.toLowerCase().includes(search.toLowerCase())) return null;
+            return (
+              <View key={l.id} style={styles.card}>
+                <View style={styles.orderBtns}>
+                  <TouchableOpacity onPress={() => moveLock(sortedIdx, -1)} disabled={sortedIdx === 0}>
+                    <Text style={[styles.orderBtn, sortedIdx === 0 && {opacity:0.2}]}>▲</Text>
+                  </TouchableOpacity>
+                  <TouchableOpacity onPress={() => moveLock(sortedIdx, 1)} disabled={sortedIdx === sorted.length - 1}>
+                    <Text style={[styles.orderBtn, sortedIdx === sorted.length - 1 && {opacity:0.2}]}>▼</Text>
+                  </TouchableOpacity>
+                </View>
+                <Text style={styles.cardName}>{l.name}</Text>
+                <View style={styles.cardBtns}>
+                  <TouchableOpacity style={styles.editBtn} onPress={() => editLock(l)}>
+                    <Text style={styles.editTxt}>✏️</Text>
+                  </TouchableOpacity>
+                  <TouchableOpacity style={styles.deleteBtn} onPress={() => deleteLock(l.id)}>
+                    <Text style={styles.deleteTxt}>🗑</Text>
+                  </TouchableOpacity>
+                </View>
               </View>
-              <Text style={styles.cardName}>{l.name}</Text>
-              <View style={styles.cardBtns}>
-                <TouchableOpacity style={styles.editBtn} onPress={() => editLock(l)}>
-                  <Text style={styles.editTxt}>✏️</Text>
-                </TouchableOpacity>
-                <TouchableOpacity style={styles.deleteBtn} onPress={() => deleteLock(l.id)}>
-                  <Text style={styles.deleteTxt}>🗑</Text>
-                </TouchableOpacity>
-              </View>
-            </View>
-          ))}
+            );
+          })}
           {filtered.length === 0 && <Text style={styles.empty}>Δεν βρέθηκαν κλειδαριές.</Text>}
         </ScrollView>
       </View>

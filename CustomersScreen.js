@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useMemo } from 'react';
 import { StyleSheet, Text, View, ScrollView, TouchableOpacity, TextInput, Alert, Modal } from 'react-native';
 import { FIREBASE_URL } from './firebaseConfig';
 import { fmtDate } from './utils';
@@ -12,15 +12,19 @@ export default function CustomersScreen({ customers, setCustomers, onClose, pref
   const [selectedCustomerOrders, setSelectedCustomerOrders] = useState(null); // πελάτης για εμφάνιση παραγγελιών
   const [deleteCustomerModal, setDeleteCustomerModal] = useState({ visible:false, customerId:null, customerName:'' });
 
+  const orderCountByCustomer = useMemo(() => {
+    const counts = {};
+    for (const o of allOrders) {
+      if (o.customer) counts[o.customer] = (counts[o.customer] || 0) + 1;
+    }
+    return counts;
+  }, [allOrders]);
+
   const getStatusLabel = (order) => {
     if (order.status==='PENDING') return { label:'📋 Καταχωρημένη', color:'#ff4444' };
     if (order.status==='STD_PENDING') return { label:'📐 Τυποποιημένη', color:'#8B0000' };
     if (order.status==='READY') return { label:'✅ Έτοιμη Αποθήκης', color:'#00C851' };
     if (order.status==='PROD') {
-      const activePhasesLabels = ['laser','cases','montSasi','vafio','montDoor']
-        .map(k => order.phases?.[k])
-        .filter(p => p?.active && !p?.done)
-        .map(p => p?.label||'');
       const doneCount = ['laser','cases','montSasi','vafio','montDoor'].filter(k=>order.phases?.[k]?.done).length;
       return { label:`🔨 Παραγωγή (${doneCount} φάσεις done)`, color:'#ffbb33' };
     }
@@ -67,8 +71,8 @@ export default function CustomersScreen({ customers, setCustomers, onClose, pref
           }
           return updatedOrder;
         };
-        const updatedActive = await Promise.all(allOrders.filter(o => o.status !== 'SOLD').map(updateOrder));
-        const updatedSold = await Promise.all(allOrders.filter(o => o.status === 'SOLD').map(updateOrder));
+        const updatedActive = await Promise.all(allOrders.filter(o => o.status !== 'SOLD' && o.status !== 'STD_SOLD').map(updateOrder));
+        const updatedSold = await Promise.all(allOrders.filter(o => o.status === 'SOLD' || o.status === 'STD_SOLD').map(updateOrder));
         setCustomOrders(updatedActive);
         setSoldOrders(updatedSold);
       }
@@ -96,7 +100,7 @@ export default function CustomersScreen({ customers, setCustomers, onClose, pref
     const customer = customers.find(c => c.id === id);
     if (!customer) return;
     // Ελέγχουμε με όνομα — όχι customerId
-    const hasAnyOrders = allOrders.some(o => o.customer === customer.name);
+    const hasAnyOrders = allOrders.some(o => o.customerId === id || o.customer === customer.name);
     if (hasAnyOrders) {
       setDeleteCustomerModal({ visible:true, customerId:null, customerName:customer.name, blocked:true });
       return;
@@ -178,7 +182,7 @@ export default function CustomersScreen({ customers, setCustomers, onClose, pref
                     <Text style={{color:'white', fontSize:11, fontWeight:'bold'}}>📦 ΠΑΡΑΓΓΕΛΙΕΣ</Text>
                   </TouchableOpacity>
                   {(()=>{
-                    const cnt = allOrders.filter(o => o.customer === c.name).length;
+                    const cnt = orderCountByCustomer[c.name] || 0;
                     return (
                       <View style={{
                         backgroundColor: cnt > 0 ? '#8B0000' : '#bbb',
@@ -227,7 +231,7 @@ export default function CustomersScreen({ customers, setCustomers, onClose, pref
             <ScrollView style={{padding:12}}>
               {(()=>{
                 const allCustomerOrders = [...allOrders]
-                  .filter(o=>o.customer===selectedCustomerOrders?.name)
+                  .filter(o=>(selectedCustomerOrders?.id && o.customerId === selectedCustomerOrders.id) || o.customer===selectedCustomerOrders?.name)
                   .sort((a,b)=>(parseInt(a.orderNo)||0)-(parseInt(b.orderNo)||0));
                 if (allCustomerOrders.length === 0) return (
                   <Text style={{textAlign:'center', color:'#999', padding:20}}>Δεν υπάρχουν παραγγελίες</Text>

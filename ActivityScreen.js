@@ -1,10 +1,10 @@
 import React, { useState, useEffect } from 'react';
-import { StyleSheet, Text, View, ScrollView, TouchableOpacity, Alert } from 'react-native';
-import { loadActivityLog, cleanOldLogs, fmtDateTime } from './activityLog';
-import { FIREBASE_URL as FB_URL } from './firebaseConfig';
+import { StyleSheet, Text, View, ScrollView, TouchableOpacity, Alert, Platform } from 'react-native';
+import { loadActivityLog, cleanOldLogs } from './activityLog';
+import { fmtDateTime } from './utils';
+import { FIREBASE_URL } from './firebaseConfig';
 
 const SECTION_COLORS = {
-  'ΕΙΔΙΚΗ':        '#8B0000',
   'ΤΥΠΟΠΟΙΗΜΕΝΗ':  '#1565C0',
   'ΣΑΣΙ ΣΤΟΚ':     '#2E7D32',
   'ΚΑΣΕΣ ΣΤΟΚ':    '#E65100',
@@ -40,18 +40,23 @@ export default function ActivityScreen({ onClose }) {
   };
 
   const clearAll = () => {
-    Alert.alert("Διαγραφή", "Διαγραφή όλου του ιστορικού;", [
-      { text: "Όχι" },
-      { text: "Ναι", style: "destructive", onPress: async () => {
-        try {
-          await fetch(`${FB_URL}/activity_log.json`, { method: 'DELETE' });
-          setEntries([]);
-        } catch(e) {}
-      }}
-    ]);
+    const doDelete = async () => {
+      try {
+        await fetch(`${FIREBASE_URL}/activity_log.json`, { method: 'DELETE' });
+        setEntries([]);
+      } catch(e) {}
+    };
+    if (Platform.OS === 'web') {
+      if (window.confirm('Διαγραφή όλου του ιστορικού;')) doDelete();
+    } else {
+      Alert.alert("Διαγραφή", "Διαγραφή όλου του ιστορικού;", [
+        { text: "Όχι" },
+        { text: "Ναι", style: "destructive", onPress: doDelete }
+      ]);
+    }
   };
 
-  const FILTERS = ['ΟΛΑ', 'ΕΙΔΙΚΗ', 'ΤΥΠΟΠΟΙΗΜΕΝΗ', 'ΣΑΣΙ ΣΤΟΚ', 'ΚΑΣΕΣ ΣΤΟΚ'];
+  const FILTERS = ['ΟΛΑ', 'ΤΥΠΟΠΟΙΗΜΕΝΗ', 'ΣΑΣΙ ΣΤΟΚ', 'ΚΑΣΕΣ ΣΤΟΚ'];
   const filtered = filter === 'ΟΛΑ' ? entries : entries.filter(e => e.section === filter);
 
   const getIcon = (action) => {

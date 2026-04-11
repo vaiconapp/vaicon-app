@@ -1,9 +1,10 @@
 import React from 'react';
 import { Modal, View, Text, ScrollView, TouchableOpacity, StyleSheet } from 'react-native';
+import { parseDateStr } from './utils';
 
 export const PHASES = [
   { key:'laser',    label:'🔴 LASER ΚΟΠΕΣ' },
-  { key:'cases',    label:'🟡 ΚΑΣΣΕΣ' },
+  { key:'cases',    label:'🟡 ΚΑΣΕΣ' },
   { key:'montSasi', label:'🔵 ΚΑΤΑΡΤΙΣΗ ΣΑΣΙ' },
   { key:'vafio',    label:'🟢 ΒΑΦΕΙΟ' },
   { key:'montDoor', label:'⚫ ΜΟΝΤΑΡΙΣΜΑ/ΕΠΕΝΔΥΣΗ' },
@@ -29,7 +30,7 @@ export function PrintPreviewModal({ printPreview, setPrintPreview, getCopies, on
         return result.length>0 ? result : [{ title:`VAICON — ${dateStr} — ΚΑΣΕΣ`, orders:sorted }];
       })()
     : getCopies(orders, phaseLabel, dateStr);
-  const previewCopies = copies===4 ? allCopies : [allCopies[0]];
+  const previewCopies = copies===4 ? allCopies : allCopies.slice(0, 1);
 
   const COLS_CASES = [
     {label:'Νο',w:50},{label:'Διάσταση',w:95},{label:'Φορά',w:40},
@@ -78,7 +79,7 @@ export function PrintPreviewModal({ printPreview, setPrintPreview, getCopies, on
             </View>
             {sortedOrders.flatMap((o,i)=>
               (o.stavera||[]).filter(s=>s.dim).map((st,si)=>{
-                const deliveryFmt = o.deliveryDate ? new Date(o.deliveryDate).toLocaleDateString('el-GR',{day:'2-digit',month:'2-digit',year:'2-digit'}) : '';
+                const deliveryFmt = o.deliveryDate ? (parseDateStr(o.deliveryDate)||new Date()).toLocaleDateString('el-GR',{day:'2-digit',month:'2-digit',year:'2-digit'}) : '';
                 return (
                   <View key={o.id+'-'+si} style={[s.previewTr,(i+si)%2===0?s.previewTrEven:s.previewTrOdd]}>
                     <Text style={[s.previewTd,{width:50,fontWeight:'bold'}]}>{si===0?o.orderNo||'—':''}</Text>
@@ -108,13 +109,13 @@ export function PrintPreviewModal({ printPreview, setPrintPreview, getCopies, on
               const mentesedesVal = (!o.hinges||o.hinges==='2')?'':o.hinges;
               const bold = {fontWeight:'bold',fontSize:13,color:'#000'};
               const createdFmt = o.createdAt ? new Date(o.createdAt).toLocaleDateString('el-GR',{day:'2-digit',month:'2-digit',year:'2-digit'}) : '';
-              const deliveryFmt = o.deliveryDate ? new Date(o.deliveryDate).toLocaleDateString('el-GR',{day:'2-digit',month:'2-digit',year:'2-digit'}) : '';
+              const deliveryFmt = o.deliveryDate ? (parseDateStr(o.deliveryDate)||new Date()).toLocaleDateString('el-GR',{day:'2-digit',month:'2-digit',year:'2-digit'}) : '';
               return (
                 <View key={o.id+i} style={[s.previewTr,i%2===0?s.previewTrEven:s.previewTrOdd]}>
-                  <Text style={[s.previewTd,{width:50},...[bold]]}>{o.orderNo||'—'}</Text>
-                  <Text style={[s.previewTd,{width:95},...[bold]]}>{o.h||'—'} × {o.w||'—'}</Text>
-                  <Text style={[s.previewTd,{width:40},...[bold]]}>{fora}</Text>
-                  <Text style={[s.previewTd,{width:35},...[bold]]}>{mentesedesVal}</Text>
+                  <Text style={[s.previewTd,{width:50},bold]}>{o.orderNo||'—'}</Text>
+                  <Text style={[s.previewTd,{width:95},bold]}>{o.h||'—'} × {o.w||'—'}</Text>
+                  <Text style={[s.previewTd,{width:40},bold]}>{fora}</Text>
+                  <Text style={[s.previewTd,{width:35},bold]}>{mentesedesVal}</Text>
                   <Text style={[s.previewTd,{width:80}]}>{o.lock||'—'}</Text>
                   <Text style={[s.previewTd,{width:90}]}>{o.caseType||'—'}</Text>
                   <Text style={[s.previewTd,{width:65}]}>{o.caseMaterial||'DKP'}</Text>
@@ -143,15 +144,15 @@ export function PrintPreviewModal({ printPreview, setPrintPreview, getCopies, on
               const tzami = o.orderType==="ΤΥΠΟΠΟΙΗΜΕΝΗ"?"—":((o.glassDim||"")+(o.glassNotes?` ${o.glassNotes}`:""))||"—";
               const bold = {fontWeight:'bold',fontSize:13,color:'#000'};
               const createdFmt = o.createdAt ? new Date(o.createdAt).toLocaleDateString('el-GR',{day:'2-digit',month:'2-digit',year:'2-digit'}) : '';
-              const deliveryFmt = o.deliveryDate ? new Date(o.deliveryDate).toLocaleDateString('el-GR',{day:'2-digit',month:'2-digit',year:'2-digit'}) : '';
+              const deliveryFmt = o.deliveryDate ? (parseDateStr(o.deliveryDate)||new Date()).toLocaleDateString('el-GR',{day:'2-digit',month:'2-digit',year:'2-digit'}) : '';
               return (
                 <View key={o.id+i} style={[s.previewTr,i%2===0?s.previewTrEven:s.previewTrOdd]}>
-                  <Text style={[s.previewTd,{width:50},...[bold]]}>{o.orderNo||'—'}</Text>
-                  <Text style={[s.previewTd,{width:95},...[bold]]}>{o.h||'—'} × {o.w||'—'}</Text>
-                  <Text style={[s.previewTd,{width:40},...[bold]]}>{fora}</Text>
+                  <Text style={[s.previewTd,{width:50},bold]}>{o.orderNo||'—'}</Text>
+                  <Text style={[s.previewTd,{width:95},bold]}>{o.h||'—'} × {o.w||'—'}</Text>
+                  <Text style={[s.previewTd,{width:40},bold]}>{fora}</Text>
                   <Text style={[s.previewTd,{width:70}]}>{thorakisi}</Text>
-                  <Text style={[s.previewTd,{width:35},...[bold]]}>{mentesedesVal}</Text>
-                  <Text style={[s.previewTd,{width:55},...[bold]]}>{tzami}</Text>
+                  <Text style={[s.previewTd,{width:35},bold]}>{mentesedesVal}</Text>
+                  <Text style={[s.previewTd,{width:55},bold]}>{tzami}</Text>
                   <Text style={[s.previewTd,{width:70}]}>{o.orderType==='ΤΥΠΟΠΟΙΗΜΕΝΗ'?'—':(o.lock||'—')}</Text>
                   <Text style={[s.previewTd,{width:200}]}>{o.notes||''}</Text>
                   <Text style={[s.previewTd,{width:120,fontSize:11,color:'#555'}]}>{[createdFmt,deliveryFmt].filter(Boolean).join('  ')}</Text>
@@ -178,16 +179,16 @@ export function PrintPreviewModal({ printPreview, setPrintPreview, getCopies, on
               const tzami = o.orderType==="ΤΥΠΟΠΟΙΗΜΕΝΗ"?"—":((o.glassDim||"")+(o.glassNotes?` ${o.glassNotes}`:""))||"—";
               const bold = {fontWeight:'bold',fontSize:13,color:'#000'};
               const createdFmt2 = o.createdAt ? new Date(o.createdAt).toLocaleDateString('el-GR',{day:'2-digit',month:'2-digit',year:'2-digit'}) : '';
-              const deliveryFmt2 = o.deliveryDate ? new Date(o.deliveryDate).toLocaleDateString('el-GR',{day:'2-digit',month:'2-digit',year:'2-digit'}) : '';
+              const deliveryFmt2 = o.deliveryDate ? (parseDateStr(o.deliveryDate)||new Date()).toLocaleDateString('el-GR',{day:'2-digit',month:'2-digit',year:'2-digit'}) : '';
               return (
                 <View key={o.id+i} style={[s.previewTr,i%2===0?s.previewTrEven:s.previewTrOdd]}>
-                  <Text style={[s.previewTd,{width:50},...[bold]]}>{o.orderNo||'—'}</Text>
-                  <Text style={[s.previewTd,{width:95},...[bold]]}>{o.h||'—'} × {o.w||'—'}</Text>
-                  <Text style={[s.previewTd,{width:40},...[bold]]}>{fora}</Text>
+                  <Text style={[s.previewTd,{width:50},bold]}>{o.orderNo||'—'}</Text>
+                  <Text style={[s.previewTd,{width:95},bold]}>{o.h||'—'} × {o.w||'—'}</Text>
+                  <Text style={[s.previewTd,{width:40},bold]}>{fora}</Text>
                   <Text style={[s.previewTd,{width:70}]}>{thorakisi}</Text>
                   <Text style={[s.previewTd,{width:50}]}>{o.hardware||'—'}</Text>
-                  <Text style={[s.previewTd,{width:35},...[bold]]}>{mentesedesVal}</Text>
-                  <Text style={[s.previewTd,{width:55},...[bold]]}>{tzami}</Text>
+                  <Text style={[s.previewTd,{width:35},bold]}>{mentesedesVal}</Text>
+                  <Text style={[s.previewTd,{width:55},bold]}>{tzami}</Text>
                   <Text style={[s.previewTd,{width:70}]}>{o.orderType==='ΤΥΠΟΠΟΙΗΜΕΝΗ'?'—':(o.lock||'—')}</Text>
                   <Text style={[s.previewTd,{width:65}]}>{o.caseType||'—'}</Text>
                   <Text style={[s.previewTd,{width:120}]}>{(o.coatings&&o.coatings.length>0)?o.coatings.join(', '):''}</Text>
@@ -214,13 +215,13 @@ export function PrintPreviewModal({ printPreview, setPrintPreview, getCopies, on
               const mentesedesVal = (!o.hinges||o.hinges==='2')?'':o.hinges;
               const bold = {fontWeight:'bold',fontSize:13,color:'#000'};
               const createdFmt3 = o.createdAt ? new Date(o.createdAt).toLocaleDateString('el-GR',{day:'2-digit',month:'2-digit',year:'2-digit'}) : '';
-              const deliveryFmt3 = o.deliveryDate ? new Date(o.deliveryDate).toLocaleDateString('el-GR',{day:'2-digit',month:'2-digit',year:'2-digit'}) : '';
+              const deliveryFmt3 = o.deliveryDate ? (parseDateStr(o.deliveryDate)||new Date()).toLocaleDateString('el-GR',{day:'2-digit',month:'2-digit',year:'2-digit'}) : '';
               return (
                 <View key={o.id+i} style={[s.previewTr,i%2===0?s.previewTrEven:s.previewTrOdd]}>
-                  <Text style={[s.previewTd,{width:50},...[bold]]}>{o.orderNo||'—'}</Text>
-                  <Text style={[s.previewTd,{width:35},...[bold]]}>{o.qty||'1'}</Text>
-                  <Text style={[s.previewTd,{width:95},...[bold]]}>{o.h||'—'} × {o.w||'—'}</Text>
-                  <Text style={[s.previewTd,{width:40},...[bold]]}>{fora}</Text>
+                  <Text style={[s.previewTd,{width:50},bold]}>{o.orderNo||'—'}</Text>
+                  <Text style={[s.previewTd,{width:35},bold]}>{o.qty||'1'}</Text>
+                  <Text style={[s.previewTd,{width:95},bold]}>{o.h||'—'} × {o.w||'—'}</Text>
+                  <Text style={[s.previewTd,{width:40},bold]}>{fora}</Text>
                   <Text style={[s.previewTd,{width:35}]}>{mentesedesVal}</Text>
                   <Text style={[s.previewTd,{width:90}]}>{o.caseType||'—'}</Text>
                   <Text style={[s.previewTd,{width:65}]}>{o.caseMaterial||'DKP'}</Text>
@@ -248,13 +249,13 @@ export function PrintPreviewModal({ printPreview, setPrintPreview, getCopies, on
             const bold = {fontWeight:'bold',fontSize:13,color:'#000'};
             return (
               <View key={o.id+i} style={[s.previewTr,i%2===0?s.previewTrEven:s.previewTrOdd]}>
-                <Text style={[s.previewTd,{width:50},...[bold]]}>{o.orderNo||'—'}</Text>
-                <Text style={[s.previewTd,{width:35},...[bold]]}>{o.qty||'1'}</Text>
-                <Text style={[s.previewTd,{width:80},...[bold]]}>{o.h||'—'}x{o.w||'—'}</Text>
-                <Text style={[s.previewTd,{width:40},...[bold]]}>{fora}</Text>
+                <Text style={[s.previewTd,{width:50},bold]}>{o.orderNo||'—'}</Text>
+                <Text style={[s.previewTd,{width:35},bold]}>{o.qty||'1'}</Text>
+                <Text style={[s.previewTd,{width:80},bold]}>{o.h||'—'}x{o.w||'—'}</Text>
+                <Text style={[s.previewTd,{width:40},bold]}>{fora}</Text>
                 <Text style={[s.previewTd,{width:70}]}>{(o.armor||'ΜΟΝΗ')+' ΘΩΡ.'}</Text>
-                <Text style={[s.previewTd,{width:35},...[bold]]}>{mentesedesVal}</Text>
-                <Text style={[s.previewTd,{width:55},...[bold]]}>{tzami}</Text>
+                <Text style={[s.previewTd,{width:35},bold]}>{mentesedesVal}</Text>
+                <Text style={[s.previewTd,{width:55},bold]}>{tzami}</Text>
                 <Text style={[s.previewTd,{width:70}]}>{o.orderType==='ΤΥΠΟΠΟΙΗΜΕΝΗ'?'—':(o.lock||'—')}</Text>
                 <Text style={[s.previewTd,{width:50}]}>{o.hardware||'—'}</Text>
                 <Text style={[s.previewTd,{width:65}]}>{o.caseType||'—'}</Text>
