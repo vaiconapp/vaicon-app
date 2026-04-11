@@ -13,6 +13,23 @@ export default function CoatingsScreen({ coatings, setCoatings, onClose }) {
     } catch { Alert.alert("Σφάλμα", "Δεν αποθηκεύτηκε στο Cloud."); }
   };
 
+  const propagateCoatingRename = async (oldName, newName) => {
+    if (oldName === newName) return;
+    try {
+      const res = await fetch(`${FIREBASE_URL}/std_orders.json`);
+      const data = await res.json();
+      if (!data) return;
+      const patch = {};
+      for (const [id, order] of Object.entries(data)) {
+        if (order.coatings && order.coatings.includes(oldName)) {
+          patch[id] = { ...order, coatings: order.coatings.map(c => c === oldName ? newName : c) };
+        }
+      }
+      if (Object.keys(patch).length === 0) return;
+      await fetch(`${FIREBASE_URL}/std_orders.json`, { method: 'PATCH', body: JSON.stringify(patch) });
+    } catch(e) { console.warn('Propagate coating rename error:', e); }
+  };
+
   const deleteFromCloud = async (id) => {
     try { await fetch(`${FIREBASE_URL}/coatings/${id}.json`, { method: 'DELETE' }); } catch(e) {}
   };
@@ -31,9 +48,13 @@ export default function CoatingsScreen({ coatings, setCoatings, onClose }) {
   const saveCoating = async () => {
     if (!form.trim()) return Alert.alert("Προσοχή", "Βάλτε όνομα επένδυσης.");
     if (editingId) {
-      const updated = { ...coatings.find(c => c.id === editingId), name: form.trim() };
+      const existing = coatings.find(c => c.id === editingId);
+      if (!existing) return Alert.alert("Προσοχή", "Η εγγραφή δεν βρέθηκε, ανανεώστε τη σελίδα.");
+      const oldName = existing.name;
+      const updated = { ...existing, name: form.trim() };
       setCoatings(coatings.map(c => c.id === editingId ? updated : c));
       await syncToCloud(updated);
+      await propagateCoatingRename(oldName, form.trim());
       Alert.alert("VAICON", `Η επένδυση ενημερώθηκε!\n${form.trim()}`);
     } else {
       const exists = coatings.some(c => c.name.toLowerCase() === form.trim().toLowerCase());

@@ -13,6 +13,27 @@ export default function LocksScreen({ locks, setLocks, onClose }) {
     } catch { Alert.alert("Σφάλμα", "Δεν αποθηκεύτηκε στο Cloud."); }
   };
 
+  const propagateLockRename = async (oldName, newName) => {
+    if (oldName === newName) return;
+    try {
+      const res = await fetch(`${FIREBASE_URL}/std_orders.json`);
+      const data = await res.json();
+      if (!data) return;
+      const patch = {};
+      for (const [id, order] of Object.entries(data)) {
+        if (!order.lock) continue;
+        const matchExact = order.lock === oldName;
+        const matchWithType = order.lock.startsWith(oldName + ' (');
+        if (matchExact || matchWithType) {
+          const suffix = order.lock.slice(oldName.length); // "" ή " (type)"
+          patch[id] = { ...order, lock: newName + suffix };
+        }
+      }
+      if (Object.keys(patch).length === 0) return;
+      await fetch(`${FIREBASE_URL}/std_orders.json`, { method: 'PATCH', body: JSON.stringify(patch) });
+    } catch(e) { console.warn('Propagate lock rename error:', e); }
+  };
+
   const deleteFromCloud = async (id) => {
     try { await fetch(`${FIREBASE_URL}/locks/${id}.json`, { method: 'DELETE' }); } catch(e) {}
   };
@@ -30,9 +51,13 @@ export default function LocksScreen({ locks, setLocks, onClose }) {
   const saveLock = async () => {
     if (!form.trim()) return Alert.alert("Προσοχή", "Βάλτε όνομα κλειδαριάς.");
     if (editingId) {
-      const updated = { ...locks.find(l => l.id === editingId), name: form.trim() };
+      const existing = locks.find(l => l.id === editingId);
+      if (!existing) return Alert.alert("Προσοχή", "Η εγγραφή δεν βρέθηκε, ανανεώστε τη σελίδα.");
+      const oldName = existing.name;
+      const updated = { ...existing, name: form.trim() };
       setLocks(locks.map(l => l.id === editingId ? updated : l));
       await syncToCloud(updated);
+      await propagateLockRename(oldName, form.trim());
       Alert.alert("VAICON", `Η κλειδαριά ενημερώθηκε!\n${form.trim()}`);
     } else {
       const exists = locks.some(l => l.name.toLowerCase() === form.trim().toLowerCase());
