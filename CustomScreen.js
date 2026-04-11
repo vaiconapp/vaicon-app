@@ -7,7 +7,7 @@ import { fmtDate, fmtDateTime } from './utils';
 import { sasiKey, caseKey, stockAvailable } from './stockUtils';
 import { SellModal, ConfirmModal, DuplicateModal } from './CustomFormModals';
 import { HardwarePickerModal, LockPickerModal, CoatingsPickerModal, DatePickerModal } from './CustomPickers';
-import { PrintPreviewModal } from './PrintPreview';
+import { PrintPreviewModal, PHASES } from './PrintPreview';
 import { printHTML, buildPrintHTML } from './printUtils';
 
 // ── Helpers για νέο stock σύστημα ──

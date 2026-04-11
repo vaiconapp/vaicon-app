@@ -1,7 +1,7 @@
 import React from 'react';
 import { Modal, View, Text, ScrollView, TouchableOpacity, StyleSheet } from 'react-native';
 
-const PHASES = [
+export const PHASES = [
   { key:'laser',    label:'🔴 LASER ΚΟΠΕΣ' },
   { key:'cases',    label:'🟡 ΚΑΣΣΕΣ' },
   { key:'montSasi', label:'🔵 ΚΑΤΑΡΤΙΣΗ ΣΑΣΙ' },
