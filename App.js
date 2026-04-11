@@ -140,6 +140,7 @@ export default function App() {
 
   const [customOrders, setCustomOrders] = useState([]);
   const [soldOrders, setSoldOrders] = useState([]);
+  const [stdSoldOrders, setStdSoldOrders] = useState([]);
   const [sasiOrders, setSasiOrders] = useState([]);
   const [soldSasiOrders, setSoldSasiOrders] = useState([]);
   const [caseOrders, setCaseOrders] = useState([]);
@@ -175,8 +176,9 @@ export default function App() {
       const dataStd = await resStd.json();
       if (dataStd) {
         const loadedStd = Object.keys(dataStd).map(key => ({ id: key, ...dataStd[key] }));
-        setCustomOrders(loadedStd.filter(o => o.status !== 'SOLD' && o.status !== 'STD_SOLD'));
+        setCustomOrders(loadedStd.filter(o => o.status !== 'SOLD'));
         setSoldOrders(loadedStd.filter(o => o.status === 'SOLD' || o.status === 'STD_SOLD'));
+        setStdSoldOrders(loadedStd.filter(o => o.status === 'STD_SOLD'));
       }
       const res2 = await fetch(`${FIREBASE_URL}/sasi_orders.json`);
       const data2 = await res2.json();
