@@ -20,21 +20,22 @@ export default function StatsScreen({ customOrders, soldOrders, sasiOrders, sold
   );
 
   const now = Date.now();
-  const periodMs = {
-    'ΣΗΜΕΡΑ': 24 * 60 * 60 * 1000,
-    'ΕΒΔΟΜΑΔΑ': 7 * 24 * 60 * 60 * 1000,
-    'ΜΗΝΑΣ': 30 * 24 * 60 * 60 * 1000,
-    'ΟΛΕΣ': Infinity,
+  const startOfToday = (() => { const d = new Date(now); d.setHours(0,0,0,0); return d.getTime(); })();
+  const periodCutoff = {
+    'ΣΗΜΕΡΑ':    startOfToday,
+    'ΕΒΔΟΜΑΔΑ':  now - 7  * 24 * 60 * 60 * 1000,
+    'ΜΗΝΑΣ':     now - 30 * 24 * 60 * 60 * 1000,
+    'ΟΛΕΣ':      0,
   };
 
   const filtered = useMemo(() => {
-    const ms = periodMs[period];
-    return allOrders.filter(o => ms === Infinity || (o.createdAt && (now - o.createdAt) <= ms));
+    const cutoff = periodCutoff[period];
+    return allOrders.filter(o => o.createdAt && o.createdAt >= cutoff);
   }, [period, allOrders]);
 
   const filteredSold = useMemo(() => {
-    const ms = periodMs[period];
-    return allSold.filter(o => o.soldAt && (now - o.soldAt) <= ms);
+    const cutoff = periodCutoff[period];
+    return allSold.filter(o => o.soldAt && o.soldAt >= cutoff);
   }, [period, allSold]);
 
   const liveStd = customOrders.length;

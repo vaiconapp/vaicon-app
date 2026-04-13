@@ -165,6 +165,19 @@ export default function CustomScreen({ customOrders, setCustomOrders, soldOrders
   const saveOrder = async () => {
     if (!customForm.orderNo) return Alert.alert("Προσοχή","Το Νούμερο Παραγγελίας είναι υποχρεωτικό.");
     if (!customForm.h||!customForm.w) return Alert.alert("Προσοχή","Βάλτε Ύψος και Πλάτος.");
+    const allOrdersForDupCheck = [...customOrders, ...soldOrders];
+    const dupExists = allOrdersForDupCheck.some(o => o.orderNo === customForm.orderNo && o.id !== editingOrder?.id);
+    if (dupExists) {
+      const base = customForm.orderNo;
+      const suggested = computeSuggested(base, allOrdersForDupCheck, editingOrder?.id);
+      setDupModal({
+        visible: true, base, suggested,
+        onUse: () => { setDupModal(m=>({...m,visible:false})); setCustomForm(f=>({...f,orderNo:suggested})); },
+        onKeep: () => { setDupModal(m=>({...m,visible:false})); },
+        onCancel: () => { setDupModal(m=>({...m,visible:false})); setCustomForm(f=>({...f,orderNo:''})); }
+      });
+      return;
+    }
 
     // Έλεγχος αν ο πελάτης είναι καταχωρημένος
     if (customForm.customer && !selectedCustomer) {
@@ -1458,9 +1471,9 @@ export default function CustomScreen({ customOrders, setCustomOrders, soldOrders
   const montageTabOrders = useMemo(() => customOrders.filter(o=>o.orderType==='ΤΥΠΟΠΟΙΗΜΕΝΗ'&&(o.sasiType==='ΜΟΝΗ ΘΩΡΑΚΙΣΗ'||!o.sasiType)&&!o.lock&&o.installation==='ΝΑΙ'&&o.stdInProd&&!o.stdMontDone).sort((a,b)=>(parseInt(a.orderNo)||0)-(parseInt(b.orderNo)||0)), [customOrders]);
   const dipliOrders = useMemo(() => customOrders.filter(o=>o.orderType==='ΤΥΠΟΠΟΙΗΜΕΝΗ'&&o.sasiType==='ΔΙΠΛΗ ΘΩΡΑΚΙΣΗ'&&(o.status==='STD_PENDING'||!o.status||o.status==='PENDING')&&o.status!=='STD_BUILD').sort((a,b)=>(parseInt(a.orderNo)||0)-(parseInt(b.orderNo)||0)), [customOrders]);
   const readyOrders = useMemo(() => customOrders.filter(o=>o.orderType==='ΤΥΠΟΠΟΙΗΜΕΝΗ'&&(o.sasiType==='ΜΟΝΗ ΘΩΡΑΚΙΣΗ'||!o.sasiType)&&o.status==='STD_READY').sort((a,b)=>(parseInt(a.orderNo)||0)-(parseInt(b.orderNo)||0)), [customOrders]);
-  const moniSoldOrders = useMemo(() => customOrders.filter(o=>o.orderType==='ΤΥΠΟΠΟΙΗΜΕΝΗ'&&(o.sasiType==='ΜΟΝΗ ΘΩΡΑΚΙΣΗ'||!o.sasiType)&&o.status==='STD_SOLD').sort((a,b)=>(b.soldAt||0)-(a.soldAt||0)), [customOrders]);
+  const moniSoldOrders = useMemo(() => [...customOrders, ...soldOrders].filter(o=>o.orderType==='ΤΥΠΟΠΟΙΗΜΕΝΗ'&&(o.sasiType==='ΜΟΝΗ ΘΩΡΑΚΙΣΗ'||!o.sasiType)&&o.status==='STD_SOLD').sort((a,b)=>(b.soldAt||0)-(a.soldAt||0)), [customOrders, soldOrders]);
   const dipliReadyOrders = useMemo(() => customOrders.filter(o=>o.orderType==='ΤΥΠΟΠΟΙΗΜΕΝΗ'&&o.sasiType==='ΔΙΠΛΗ ΘΩΡΑΚΙΣΗ'&&o.status==='STD_READY').sort((a,b)=>(parseInt(a.orderNo)||0)-(parseInt(b.orderNo)||0)), [customOrders]);
-  const dipliSoldOrders = useMemo(() => customOrders.filter(o=>o.orderType==='ΤΥΠΟΠΟΙΗΜΕΝΗ'&&o.sasiType==='ΔΙΠΛΗ ΘΩΡΑΚΙΣΗ'&&o.status==='STD_SOLD').sort((a,b)=>(b.soldAt||0)-(a.soldAt||0)), [customOrders]);
+  const dipliSoldOrders = useMemo(() => [...customOrders, ...soldOrders].filter(o=>o.orderType==='ΤΥΠΟΠΟΙΗΜΕΝΗ'&&o.sasiType==='ΔΙΠΛΗ ΘΩΡΑΚΙΣΗ'&&o.status==='STD_SOLD').sort((a,b)=>(b.soldAt||0)-(a.soldAt||0)), [customOrders, soldOrders]);
   const moniTotal = useMemo(() => customOrders.filter(o=>o.orderType==='ΤΥΠΟΠΟΙΗΜΕΝΗ'&&(o.sasiType==='ΜΟΝΗ ΘΩΡΑΚΙΣΗ'||!o.sasiType)&&(o.status==='STD_PENDING'||o.status==='STD_BUILD'||!o.status)).length, [customOrders]);
   const dipliTotal = useMemo(() => customOrders.filter(o=>o.orderType==='ΤΥΠΟΠΟΙΗΜΕΝΗ'&&o.sasiType==='ΔΙΠΛΗ ΘΩΡΑΚΙΣΗ'&&(o.status==='STD_PENDING'||o.status==='STD_BUILD'||!o.status)).length, [customOrders]);
 
@@ -1863,10 +1876,11 @@ export default function CustomScreen({ customOrders, setCustomOrders, soldOrders
             onChangeText={v=>setCustomForm({...customForm,orderNo:v})}
             onSubmitEditing={()=>{
               if (!customForm.orderNo) { hRef.current?.focus(); return; }
-              const exists = customOrders.some(o=>o.orderNo===customForm.orderNo && o.id!==editingOrder?.id);
+              const allForDup = [...customOrders, ...soldOrders];
+              const exists = allForDup.some(o=>o.orderNo===customForm.orderNo && o.id!==editingOrder?.id);
               if (exists) {
                 const base = customForm.orderNo;
-                const suggested = computeSuggested(base, customOrders, editingOrder?.id);
+                const suggested = computeSuggested(base, allForDup, editingOrder?.id);
                 Keyboard.dismiss();
                 setDupModal({
                   visible:true, base, suggested,
@@ -1880,10 +1894,11 @@ export default function CustomScreen({ customOrders, setCustomOrders, soldOrders
             }}
             onBlur={()=>{
               if (!customForm.orderNo) return;
-              const exists = customOrders.some(o=>o.orderNo===customForm.orderNo && o.id!==editingOrder?.id);
+              const allForDup = [...customOrders, ...soldOrders];
+              const exists = allForDup.some(o=>o.orderNo===customForm.orderNo && o.id!==editingOrder?.id);
               if (exists) {
                 const base = customForm.orderNo;
-                const suggested = computeSuggested(base, customOrders, editingOrder?.id);
+                const suggested = computeSuggested(base, allForDup, editingOrder?.id);
                 setDupModal({
                   visible:true, base, suggested,
                   onUse:()=>{ setDupModal(m=>({...m,visible:false})); setCustomForm(f=>({...f,orderNo:suggested})); },
@@ -2121,14 +2136,23 @@ export default function CustomScreen({ customOrders, setCustomOrders, soldOrders
               </TouchableOpacity>
             </View>
           ) : (
-            <TouchableOpacity
-              style={[styles.saveBtn, {backgroundColor:'#8B0000'}]}
-              onPress={()=>{
-                Keyboard.dismiss();
-                saveOrder();
-              }}>
-              <Text style={{color:'white', fontWeight:'bold', fontSize:15}}>📐 ΑΠΟΘΗΚΕΥΣΗ ΠΑΡΑΓΓΕΛΙΑΣ</Text>
-            </TouchableOpacity>
+            <View style={{flexDirection:'row', gap:8}}>
+              {(customForm.orderNo||customForm.customer||customForm.h||customForm.w||editingOrder) ? (
+                <TouchableOpacity
+                  style={[styles.saveBtn, {flex:1, backgroundColor:'#555'}]}
+                  onPress={()=>{ Keyboard.dismiss(); resetForm(); }}>
+                  <Text style={{color:'white', fontWeight:'bold', fontSize:15}}>✕ ΑΚΥΡΩΣΗ</Text>
+                </TouchableOpacity>
+              ) : null}
+              <TouchableOpacity
+                style={[styles.saveBtn, {flex:2, backgroundColor:'#8B0000'}]}
+                onPress={()=>{
+                  Keyboard.dismiss();
+                  saveOrder();
+                }}>
+                <Text style={{color:'white', fontWeight:'bold', fontSize:15}}>📐 ΑΠΟΘΗΚΕΥΣΗ ΠΑΡΑΓΓΕΛΙΑΣ</Text>
+              </TouchableOpacity>
+            </View>
           )}
 
 
@@ -2410,9 +2434,10 @@ export default function CustomScreen({ customOrders, setCustomOrders, soldOrders
                         onPress={async()=>{
                           const doSell = async()=>{
                             const now = Date.now();
-                            const updated = customOrders.map(x=>x.id===o.id?{...x,status:'STD_SOLD',soldAt:now}:x);
-                            setCustomOrders(updated);
-                            await syncToCloud({...o,status:'STD_SOLD',soldAt:now});
+                            const soldOrder = {...o, status:'STD_SOLD', soldAt:now};
+                            setCustomOrders(customOrders.filter(x=>x.id!==o.id));
+                            setSoldOrders(prev=>[soldOrder,...prev]);
+                            await syncToCloud(soldOrder);
                             // Αφαίρεση δέσμευσης + qty από νέο stock
                             const isMoni = (o.sasiType==='ΜΟΝΗ ΘΩΡΑΚΙΣΗ'||!o.sasiType) && !o.lock;
                             const orderQty = parseInt(o.qty)||1;

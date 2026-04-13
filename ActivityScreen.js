@@ -22,14 +22,14 @@ const ACTION_ICONS = {
   'Επεξεργασία':      '✏️',
 };
 
-export default function ActivityScreen({ onClose }) {
+export default function ActivityScreen({ onClose, visible = true, refreshKey = 0 }) {
   const [entries, setEntries] = useState([]);
   const [loading, setLoading] = useState(true);
   const [filter, setFilter] = useState('ΟΛΑ');
 
   useEffect(() => {
-    loadData();
-  }, []);
+    if (visible) loadData();
+  }, [visible, refreshKey]);
 
   const loadData = async () => {
     setLoading(true);

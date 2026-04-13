@@ -12,7 +12,8 @@ import CustomersScreen from './CustomersScreen';
 import CoatingsScreen from './CoatingsScreen';
 import LocksScreen from './LocksScreen';
 import ActivityScreen from './ActivityScreen';
-import { FIREBASE_URL } from './firebaseConfig';
+import { FIREBASE_URL, hasFirebaseRealtime } from './firebaseConfig';
+import { applyFetchedBundle, subscribeFirebaseRealtime } from './firebaseRealtime';
 
 // ============================================================
 //  🔐 ΚΩΔΙΚΟΣ ΠΡΟΣΒΑΣΗΣ — ορίζεται στο αρχείο .env
@@ -151,10 +152,25 @@ export default function App() {
   const [dipliSasiStock, setDipliSasiStock] = useState([]);
   const [sasiStock, setSasiStock] = useState({});
   const [caseStock, setCaseStock] = useState({});
+  const [activityRefreshKey, setActivityRefreshKey] = useState(0);
 
   const fetchAbortRef = useRef(null);
 
   useEffect(() => {
+    if (hasFirebaseRealtime()) {
+      try {
+        return subscribeFirebaseRealtime({
+          setCustomOrders, setSoldOrders, setSasiOrders, setSoldSasiOrders,
+          setCaseOrders, setSoldCaseOrders, setCustomers, setCoatings,
+          setDipliSasiStock, setLocks, setSasiStock, setCaseStock,
+          setLoading, setActivityRefreshKey,
+        });
+      } catch (e) {
+        console.error('Firebase realtime:', e);
+        fetchData();
+        return () => { if (fetchAbortRef.current) fetchAbortRef.current.abort(); };
+      }
+    }
     fetchData();
     return () => { if (fetchAbortRef.current) fetchAbortRef.current.abort(); };
   }, []);
@@ -179,6 +195,7 @@ export default function App() {
     const controller = new AbortController();
     fetchAbortRef.current = controller;
     const { signal } = controller;
+    setLoading(true);
 
     const fetchJSON = (url) => fetch(url, { signal }).then(r => {
       if (!r.ok) throw new Error(`Firebase error ${r.status}: ${url}`);
@@ -199,42 +216,22 @@ export default function App() {
         fetchJSON(`${FIREBASE_URL}/case_stock.json`),
       ]);
 
-      if (dataStd) {
-        const loadedStd = Object.keys(dataStd).map(key => ({ id: key, ...dataStd[key] }));
-        setCustomOrders(loadedStd.filter(o => o.status !== 'SOLD' && o.status !== 'STD_SOLD'));
-        setSoldOrders(loadedStd.filter(o => o.status === 'SOLD' || o.status === 'STD_SOLD'));
-      }
-      if (data2) {
-        const loaded2 = Object.keys(data2).map(key => ({ id: key, ...data2[key] }));
-        setSasiOrders(loaded2.filter(o => o.status !== 'SOLD'));
-        setSoldSasiOrders(loaded2.filter(o => o.status === 'SOLD'));
-      }
-      if (data3) {
-        const loaded3 = Object.keys(data3).map(key => ({ id: key, ...data3[key] }));
-        setCaseOrders(loaded3.filter(o => o.status !== 'SOLD'));
-        setSoldCaseOrders(loaded3.filter(o => o.status === 'SOLD'));
-      }
-      if (data4) {
-        const loaded4 = Object.keys(data4).map(key => ({ id: key, ...data4[key] }));
-        setCustomers(loaded4);
-      }
-      if (data5) {
-        const loaded5 = Object.keys(data5).map(key => ({ id: key, ...data5[key] }));
-        setCoatings(loaded5);
-      }
-      if (data6) {
-        const loaded6 = Object.keys(data6).map(key => ({ id: key, ...data6[key] }));
-        setDipliSasiStock(loaded6);
-      }
-      if (data7) {
-        const loaded7 = Object.keys(data7).map(key => ({ id: key, ...data7[key] }));
-        setLocks(loaded7);
-      }
-      if (dataSasiStock) setSasiStock(dataSasiStock);
-      if (dataCaseStock) setCaseStock(dataCaseStock);
-
+      applyFetchedBundle(
+        {
+          setCustomOrders, setSoldOrders, setSasiOrders, setSoldSasiOrders,
+          setCaseOrders, setSoldCaseOrders, setCustomers, setCoatings,
+          setDipliSasiStock, setLocks, setSasiStock, setCaseStock,
+        },
+        {
+          dataStd, data2, data3, data4, data5, data6, data7, dataSasiStock, dataCaseStock,
+        }
+      );
+      setActivityRefreshKey(k => k + 1);
     } catch (error) {
-      console.error(error);
+      if (error.name !== 'AbortError') {
+        console.error(error);
+        Alert.alert("Σφάλμα", "Αποτυχία σύνδεσης με το Cloud. Ελέγξτε τη σύνδεση και ξαναπροσπαθήστε.");
+      }
     } finally {
       setLoading(false);
     }
@@ -254,8 +251,12 @@ export default function App() {
 
   if (loading) return (
     <View style={styles.loading}>
-      <ActivityIndicator size="large" color="#8B0000" />
-      <Text style={styles.loadingText}>Σύνδεση με Vaicon Cloud...</Text>
+      <View style={styles.loadingCard}>
+        <Text style={styles.loadingLogo}>VAICON</Text>
+        <View style={styles.loadingDivider} />
+        <ActivityIndicator size="large" color="#E53935" style={{ marginBottom: 14 }} />
+        <Text style={styles.loadingText}>Σύνδεση με το Cloud...</Text>
+      </View>
     </View>
   );
 
@@ -327,7 +328,7 @@ export default function App() {
               <TouchableOpacity style={styles.menuItem} onPress={() => { setMenuOpen(false); setShowActivity(true); }}>
                 <Text style={styles.menuItemText}>📜 ΙΣΤΟΡΙΚΟ ΚΙΝΗΣΕΩΝ</Text>
               </TouchableOpacity>
-              <TouchableOpacity style={styles.menuItem} onPress={() => { setMenuOpen(false); fetchData(); Alert.alert("VAICON", "Ανανέωση δεδομένων..."); }}>
+              <TouchableOpacity style={styles.menuItem} onPress={async () => { setMenuOpen(false); await fetchData(); Alert.alert("VAICON", "Τα δεδομένα ανανεώθηκαν!"); }}>
                 <Text style={styles.menuItemText}>🔄 ΑΝΑΝΕΩΣΗ</Text>
               </TouchableOpacity>
               <TouchableOpacity style={[styles.menuItem, { backgroundColor: '#fff0f0', marginTop: 12 }]} onPress={() => {
@@ -350,7 +351,11 @@ export default function App() {
 
         {/* ΙΣΤΟΡΙΚΟ ΚΙΝΗΣΕΩΝ */}
         <Modal visible={showActivity} animationType="slide" onRequestClose={() => setShowActivity(false)}>
-          <ActivityScreen onClose={() => setShowActivity(false)} />
+          <ActivityScreen
+            visible={showActivity}
+            refreshKey={activityRefreshKey}
+            onClose={() => setShowActivity(false)}
+          />
         </Modal>
 
         {/* ΕΠΕΝΔΥΣΕΙΣ SCREEN */}
@@ -390,8 +395,11 @@ export default function App() {
 }
 
 const styles = StyleSheet.create({
-  loading: { flex: 1, justifyContent: 'center', alignItems: 'center', gap: 12 },
-  loadingText: { color: '#555', fontSize: 14 },
+  loading: { flex: 1, justifyContent: 'center', alignItems: 'center', backgroundColor: '#1a1a2e' },
+  loadingCard: { backgroundColor: '#fff', borderRadius: 20, padding: 36, alignItems: 'center', width: 260, shadowColor: '#000', shadowOpacity: 0.25, shadowRadius: 16, elevation: 12 },
+  loadingLogo: { fontSize: 36, fontWeight: '900', fontStyle: 'italic', color: '#E53935', letterSpacing: 6, marginBottom: 16 },
+  loadingDivider: { width: 40, height: 3, backgroundColor: '#E53935', borderRadius: 2, marginBottom: 24 },
+  loadingText: { color: '#888', fontSize: 13, fontWeight: '600', letterSpacing: 1 },
   menuOverlay: { flex: 1, backgroundColor: 'rgba(0,0,0,0.5)', justifyContent: 'flex-start', alignItems: 'flex-end' },
   menuPanel: { backgroundColor: '#fff', width: 220, marginTop: 80, marginRight: 10, borderRadius: 12, padding: 16, elevation: 10 },
   menuTitle: { fontSize: 12, fontWeight: 'bold', color: '#999', marginBottom: 12, letterSpacing: 2 },
