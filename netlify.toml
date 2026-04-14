@@ -1,0 +1,8 @@
+# Build: Expo ενσωματώνει τις EXPO_PUBLIC_* κατά το `expo export` (όχι runtime).
+# Υποχρεωτικό στο Netlify: Site settings → Environment variables →
+#   EXPO_PUBLIC_FIREBASE_API_KEY = (ίδιο με το τοπικό .env)
+# Μετά: Redeploy (χωρίς νέο key το bundle μένει με undefined).
+
+[build]
+  command = "npx expo export -p web"
+  publish = "dist"

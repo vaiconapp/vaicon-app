@@ -7,7 +7,7 @@ export const FIREBASE_URL =
  * Βάλε στο .env: EXPO_PUBLIC_FIREBASE_API_KEY=... (Web API Key από Firebase Console → Ρυθμίσεις έργου)
  */
 export const firebaseAppConfig = {
-  apiKey: process.env.EXPO_PUBLIC_FIREBASE_API_KEY || '',
+  apiKey: 'AIzaSyB04iN9S_MfYMsx3V3Jn1j2rOyz5ySf-sQ',
   authDomain: 'vaiconcloud.firebaseapp.com',
   databaseURL: FIREBASE_URL,
   projectId: 'vaiconcloud',

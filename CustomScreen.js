@@ -17,7 +17,45 @@ const STD_HEIGHTS = ['208','213','218','223'];
 const STD_WIDTHS  = ['83','88','93','98'];
 const INIT_FORM   = { customer:'', orderNo:'', h:'', w:'', hinges:'2', qty:'1', glassDim:'', glassNotes:'', armor:'ΜΟΝΗ', side:'ΔΕΞΙΑ', lock:'', notes:'', status:'PENDING', hardware:'', installation:'ΟΧΙ', caseType:'ΚΛΕΙΣΤΟΥ ΤΥΠΟΥ', caseMaterial:'DKP', deliveryDate:'', sasiType:'ΜΟΝΗ ΘΩΡΑΚΙΣΗ', coatings:[], stavera:[], heightReduction:'' };
 
+/** Νούμερο παραγγελίας σαν string (ώστε 0000 ≡ αποθηκευμένο "0000" / 0) */
+const normOrderNoStr = (v) => String(v ?? '').trim();
 
+/** Τιμή παράδοσης από Firebase (συνήθως deliveryDate · εναλλακτικά snake_case / PascalCase) */
+const deliveryDateDisplay = (order) => {
+  if (!order || typeof order !== 'object') return '';
+  const v = order.deliveryDate ?? order.delivery_date ?? order.DeliveryDate;
+  if (v == null || v === '') return '';
+  const s = String(v).trim();
+  return s;
+};
+
+/** Λίστες τυποποιημένων: 📅 καταχώρηση — παράδοση */
+const StdOrderDatesLine = ({ order, fontSize = 11, marginBottom }) => {
+  const created = fmtDate(order.createdAt);
+  const del = deliveryDateDisplay(order);
+  if (!created && !del) return null;
+  const wrap = marginBottom !== undefined ? { marginBottom } : {};
+  return (
+    <View style={{ flexDirection: 'row', flexWrap: 'wrap',
+      alignItems: 'center', ...wrap }}>
+      {created
+        ? <Text style={{ fontSize, fontWeight: 'bold', color: '#007AFF' }}>
+            📅 {created}
+          </Text>
+        : null}
+      {created && del
+        ? <Text style={{ fontSize, fontWeight: 'bold', color: '#e65100' }}>
+            {' — '}{del}
+          </Text>
+        : null}
+      {!created && del
+        ? <Text style={{ fontSize, fontWeight: 'bold', color: '#e65100' }}>
+            🚚 {del}
+          </Text>
+        : null}
+    </View>
+  );
+};
 
 
 // ── Helper: βρίσκει πρόταση για διπλότυπο νούμερο ──
@@ -25,7 +63,7 @@ const computeSuggested = (base, allOrders, editingId) => {
   const letters = 'ΑΒΓΔΕΖΗΘΙΚΛΜΝΞΟΠΡΣΤΥΦΧΨΩ';
   for(let i=0; i<letters.length; i++){
     const candidate = base+'-'+letters[i];
-    if(!allOrders.some(o=>o.orderNo===candidate && o.id!==editingId)) return candidate;
+    if(!allOrders.some(o=>normOrderNoStr(o.orderNo)===candidate && o.id!==editingId)) return candidate;
   }
   return base+'-?';
 };
@@ -163,10 +201,11 @@ export default function CustomScreen({ customOrders, setCustomOrders, soldOrders
   }, [customOrders, caseStock, sasiStock]);
 
   const saveOrder = async () => {
-    if (!customForm.orderNo) return Alert.alert("Προσοχή","Το Νούμερο Παραγγελίας είναι υποχρεωτικό.");
+    const orderNoNorm = normOrderNoStr(customForm.orderNo);
+    if (!orderNoNorm) return Alert.alert("Προσοχή","Το Νούμερο Παραγγελίας είναι υποχρεωτικό.");
     if (!customForm.h||!customForm.w) return Alert.alert("Προσοχή","Βάλτε Ύψος και Πλάτος.");
     const allOrdersForDupCheck = [...customOrders, ...soldOrders];
-    const dupExists = allOrdersForDupCheck.some(o => o.orderNo === customForm.orderNo && o.id !== editingOrder?.id);
+    const dupExists = allOrdersForDupCheck.some(o => normOrderNoStr(o.orderNo) === orderNoNorm && o.id !== editingOrder?.id);
     if (dupExists) {
       const base = customForm.orderNo;
       const suggested = computeSuggested(base, allOrdersForDupCheck, editingOrder?.id);
@@ -229,7 +268,7 @@ export default function CustomScreen({ customOrders, setCustomOrders, soldOrders
       montSasi:{active:true, done:false, printHistory:[]},
       montDoor:{active:true, done:false, printHistory:[]}
     } : null;
-    const newOrder = {...customForm, orderType:'ΤΥΠΟΠΟΙΗΜΕΝΗ',
+    const newOrder = {...customForm, orderNo: orderNoNorm, orderType:'ΤΥΠΟΠΟΙΗΜΕΝΗ',
       id: editingOrder ? editingOrder.id : Date.now().toString(),
       createdAt: editingOrder ? editingOrder.createdAt : Date.now(),
       status: needsBuild ? 'STD_BUILD' : 'STD_PENDING',
@@ -842,6 +881,9 @@ export default function CustomScreen({ customOrders, setCustomOrders, soldOrders
     });
   };
   // ── Δανεισμός δέσμευσης stock ──
+  // orderNo από Firebase/reservations μπορεί να είναι number ενώ στις παραγγελίες string (ή το αντίστροφο)
+  const sameOrderNo = (a, b) => String(a ?? '') === String(b ?? '');
+
   const handleBorrowRequest = (order, stockType) => {
     const h = String(order.h), w = String(order.w), side = order.side;
     const sk = sasiKey(h, w, side);
@@ -855,7 +897,7 @@ export default function CustomScreen({ customOrders, setCustomOrders, soldOrders
 
     // Βοηθητική: φιλτράρω υποψήφιες παραγγελίες από reservations
     const filterCandidates = (reservations) => reservations
-      .map(r => customOrders.find(o => o.orderNo === r.orderNo && o.id !== order.id))
+      .map(r => customOrders.find(o => sameOrderNo(o.orderNo, r.orderNo) && o.id !== order.id))
       .filter(o => {
         if (!o) return false;
         // Αποκλείω παραγγελίες που είναι ήδη ΕΤΟΙΜΕΣ ή ΠΩΛΗΜΕΝΕΣ
@@ -943,16 +985,16 @@ export default function CustomScreen({ customOrders, setCustomOrders, soldOrders
         const res = await fetch(`${FIREBASE_URL}/case_stock/${donorCk}.json`);
         const data = await res.json();
         if (!data) { showAlert('Σφάλμα', 'Δεν βρέθηκε το stock κάσας.'); return; }
-        const donorRes = (data.reservations || []).find(r => r.orderNo === donorOrder.orderNo);
+        const donorRes = (data.reservations || []).find(r => sameOrderNo(r.orderNo, donorOrder.orderNo));
         if (!donorRes) { showAlert('Σφάλμα', 'Δεν βρέθηκε η δέσμευση στο stock του donor.'); return; }
         const orderQty = parseInt(order.qty) || 1;
         const newRes = { orderNo: order.orderNo, customer: order.customer || '', qty: orderQty, borrowedFrom: donorOrder.orderNo };
         const donorResUpdated = { ...donorRes, borrowedTo: order.orderNo, priorityReservation: true };
         const cleanedReservations = (data.reservations || []).filter(r =>
-          r.orderNo !== order.orderNo &&
-          r.borrowedFrom !== donorOrder.orderNo
+          !sameOrderNo(r.orderNo, order.orderNo) &&
+          !sameOrderNo(r.borrowedFrom, donorOrder.orderNo)
         );
-        const updReservations = cleanedReservations.map(r => r.orderNo === donorOrder.orderNo ? newRes : r);
+        const updReservations = cleanedReservations.map(r => sameOrderNo(r.orderNo, donorOrder.orderNo) ? newRes : r);
         updReservations.push(donorResUpdated);
         const updEntry = { ...data, reservations: updReservations };
         await fetch(`${FIREBASE_URL}/case_stock/${donorCk}.json`, { method: 'PUT', body: JSON.stringify(updEntry) });
@@ -972,13 +1014,13 @@ export default function CustomScreen({ customOrders, setCustomOrders, soldOrders
         const res = await fetch(`${FIREBASE_URL}/sasi_stock/${sk}.json`);
         const data = await res.json();
         if (!data) { showAlert('Σφάλμα', 'Δεν βρέθηκε το stock σασί.'); return; }
-        const donorRes = (data.reservations || []).find(r => r.orderNo === donorOrder.orderNo);
+        const donorRes = (data.reservations || []).find(r => sameOrderNo(r.orderNo, donorOrder.orderNo));
         if (!donorRes) { showAlert('Σφάλμα', 'Δεν βρέθηκε η δέσμευση σασί.'); return; }
         const orderQty = parseInt(order.qty) || 1;
         const newRes = { orderNo: order.orderNo, customer: order.customer || '', qty: orderQty, borrowedFrom: donorOrder.orderNo };
         const donorResUpdated = { ...donorRes, borrowedTo: order.orderNo, priorityReservation: true };
-        const cleanedSasiReservations = (data.reservations || []).filter(r => r.orderNo !== order.orderNo);
-        const updReservations = cleanedSasiReservations.map(r => r.orderNo === donorOrder.orderNo ? newRes : r);
+        const cleanedSasiReservations = (data.reservations || []).filter(r => !sameOrderNo(r.orderNo, order.orderNo));
+        const updReservations = cleanedSasiReservations.map(r => sameOrderNo(r.orderNo, donorOrder.orderNo) ? newRes : r);
         updReservations.push(donorResUpdated);
         const updEntry = { ...data, reservations: updReservations };
         await fetch(`${FIREBASE_URL}/sasi_stock/${sk}.json`, { method: 'PUT', body: JSON.stringify(updEntry) });
@@ -1016,7 +1058,7 @@ export default function CustomScreen({ customOrders, setCustomOrders, soldOrders
             <Text style={{color:'white', fontWeight:'bold', fontSize:12}}>⏳ ΕΚΚΡΕΜΕΙ ΣΤΑΘΕΡΟ</Text>
           </View>}
           <View style={{flexDirection:'row',alignItems:'center',flexWrap:'wrap',gap:4,marginBottom:3}}>
-            {fmtDate(order.createdAt)?<Text style={{fontSize:11,color:'#007AFF',fontWeight:'bold'}}>📅 {fmtDate(order.createdAt)}</Text>:null}
+            {!isStd && fmtDate(order.createdAt)?<Text style={{fontSize:11,color:'#007AFF',fontWeight:'bold'}}>📅 {fmtDate(order.createdAt)}</Text>:null}
             <Text style={[styles.cardDetails,{fontWeight:'bold'}]}>#{order.orderNo}</Text>
             {order.customer?<Text style={[styles.cardCustomer]}>👤 {order.customer}</Text>:null}
             <Text style={styles.cardDetails}>{order.h}x{order.w}</Text>
@@ -1036,8 +1078,16 @@ export default function CustomScreen({ customOrders, setCustomOrders, soldOrders
           {order.coatings&&order.coatings.length>0&&<Text style={[styles.cardSubDetails,{color:'#007AFF'}]}>🎨 {order.coatings.join(', ')}</Text>}
           {order.notes?<Text style={styles.cardSubDetails}>Σημ: {order.notes}</Text>:null}
           <View style={styles.datesRow}>
-            {fmtDate(order.createdAt)&&<Text style={styles.dateChip}>📅 {fmtDate(order.createdAt)}</Text>}
-            {order.deliveryDate?<Text style={[styles.dateChip,{backgroundColor:'#fff3e0',color:'#e65100'}]}>🚚 {order.deliveryDate}</Text>:null}
+            {isStd && (fmtDate(order.createdAt) || deliveryDateDisplay(order)) ? (
+              <View style={styles.dateChipWrap}>
+                <StdOrderDatesLine order={order} fontSize={10} />
+              </View>
+            ) : (
+              <>
+                {fmtDate(order.createdAt)&&<Text style={styles.dateChip}>📅 {fmtDate(order.createdAt)}</Text>}
+                {deliveryDateDisplay(order) ? <Text style={[styles.dateChip,{backgroundColor:'#fff3e0',color:'#e65100'}]}>🚚 {deliveryDateDisplay(order)}</Text> : null}
+              </>
+            )}
             {fmtDate(order.prodAt)&&<Text style={styles.dateChip}>🔨 {fmtDate(order.prodAt)}</Text>}
             {fmtDate(order.readyAt)&&<Text style={styles.dateChip}>✅ {fmtDate(order.readyAt)}</Text>}
           </View>
@@ -1413,10 +1463,10 @@ export default function CustomScreen({ customOrders, setCustomOrders, soldOrders
                             </View>
                           </TouchableOpacity>
                           <View style={{flex:1}}>
-                            {fmtDate(o.createdAt)?<Text style={{fontSize:11,color:'#007AFF',fontWeight:'bold',marginBottom:2}}>📅 {fmtDate(o.createdAt)}</Text>:null}
+                            <StdOrderDatesLine order={o} marginBottom={2} />
                             <Text style={{fontWeight:'bold', fontSize:13, marginBottom:4}}>#{o.orderNo} {o.customer?`— ${o.customer}`:''}</Text>
                             <Text style={{fontSize:12, color:'#555', marginBottom:6}}>{o.h}x{o.w} | {o.side}</Text>
-                            {(o.stavera||[]).map((s,idx)=>(
+                              {(o.stavera||[]).map((s,idx)=>(
                               <View key={idx} style={{backgroundColor:'white', borderRadius:6, padding:8, marginBottom:4, borderLeftWidth:2, borderLeftColor:'#ce93d8'}}>
                                 <Text style={{fontWeight:'bold', fontSize:13, color:'#4a148c'}}>📐 {s.dim||'—'}</Text>
                                 {s.note?<Text style={{fontSize:12, color:'#555', marginTop:2}}>{s.note}</Text>:null}
@@ -1668,7 +1718,7 @@ export default function CustomScreen({ customOrders, setCustomOrders, soldOrders
               Θέλετε να πάρετε τη δέσμευση{' '}
               <Text style={{fontWeight:'bold'}}>{borrowConfirmModal.stockType==='case'?'κάσας':'σασί'}</Text>
               {' '}από την παραγγελία{' '}
-              <Text style={{fontWeight:'bold'}}>#{borrowConfirmModal.candidate?.orderNo}</Text>;
+              <Text style={{fontWeight:'bold'}}>#{borrowConfirmModal.candidate?.orderNo}</Text>
             </Text>
             <Text style={{fontSize:12, color:'#888', marginBottom:20, textAlign:'center', lineHeight:18}}>
               Η #{borrowConfirmModal.candidate?.orderNo} θα χάσει τη δέσμευσή της και θα αναπληρωθεί αυτόματα με προτεραιότητα όταν μπει νέο stock.
@@ -1875,11 +1925,12 @@ export default function CustomScreen({ customOrders, setCustomOrders, soldOrders
             }}
             onChangeText={v=>setCustomForm({...customForm,orderNo:v})}
             onSubmitEditing={()=>{
-              if (!customForm.orderNo) { hRef.current?.focus(); return; }
+              const on = normOrderNoStr(customForm.orderNo);
+              if (!on) { hRef.current?.focus(); return; }
               const allForDup = [...customOrders, ...soldOrders];
-              const exists = allForDup.some(o=>o.orderNo===customForm.orderNo && o.id!==editingOrder?.id);
+              const exists = allForDup.some(o=>normOrderNoStr(o.orderNo)===on && o.id!==editingOrder?.id);
               if (exists) {
-                const base = customForm.orderNo;
+                const base = on;
                 const suggested = computeSuggested(base, allForDup, editingOrder?.id);
                 Keyboard.dismiss();
                 setDupModal({
@@ -1893,11 +1944,12 @@ export default function CustomScreen({ customOrders, setCustomOrders, soldOrders
               }
             }}
             onBlur={()=>{
-              if (!customForm.orderNo) return;
+              const on = normOrderNoStr(customForm.orderNo);
+              if (!on) return;
               const allForDup = [...customOrders, ...soldOrders];
-              const exists = allForDup.some(o=>o.orderNo===customForm.orderNo && o.id!==editingOrder?.id);
+              const exists = allForDup.some(o=>normOrderNoStr(o.orderNo)===on && o.id!==editingOrder?.id);
               if (exists) {
-                const base = customForm.orderNo;
+                const base = on;
                 const suggested = computeSuggested(base, allForDup, editingOrder?.id);
                 setDupModal({
                   visible:true, base, suggested,
@@ -2180,9 +2232,10 @@ export default function CustomScreen({ customOrders, setCustomOrders, soldOrders
                     style={{backgroundColor:'#fff', borderRadius:8, padding:10, marginBottom:8, borderLeftWidth:5, borderLeftColor:cardBorder, elevation:2}}>
                     <View style={{flexDirection:'row', justifyContent:'space-between', alignItems:'flex-start'}}>
                       <View style={{flex:1}}>
-                        {/* ΓΡΑΜΜΗ 1: ημερομηνία — #νούμερο — πελάτης — τεμάχια */}
+                        {/* ΓΡΑΜΜΗ 1: καταχώρηση — παράδοση */}
+                        <StdOrderDatesLine order={o} marginBottom={4} />
+                        {/* ΓΡΑΜΜΗ 2: #νούμερο — πελάτης — τεμάχια */}
                         <View style={{flexDirection:'row', alignItems:'center', gap:6, flexWrap:'wrap'}}>
-                          {fmtDate(o.createdAt)?<Text style={{fontSize:11,color:'#007AFF',fontWeight:'bold'}}>📅 {fmtDate(o.createdAt)}</Text>:null}
                           <Text style={{fontWeight:'900', fontSize:16, color:'#1a1a1a'}}>#{o.orderNo}</Text>
                           {o.customer?<Text style={{fontSize:14, fontWeight:'bold', color:'#333'}}>{o.customer}</Text>:null}
                           {o.qty&&parseInt(o.qty)>1?<Text style={{fontSize:16,fontWeight:'900',color:'#cc0000'}}>{o.qty}τεμ</Text>:null}
@@ -2192,7 +2245,7 @@ export default function CustomScreen({ customOrders, setCustomOrders, soldOrders
                             <Text style={{color:'white', fontSize:10, fontWeight:'bold'}}>✏️ ΕΠΕΞ</Text>
                           </TouchableOpacity>
                         </View>
-                        {/* ΓΡΑΜΜΗ 2: διάσταση — φορά — τύπος σασί — χρώμα εξαρτημάτων */}
+                        {/* ΓΡΑΜΜΗ 3: διάσταση — φορά — τύπος σασί — χρώμα εξαρτημάτων */}
                         <View style={{flexDirection:'row', alignItems:'center', gap:8, marginTop:3, flexWrap:'wrap'}}>
                           <Text style={{fontSize:15, fontWeight:'900', color:'#1a1a1a'}}>{o.h}x{o.w}</Text>
                           <Text style={{fontSize:15, fontWeight:'900', color:'#1a1a1a'}}>{o.side==='ΑΡΙΣΤΕΡΗ'?'◄ ΑΡ':'ΔΕΞ ►'}</Text>
@@ -2214,7 +2267,6 @@ export default function CustomScreen({ customOrders, setCustomOrders, soldOrders
                         {o.stavera&&o.stavera.filter(s=>s.dim).length>0?<Text style={{fontSize:11, color:'#555', marginTop:2}}>📐 {o.stavera.filter(s=>s.dim).map(s=>s.dim+(s.note?' '+s.note:'')).join(' | ')}</Text>:null}
                         {/* ΓΡΑΜΜΗ 5: παρατηρήσεις */}
                         {o.notes?<Text style={{fontSize:11, color:'#888', marginTop:2}}>Σημ: {o.notes}</Text>:null}
-                        {o.deliveryDate?<Text style={{fontSize:10, color:'#007AFF', marginTop:2}}>📅 {o.deliveryDate}</Text>:null}
                       </View>
                       <View style={{alignItems:'flex-end', gap:4, marginLeft:8}}>
                         <View style={{flexDirection:'row', gap:4}}>
@@ -2346,9 +2398,9 @@ export default function CustomScreen({ customOrders, setCustomOrders, soldOrders
                 <View key={o.id} style={{backgroundColor:'#e8f5e9', borderRadius:8, padding:10, marginBottom:8, borderLeftWidth:5, borderLeftColor:'#00C851', elevation:2}}>
                   <View style={{flexDirection:'row', justifyContent:'space-between', alignItems:'flex-start'}}>
                     <View style={{flex:1}}>
-                      {/* ΓΡΑΜΜΗ 1: ημερομηνία — #νούμερο — πελάτης — τεμάχια */}
+                      <StdOrderDatesLine order={o} marginBottom={4} />
+                      {/* ΓΡΑΜΜΗ 2: #νούμερο — πελάτης — τεμάχια */}
                       <View style={{flexDirection:'row', alignItems:'center', gap:6, flexWrap:'wrap'}}>
-                        {fmtDate(o.createdAt)?<Text style={{fontSize:11,color:'#007AFF',fontWeight:'bold'}}>📅 {fmtDate(o.createdAt)}</Text>:null}
                         <Text style={{fontWeight:'900', fontSize:16, color:'#1a1a1a'}}>#{o.orderNo}</Text>
                         {o.customer?<Text style={{fontSize:14, fontWeight:'bold', color:'#333'}}>{o.customer}</Text>:null}
                         {o.qty&&parseInt(o.qty)>1?<Text style={{fontSize:16,fontWeight:'900',color:'#cc0000'}}>{o.qty}τεμ</Text>:null}
@@ -2375,7 +2427,6 @@ export default function CustomScreen({ customOrders, setCustomOrders, soldOrders
                       {o.stavera&&o.stavera.filter(s=>s.dim).length>0?<Text style={{fontSize:11, color:'#555', marginTop:2}}>📐 {o.stavera.filter(s=>s.dim).map(s=>s.dim+(s.note?' '+s.note:'')).join(' | ')}</Text>:null}
                       {/* ΓΡΑΜΜΗ 5: παρατηρήσεις — ημερομηνία παράδοσης */}
                       {o.notes?<Text style={{fontSize:11, color:'#888', marginTop:2}}>Σημ: {o.notes}</Text>:null}
-                      {o.deliveryDate?<Text style={{fontSize:10, color:'#007AFF', marginTop:2}}>📅 Παράδοση: {o.deliveryDate}</Text>:null}
                       {/* BADGES: ΜΟΝΤΑΡΙΣΜΕΝΗ + ΣΤΑΘΕΡΑ */}
                       <View style={{flexDirection:'row', flexWrap:'wrap', gap:4, marginTop:4}}>
                         {o.stdMounted&&<View style={{backgroundColor:'#1565C0', borderRadius:4, paddingHorizontal:6, paddingVertical:2}}><Text style={{color:'white', fontWeight:'bold', fontSize:11}}>🔧 ΜΟΝΤΑΡΙΣΜΕΝΗ</Text></View>}
@@ -2559,11 +2610,10 @@ export default function CustomScreen({ customOrders, setCustomOrders, soldOrders
                     <View style={{flex:1}}>
                       {/* Badge αν προέρχεται από ΜΕΝΟΝΤΑ */}
                       {o.fromMenon&&<View style={{backgroundColor:'#7b1fa2',borderRadius:4,paddingHorizontal:6,paddingVertical:2,alignSelf:'flex-start',marginBottom:4}}><Text style={{color:'white',fontWeight:'bold',fontSize:10}}>📦 ΑΠΟ ΜΕΝΟΝΤΑ ΕΜΠΟΡΕΥΜΑΤΑ</Text></View>}
-                      {/* Ημερομηνία καταχώρησης + ημερομηνία πώλησης */}
-                      <View style={{flexDirection:'row', gap:8, flexWrap:'wrap'}}>
-                        {fmtDate(o.createdAt)?<Text style={{fontSize:11,color:'#007AFF',fontWeight:'bold'}}>📅 {fmtDate(o.createdAt)}</Text>:null}
+                      {/* Καταχώρηση — παράδοση · πώληση */}
+                      <View style={{flexDirection:'row', gap:8, flexWrap:'wrap', alignItems:'center'}}>
+                        <StdOrderDatesLine order={o} />
                         {o.soldAt?<Text style={{fontSize:11,color:'#00796B',fontWeight:'bold'}}>💰 {fmtDate(o.soldAt)}</Text>:null}
-                        {o.deliveryDate?<Text style={{fontSize:11,color:'#e65100',fontWeight:'bold'}}>🚚 {o.deliveryDate}</Text>:null}
                       </View>
                       {/* ΓΡΑΜΜΗ 1: #νούμερο — πελάτης — τεμάχια */}
                       <View style={{flexDirection:'row', alignItems:'center', gap:6, flexWrap:'wrap', marginTop:2}}>
@@ -2845,9 +2895,9 @@ export default function CustomScreen({ customOrders, setCustomOrders, soldOrders
                           <View key={o.id} style={{backgroundColor:'#fff', borderRadius:8, marginBottom:6, borderLeftWidth:5, borderLeftColor: allDone?'#00C851':'#e65100', elevation:2, padding:10}}>
                             <View style={{flexDirection:'row', justifyContent:'space-between', alignItems:'flex-start'}}>
                               <View style={{flex:1}}>
-                                {/* ΓΡΑΜΜΗ 1: ημερομηνία — #νούμερο — πελάτης — τεμάχια */}
+                                <StdOrderDatesLine order={o} marginBottom={4} />
+                                {/* ΓΡΑΜΜΗ 2: #νούμερο — πελάτης — τεμάχια */}
                                 <View style={{flexDirection:'row', alignItems:'center', gap:6, flexWrap:'wrap'}}>
-                                  {fmtDate(o.createdAt)?<Text style={{fontSize:11,color:'#007AFF',fontWeight:'bold'}}>📅 {fmtDate(o.createdAt)}</Text>:null}
                                   <Text style={{fontWeight:'900', fontSize:16, color:'#1a1a1a'}}>#{o.orderNo}</Text>
                                   {o.customer?<Text style={{fontSize:14, fontWeight:'bold', color:'#333'}}>{o.customer}</Text>:null}
                                   {o.qty&&parseInt(o.qty)>1?<Text style={{fontSize:16,fontWeight:'900',color:'#cc0000'}}>{o.qty}τεμ</Text>:null}
@@ -2857,7 +2907,7 @@ export default function CustomScreen({ customOrders, setCustomOrders, soldOrders
                                     <Text style={{color:'white', fontSize:10, fontWeight:'bold'}}>✏️ ΕΠΕΞ</Text>
                                   </TouchableOpacity>
                                 </View>
-                                {/* ΓΡΑΜΜΗ 2: διάσταση — φορά — τύπος σασί — χρώμα */}
+                                {/* ΓΡΑΜΜΗ 3: διάσταση — φορά — τύπος σασί — χρώμα */}
                                 <View style={{flexDirection:'row', alignItems:'center', gap:8, marginTop:3, flexWrap:'wrap'}}>
                                   <Text style={{fontSize:15, fontWeight:'900', color:'#1a1a1a'}}>{o.h}x{o.w}</Text>
                                   <Text style={{fontSize:15, fontWeight:'900', color:'#1a1a1a'}}>{o.side==='ΑΡΙΣΤΕΡΗ'?'◄ ΑΡ':'ΔΕΞ ►'}</Text>
@@ -3073,7 +3123,7 @@ export default function CustomScreen({ customOrders, setCustomOrders, soldOrders
                               </View>
                             </TouchableOpacity>
                             <View style={{flex:1}}>
-                              {fmtDate(o.createdAt)?<Text style={{fontSize:11,color:'#007AFF',fontWeight:'bold',marginBottom:2}}>📅 {fmtDate(o.createdAt)}</Text>:null}
+                              <StdOrderDatesLine order={o} marginBottom={2} />
                               <Text style={{fontWeight:'bold', fontSize:13, marginBottom:4}}>#{o.orderNo} {o.customer?`— ${o.customer}`:''}</Text>
                               <Text style={{fontSize:12, color:'#555', marginBottom:6}}>{o.h}x{o.w} | {o.side}</Text>
                               {(o.stavera||[]).map((s,i)=>(
@@ -3147,7 +3197,7 @@ export default function CustomScreen({ customOrders, setCustomOrders, soldOrders
 
                           {/* ΣΤΟΙΧΕΙΑ ΠΑΡΑΓΓΕΛΙΑΣ */}
                           <View style={{flex:1}}>
-                            {fmtDate(o.createdAt)?<Text style={{fontSize:11,color:'#007AFF',fontWeight:'bold',marginBottom:2}}>📅 {fmtDate(o.createdAt)}</Text>:null}
+                            <StdOrderDatesLine order={o} marginBottom={2} />
                             <Text style={{fontWeight:'bold', fontSize:13}}>#{o.orderNo} {o.customer?`— ${o.customer}`:''}</Text>
                             <Text style={{fontSize:12, color:'#555', marginTop:1}}>{o.h}x{o.w} | {o.side}</Text>
                             {o.sasiType?<Text style={{fontSize:11, color:'#555'}}>🛡️ {o.sasiType}</Text>:null}
@@ -3159,7 +3209,6 @@ export default function CustomScreen({ customOrders, setCustomOrders, soldOrders
                             {o.installation==='ΝΑΙ'?<Text style={{fontSize:11, color:'#555'}}>🔧 Μοντάρισμα: ΝΑΙ</Text>:null}
                             {o.qty&&parseInt(o.qty)>1?<Text style={{fontSize:11, color:'#1565C0', fontWeight:'bold'}}>Τεμ: {o.qty}</Text>:null}
                             {o.notes?<Text style={{fontSize:11, color:'#888'}}>📝 {o.notes}</Text>:null}
-                            {o.deliveryDate?<Text style={{fontSize:10, color:'#007AFF'}}>📅 Παράδοση: {o.deliveryDate}</Text>:null}
                             {/* Badge για μοντάρισμα χωρίς κλειδαριά */}
                             {(!o.lock && o.installation==='ΝΑΙ')&&<View style={{backgroundColor:'#e3f2fd', borderRadius:4, paddingHorizontal:6, paddingVertical:3, marginTop:4, alignSelf:'flex-start'}}><Text style={{color:'#1565C0', fontWeight:'bold', fontSize:11}}>📦 ΣΑΣΙ + ΚΑΣΑ ΑΠΟ STOCK</Text></View>}
                             <View style={{flexDirection:'row', alignItems:'center', marginTop:4, gap:4}}>
@@ -3232,13 +3281,12 @@ export default function CustomScreen({ customOrders, setCustomOrders, soldOrders
                         <View key={o.id} style={{backgroundColor:'#f3e5f5', borderRadius:8, padding:10, marginBottom:6, borderLeftWidth:4, borderLeftColor:'#7b1fa2', elevation:1}}>
                           <View style={{flexDirection:'row', justifyContent:'space-between', alignItems:'flex-start'}}>
                             <View style={{flex:1}}>
-                              {fmtDate(o.createdAt)?<Text style={{fontSize:11,color:'#007AFF',fontWeight:'bold',marginBottom:2}}>📅 {fmtDate(o.createdAt)}</Text>:null}
+                              <StdOrderDatesLine order={o} marginBottom={2} />
                               <Text style={{fontWeight:'bold', fontSize:13}}>#{o.orderNo} {o.customer?`— ${o.customer}`:''}</Text>
                               <Text style={{fontSize:12, color:'#555', marginTop:1}}>{o.h}x{o.w} | {o.side}</Text>
                               {o.qty&&parseInt(o.qty)>1?<Text style={{fontSize:12,fontWeight:'bold',color:'#cc0000'}}>Τεμ: {o.qty}</Text>:null}
                               {o.hardware?<Text style={{fontSize:11,color:'#555'}}>🎨 {o.hardware}</Text>:null}
                               {hasStaveraO&&<View style={{backgroundColor:'#E65100',borderRadius:4,paddingHorizontal:6,paddingVertical:2,alignSelf:'flex-start',marginTop:3}}><Text style={{color:'white',fontWeight:'bold',fontSize:10}}>⏳ ΕΚΚΡΕΜΕΙ ΣΤΑΘΕΡΟ</Text></View>}
-                              {o.deliveryDate?<Text style={{fontSize:10,color:'#007AFF',marginTop:2}}>📅 {o.deliveryDate}</Text>:null}
                             </View>
                             <TouchableOpacity
                               style={{backgroundColor:'#00C851',paddingHorizontal:10,paddingVertical:6,borderRadius:6,alignItems:'center',minWidth:70}}
@@ -3304,7 +3352,7 @@ export default function CustomScreen({ customOrders, setCustomOrders, soldOrders
                     <View key={s.id} style={{backgroundColor:'white', borderRadius:8, padding:10, marginBottom:6, borderLeftWidth:5, borderLeftColor:'#9c27b0', elevation:1}}>
                       <View style={{flexDirection:'row', justifyContent:'space-between', alignItems:'flex-start'}}>
                         <View style={{flex:1}}>
-                          {fmtDate(s.createdAt)?<Text style={{fontSize:11,color:'#007AFF',fontWeight:'bold'}}>📅 {fmtDate(s.createdAt)}</Text>:null}
+                          <StdOrderDatesLine order={s} marginBottom={2} />
                           <Text style={{fontWeight:'bold', fontSize:13}}>#{s.orderNo} {s.customer?`— ${s.customer}`:''}</Text>
                           <Text style={{fontSize:12, color:'#555', marginTop:1}}>{s.h}x{s.w} | {s.side} | ΜΟΝΗ</Text>
                           {s.hardware?<Text style={{fontSize:11,color:'#555'}}>🎨 {s.hardware}</Text>:null}
@@ -3398,7 +3446,8 @@ export default function CustomScreen({ customOrders, setCustomOrders, soldOrders
                           <View key={o.id} style={{backgroundColor:'#fff', borderRadius:8, marginBottom:6, borderLeftWidth:5, borderLeftColor: allDone?'#00C851':'#e65100', elevation:2, padding:10}}>
                             <View style={{flexDirection:'row', justifyContent:'space-between', alignItems:'flex-start'}}>
                               <View style={{flex:1}}>
-                                {/* ΓΡΑΜΜΗ 1: #νούμερο — πελάτης — τεμάχια */}
+                                <StdOrderDatesLine order={o} marginBottom={4} />
+                                {/* ΓΡΑΜΜΗ 2: #νούμερο — πελάτης — τεμάχια */}
                                 <View style={{flexDirection:'row', alignItems:'center', gap:6, flexWrap:'wrap'}}>
                                   <Text style={{fontWeight:'900', fontSize:16, color:'#1a1a1a'}}>#{o.orderNo}</Text>
                                   {o.customer?<Text style={{fontSize:14, fontWeight:'bold', color:'#333'}}>{o.customer}</Text>:null}
@@ -3409,7 +3458,7 @@ export default function CustomScreen({ customOrders, setCustomOrders, soldOrders
                                     <Text style={{color:'white', fontSize:10, fontWeight:'bold'}}>✏️ ΕΠΕΞ</Text>
                                   </TouchableOpacity>
                                 </View>
-                                {/* ΓΡΑΜΜΗ 2: διάσταση — φορά — ΔΙΠΛΗ — χρώμα */}
+                                {/* ΓΡΑΜΜΗ 3: διάσταση — φορά — ΔΙΠΛΗ — χρώμα */}
                                 <View style={{flexDirection:'row', alignItems:'center', gap:8, marginTop:3, flexWrap:'wrap'}}>
                                   <Text style={{fontSize:15, fontWeight:'900', color:'#1a1a1a'}}>{o.h}x{o.w}</Text>
                                   <Text style={{fontSize:15, fontWeight:'900', color:'#1a1a1a'}}>{o.side==='ΑΡΙΣΤΕΡΗ'?'◄ ΑΡ':'ΔΕΞ ►'}</Text>
@@ -3536,7 +3585,7 @@ export default function CustomScreen({ customOrders, setCustomOrders, soldOrders
                     <View key={s.id} style={{backgroundColor:'white', borderRadius:8, padding:10, marginBottom:6, borderLeftWidth:5, borderLeftColor:'#9c27b0', elevation:1}}>
                       <View style={{flexDirection:'row', justifyContent:'space-between', alignItems:'flex-start'}}>
                         <View style={{flex:1}}>
-                          {fmtDate(s.createdAt)?<Text style={{fontSize:11,color:'#007AFF',fontWeight:'bold'}}>📅 {fmtDate(s.createdAt)}</Text>:null}
+                          <StdOrderDatesLine order={s} marginBottom={2} />
                           <Text style={{fontWeight:'bold', fontSize:13}}>#{s.orderNo} {s.customer?`— ${s.customer}`:''}</Text>
                           <Text style={{fontSize:12, color:'#555', marginTop:1}}>{s.h}x{s.w} | {s.side} | ΔΙΠΛΗ</Text>
                           {s.hardware?<Text style={{fontSize:11,color:'#555'}}>🎨 {s.hardware}</Text>:null}
@@ -3791,6 +3840,8 @@ const styles = StyleSheet.create({
   cardSubDetails: { fontSize:11, color:'#666' },
   datesRow: { flexDirection:'row', flexWrap:'wrap', marginTop:4, gap:4 },
   dateChip: { fontSize:10, color:'#555', backgroundColor:'#f0f0f0', paddingHorizontal:6, paddingVertical:2, borderRadius:4, overflow:'hidden' },
+  /** View ώστε να μην είναι Text μέσα σε Text (web RN: η παράδοση μπορεί να μη φαίνεται) */
+  dateChipWrap: { flexDirection:'row', alignItems:'center', alignSelf:'flex-start', flexShrink:0, flexWrap:'wrap', backgroundColor:'#f0f0f0', paddingHorizontal:6, paddingVertical:2, borderRadius:4 },
   sideBtnContainer: { width:95, borderTopRightRadius:8, borderBottomRightRadius:8, overflow:'hidden' },
   lowerBtn: { flex:2, justifyContent:'center', alignItems:'center' },
   upperBtn: { flex:1, justifyContent:'center', alignItems:'center', borderBottomWidth:1, borderBottomColor:'#444' },
