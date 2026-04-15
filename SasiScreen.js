@@ -55,7 +55,7 @@ function QtyModal({ visible, title, onConfirm, onCancel }) {
   );
 }
 
-export default function SasiScreen({ sasiStock={}, setSasiStock }) {
+export default function SasiScreen({ sasiStock={}, setSasiStock, stockHighlight=null, onClearSearchHighlight }) {
   const stockMap = { ...initStockMap(), ...sasiStock };
   const [qtyModal, setQtyModal] = useState({ visible:false, key:'', mode:'add', label:'' });
   const [choiceModal, setChoiceModal] = useState({ visible:false, key:'', label:'' });
@@ -172,9 +172,10 @@ export default function SasiScreen({ sasiStock={}, setSasiStock }) {
           const label = `${h}x${w} ${side==='ΑΡΙΣΤΕΡΗ'?'ΑΡ':'ΔΕ'}`;
           const hasReservations = (entry.reservations||[]).length > 0;
           const availColor = available <= 0 ? '#ff4444' : available <= 3 ? '#ff9800' : '#1b5e20';
+          const rowHL = stockHighlight?.kind === 'sasi' && stockHighlight.stockKey === key;
 
           return (
-            <View key={key} style={[styles.tableRow, available<0&&{backgroundColor:'#fff5f5'}]}>
+            <View key={key} style={[styles.tableRow, available<0&&{backgroundColor:'#fff5f5'}, rowHL && { backgroundColor: '#fff8e1', borderWidth: 2, borderColor: '#FFC107' }]}>
               {/* ΕΝΕΡΓΕΙΕΣ — μόνο το - */}
               <View style={[styles.tdWrap, {width:34, justifyContent:'center', alignItems:'center'}]}>
                 <TouchableOpacity style={[styles.subBtn, available<=0&&{opacity:0.35}]}
@@ -204,12 +205,33 @@ export default function SasiScreen({ sasiStock={}, setSasiStock }) {
               <TouchableOpacity
                 style={[styles.tdWrap, {flex:1, borderRightWidth:0}]}
                 onPress={()=>hasReservations?setShowReservations(key):null}>
-                <Text style={{fontSize:13, color: hasReservations?'#c62828':'#bbb'}} numberOfLines={2}>
+                <View style={{flexDirection:'row', flexWrap:'wrap', gap:2}}>
                   {hasReservations
-                    ? (entry.reservations||[]).map(r=>`#${r.orderNo}(${r.qty||1})`).join('  ')
-                    : '—'
+                    ? (() => {
+                        const totalQty = parseInt(entry.qty) || 0;
+                        let cum = 0;
+                        return (entry.reservations||[]).map((r, i) => {
+                          cum += (parseInt(r.qty) || 1);
+                          const covered = cum <= totalQty;
+                          const chipHL = stockHighlight?.kind === 'sasi' && String(r.orderNo ?? '') === String(stockHighlight.orderNo ?? '');
+                          return (
+                            <Text key={i} style={{
+                              fontSize:12, fontWeight:'bold',
+                              color: covered ? '#1b5e20' : '#c62828',
+                              backgroundColor: chipHL ? '#FFE082' : (covered ? '#f1f8f1' : 'transparent'),
+                              paddingHorizontal: (chipHL || covered) ? 3 : 0,
+                              borderRadius: 3,
+                              borderWidth: chipHL ? 1 : 0,
+                              borderColor: chipHL ? '#F57F17' : 'transparent',
+                            }}>
+                              #{r.orderNo}({r.qty||1})
+                            </Text>
+                          );
+                        });
+                      })()
+                    : <Text style={{color:'#bbb'}}>—</Text>
                   }
-                </Text>
+                </View>
               </TouchableOpacity>
             </View>
           );
@@ -292,7 +314,11 @@ export default function SasiScreen({ sasiStock={}, setSasiStock }) {
   return (
     <View style={{flex:1, backgroundColor:'#f5f5f5', flexDirection:'row'}}>
       {/* ΚΥΡΙΑ ΠΕΡΙΟΧΗ - ΠΙΝΑΚΕΣ */}
-      <ScrollView style={{flex:1, padding:10}}>
+      <ScrollView
+        style={{flex:1, padding:10}}
+        onScrollBeginDrag={onClearSearchHighlight}
+        onTouchStart={onClearSearchHighlight}
+      >
 
         {/* ΑΡΙΣΤΕΡΗ */}
         <View style={styles.sectionHeader}>
@@ -368,13 +394,30 @@ export default function SasiScreen({ sasiStock={}, setSasiStock }) {
             <ScrollView style={{maxHeight:300, width:'100%'}}>
               {(reservationEntry?.reservations||[]).length === 0
                 ? <Text style={{color:'#999', textAlign:'center', padding:20}}>Δεν υπάρχουν δεσμεύσεις</Text>
-                : (reservationEntry?.reservations||[]).map((r,i) => (
-                  <View key={i} style={{flexDirection:'row', justifyContent:'space-between', padding:8, borderBottomWidth:1, borderBottomColor:'#f0f0f0'}}>
-                    <Text style={{fontWeight:'bold'}}>#{r.orderNo}</Text>
-                    <Text style={{color:'#555'}}>{r.customer||'—'}</Text>
-                    <Text style={{color:'#007AFF', fontWeight:'bold'}}>{r.qty||1} τεμ.</Text>
-                  </View>
-                ))
+                : (() => {
+                  const totalQty = parseInt(reservationEntry?.qty) || 0;
+                  let cum = 0;
+                  return (reservationEntry?.reservations||[]).map((r,i) => {
+                    cum += (parseInt(r.qty) || 1);
+                    const covered = cum <= totalQty;
+                    return (
+                      <View key={i} style={{flexDirection:'row',
+                        justifyContent:'space-between', padding:8,
+                        borderBottomWidth:1, borderBottomColor:'#f0f0f0',
+                        backgroundColor: covered ? '#f1f8f1' : 'white'}}>
+                        <Text style={{fontWeight:'bold',
+                          color: covered ? '#1b5e20' : '#c62828'}}>
+                          #{r.orderNo}
+                        </Text>
+                        <Text style={{color:'#555'}}>{r.customer||'—'}</Text>
+                        <Text style={{fontWeight:'bold',
+                          color: covered ? '#1b5e20' : '#c62828'}}>
+                          {r.qty||1} τεμ.
+                        </Text>
+                      </View>
+                    );
+                  });
+                })()
               }
             </ScrollView>
             <TouchableOpacity

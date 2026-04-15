@@ -1,7 +1,255 @@
 import { Platform, Alert } from 'react-native';
 import * as Print from 'expo-print';
 import * as Sharing from 'expo-sharing';
-import { parseDateStr } from './utils';
+import { parseDateStr, fmtDateTime } from './utils';
+
+function escapeHtml(s) {
+  if (s == null || s === '') return '—';
+  return String(s)
+    .replace(/&/g, '&amp;')
+    .replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;')
+    .replace(/"/g, '&quot;');
+}
+
+/** Κατάσταση με ελληνικό τίτλο (ίδια λογική με την εφαρμογή). */
+function statusLabelGreek(st) {
+  const map = {
+    STD_PENDING: 'Σε αναμονή',
+    STD_BUILD: 'Κατασκευή',
+    STD_READY: 'Έτοιμη',
+    STD_SOLD: 'Πωλήθηκε',
+    SOLD: 'Πωλήθηκε',
+    MONI_PROD: 'Παραγωγή',
+    PENDING: 'Εκκρεμεί',
+    PROD: 'Παραγωγή',
+    READY: 'Έτοιμη',
+  };
+  return map[st] || st || '—';
+}
+
+function formatSideShort(o) {
+  const s = o.side;
+  if (!s) return '—';
+  return s === 'ΑΡΙΣΤΕΡΗ' ? '◄ ΑΡ' : 'ΔΕΞ ►';
+}
+
+function orderDims(o) {
+  const h = o.h ?? o.selectedHeight ?? '';
+  const w = o.w ?? o.selectedWidth ?? '';
+  return { h: String(h).trim() || '—', w: String(w).trim() || '—' };
+}
+
+function fmtDeliveryLine(v) {
+  if (v == null || v === '') return '—';
+  const d = parseDateStr(v);
+  if (d && !isNaN(d.getTime())) {
+    return `${String(d.getDate()).padStart(2, '0')}/${String(d.getMonth() + 1).padStart(2, '0')}/${d.getFullYear()}`;
+  }
+  return String(v).trim();
+}
+
+function coatingsText(o) {
+  if (!o.coatings || !Array.isArray(o.coatings) || o.coatings.length === 0) return '';
+  return o.coatings.filter(Boolean).join(', ');
+}
+
+/** Μπλοκ «Σταθερά»: τίτλος αριστερά (rowspan), κάθε γραμμή = διάσταση | παρατηρήσεις. */
+function buildStaveraSearchPrintLine(order) {
+  const arr = order.stavera;
+  if (!Array.isArray(arr) || arr.length === 0) return '';
+  const list = arr.filter((s) => s && String(s.dim || '').trim());
+  if (!list.length) return '';
+  const rs = list.length;
+  const titleCell = `<td rowspan="${rs}" style="padding:2px 8px 2px 0;vertical-align:top;white-space:nowrap;font-weight:bold;color:#333;">Σταθερά</td>`;
+  const rows = list.map((s, i) => {
+    const d = escapeHtml(String(s.dim).trim());
+    const nRaw = s.note != null ? String(s.note).trim() : '';
+    const n = nRaw ? escapeHtml(nRaw) : '';
+    const dimTd = `<td style="padding:2px 10px 2px 0;vertical-align:top;white-space:nowrap;font-weight:bold;color:#1a1a1a;">${d}</td>`;
+    const noteTd = `<td style="padding:2px 0;vertical-align:top;color:#1a1a1a;">${n}</td>`;
+    if (i === 0) return `<tr>${titleCell}${dimTd}${noteTd}</tr>`;
+    return `<tr>${dimTd}${noteTd}</tr>`;
+  });
+  return `<div class="stavera-sub" style="margin:2px 0 4px 0;font-size:12px;line-height:1.28;color:#1a1a1a;">
+<table style="border-collapse:collapse;width:100%;max-width:100%;table-layout:fixed;">
+<colgroup><col style="width:5.2em;"/><col style="width:7.5em;"/><col/></colgroup>
+${rows.join('')}
+</table></div>`;
+}
+
+function globalSearchPrintStyles() {
+  return `<style>
+  body{font-family:Arial,Helvetica,sans-serif;margin:6mm 8mm;color:#111;font-size:12px;}
+  h1{font-size:15px;margin:0 0 2px 0;font-weight:bold;line-height:1.15;}
+  .where{color:#444;font-size:10px;margin-bottom:4px;line-height:1.2;}
+  .l1{margin:4px 0 2px 0;line-height:1.2;}
+  .l2{margin:0 0 4px 0;font-size:13px;font-weight:bold;color:#1a1a1a;line-height:1.2;}
+  .status{margin:3px 0 1px 0;font-size:12px;}
+  .status b{color:#333;}
+  .details table{font-size:11px;}
+  .gsearch-slip{page-break-inside:avoid;margin:0 0 4px 0;padding:0 0 5px 0;border-bottom:1px dashed #bbb;}
+  .gsearch-slip:last-child{border-bottom:none;padding-bottom:0;margin-bottom:0;}
+  @media print{@page{size:A4;margin:8mm;}}
+</style>`;
+}
+
+function globalSearchPrintDocumentShell(pageTitle, bodyInner) {
+  return `<!DOCTYPE html><html><head><meta charset="utf-8"><title>${escapeHtml(pageTitle)}</title>
+${globalSearchPrintStyles()}
+</head><body>
+${bodyInner}
+</body></html>`;
+}
+
+/**
+ * @param {object} order
+ * @param {{ where?: string }} meta
+ * @returns {{ title: string, html: string } | null}
+ */
+function buildGlobalSearchOrderFragment(order, meta = {}) {
+  if (!order || typeof order !== 'object') return null;
+  const whereLine = meta.where ? escapeHtml(meta.where) : '—';
+  const no = order.orderNo != null ? String(order.orderNo) : '—';
+  const cust = order.customer ? String(order.customer).trim() : '';
+  const title = `VAICON — Παραγγελία #${escapeHtml(no)}`;
+
+  const { h, w } = orderDims(order);
+  const dimLine = `${escapeHtml(h)}×${escapeHtml(w)} · ${escapeHtml(formatSideShort(order))}`;
+  const q = order.qty != null && String(order.qty).trim() !== ''
+    ? `${escapeHtml(String(order.qty).trim())}τεμ`
+    : '—';
+  const hrRaw = order.heightReduction != null ? String(order.heightReduction).trim() : '';
+  const instRaw = order.installation != null ? String(order.installation).trim() : '';
+  const lbl = 'color:#1a1a1a;font-weight:bold;';
+  const valR = 'color:#c62828;font-weight:bold;';
+  const valB = 'color:#1a1a1a;font-weight:bold;';
+
+  const hrDisplay = hrRaw
+    ? `<span style="${valR}">${escapeHtml(hrRaw)}</span>`
+    : `<span style="${valB}">0</span>`;
+
+  const instU = instRaw.toUpperCase();
+  const instWantsMontage =
+    instU === 'ΝΑΙ' || instU === 'NAI' || instRaw === 'Ναι' || instU === 'YES';
+  const instDisplay = instWantsMontage
+    ? `<span style="${valR}">${escapeHtml(instRaw)}</span>`
+    : `<span style="${valB}">ΟΧΙ</span>`;
+
+  let line2 = `${dimLine} · ${q}`;
+  line2 += ` · <span style="${lbl}">Μείωση ύψους</span> ${hrDisplay}`;
+  line2 += `<span style="display:inline-block;margin-left:14px;vertical-align:baseline;"><span style="${lbl}">Μοντάρισμα</span> ${instDisplay}</span>`;
+
+  const staveraLine = buildStaveraSearchPrintLine(order);
+
+  const line1 = cust
+    ? `<span style="font-weight:bold;font-size:15px;">#${escapeHtml(no)}</span> <span style="color:#333;">· ${escapeHtml(cust)}</span>`
+    : `<span style="font-weight:bold;font-size:15px;">#${escapeHtml(no)}</span>`;
+
+  const statusGr = escapeHtml(statusLabelGreek(order.status));
+
+  const extraRows = [];
+  const addExtra = (label, val) => {
+    if (val == null || val === '') return;
+    const t = typeof val === 'string' ? val : String(val);
+    if (!t.trim()) return;
+    extraRows.push(
+      `<tr><td style="padding:2px 8px 2px 0;color:#555;width:38%;font-size:10px;vertical-align:top;">${escapeHtml(label)}</td><td style="padding:2px 0;font-size:11px;vertical-align:top;white-space:pre-wrap;">${escapeHtml(t)}</td></tr>`
+    );
+  };
+
+  if (order.sasiType) addExtra('Τύπος σασί', order.sasiType);
+  if (order.lock) addExtra('Κλειδαριά', order.lock);
+  if (order.hardware) addExtra('Χρώμα εξαρτημάτων', order.hardware);
+  if (order.caseType) addExtra('Τύπος κάσας', order.caseType);
+  if (order.caseMaterial) addExtra('Υλικό κάσας', order.caseMaterial);
+  const coat = coatingsText(order);
+  if (coat) addExtra('Επενδύσεις', coat);
+
+  const notesTrim = order.notes != null ? String(order.notes).trim() : '';
+
+  const extraBlock =
+    extraRows.length > 0
+      ? `<div class="details"><table style="width:100%;margin-top:5px;border-collapse:collapse;">${extraRows.join('')}</table></div>`
+      : '';
+
+  const notesSep = extraRows.length > 0 ? 'border-top:1px solid #ccc;padding-top:5px;margin-top:6px;' : 'margin-top:6px;';
+  const notesBlock = notesTrim
+    ? `<p style="${notesSep}font-size:11px;line-height:1.3;white-space:pre-wrap;color:#222;"><strong>Παρατηρήσεις:</strong> ${escapeHtml(notesTrim)}</p>`
+    : '';
+
+  const d1 = order.createdAt != null ? fmtDateTime(order.createdAt) : '—';
+  const d2 = fmtDeliveryLine(order.deliveryDate ?? order.delivery_date ?? order.DeliveryDate);
+
+  let d3Label = 'Πώληση / Έτοιμο';
+  let d3Val = '—';
+  if (order.soldAt != null) {
+    d3Label = 'Πώληση';
+    d3Val = fmtDateTime(order.soldAt);
+  } else if (order.readyAt != null) {
+    d3Label = 'Έτοιμο';
+    d3Val = fmtDateTime(order.readyAt);
+  } else if (order.prodAt != null) {
+    d3Label = 'Έναρξη παραγωγής';
+    d3Val = fmtDateTime(order.prodAt);
+  }
+
+  const datesBlock = `
+<table style="width:100%;margin-top:7px;border-collapse:collapse;border-top:2px solid #333;padding-top:4px;">
+  <tr><td style="padding:2px 8px 2px 0;font-size:10px;color:#555;width:42%;">Καταχώρηση</td><td style="padding:2px 0;font-size:11px;font-weight:bold;">${escapeHtml(d1)}</td></tr>
+  <tr><td style="padding:2px 8px 2px 0;font-size:10px;color:#555;">Προγραμματισμένη παράδοση</td><td style="padding:2px 0;font-size:11px;font-weight:bold;">${escapeHtml(d2)}</td></tr>
+  <tr><td style="padding:2px 8px 2px 0;font-size:10px;color:#555;">${escapeHtml(d3Label)}</td><td style="padding:2px 0;font-size:11px;font-weight:bold;">${escapeHtml(d3Val)}</td></tr>
+</table>`;
+
+  const html = `<h1>${title}</h1>
+<p class="where"><strong>Τοποθεσία στη λίστα:</strong> ${whereLine}</p>
+<div class="l1">${line1}</div>
+<div class="l2">${line2}</div>
+${staveraLine}
+<p class="status"><b>Κατάσταση:</b> ${statusGr}</p>
+${extraBlock}
+${notesBlock}
+${datesBlock}`;
+
+  return { title, html };
+}
+
+/**
+ * HTML μίας παραγγελίας για εκτύπωση από αποτελέσματα καθολικής αναζήτησης (πυκνή διάταξη).
+ * @param {object} order — αντικείμενο παραγγελίας από Firebase
+ * @param {{ where?: string }} meta
+ */
+export function buildGlobalSearchOrderPrintHTML(order, meta = {}) {
+  const r = buildGlobalSearchOrderFragment(order, meta);
+  if (!r) {
+    return '<!DOCTYPE html><html><head><meta charset="utf-8"/></head><body><p>Δεν υπάρχουν δεδομένα.</p></body></html>';
+  }
+  return globalSearchPrintDocumentShell(r.title, r.html);
+}
+
+/**
+ * Ένα έγγραφο με πολλές παραγγελίες — ροή ώστε να χωράνε 2+ ανά σελίδα όταν το επιτρέπει το περιεχόμενο.
+ * @param {Array<{ order: object, where?: string }>} hits
+ */
+export function buildGlobalSearchOrdersPrintHTML(hits) {
+  if (!hits || !hits.length) {
+    return '<!DOCTYPE html><html><head><meta charset="utf-8"/></head><body><p>Δεν υπάρχουν δεδομένα.</p></body></html>';
+  }
+  const parts = [];
+  for (let i = 0; i < hits.length; i++) {
+    const hit = hits[i];
+    if (!hit?.order) continue;
+    const r = buildGlobalSearchOrderFragment(hit.order, { where: hit.where });
+    if (!r) continue;
+    parts.push(`<article class="gsearch-slip">${r.html}</article>`);
+  }
+  if (!parts.length) {
+    return '<!DOCTYPE html><html><head><meta charset="utf-8"/></head><body><p>Δεν υπάρχουν δεδομένα.</p></body></html>';
+  }
+  const n = parts.length;
+  const pageTitle = n === 1 ? 'VAICON — 1 παραγγελία' : `VAICON — ${n} παραγγελίες`;
+  return globalSearchPrintDocumentShell(pageTitle, parts.join(''));
+}
 
 // Helper εκτύπωσης — web: κατευθείαν print dialog, mobile: expo-print + sharing
 export const printHTML = async (html, title) => {
