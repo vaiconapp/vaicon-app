@@ -1,4 +1,5 @@
 import { sasiKey, caseKey } from './stockUtils';
+import { staveraCompleted } from './utils';
 
 /** Για επισήμανση γραμμής στο Stock Σασί / Stock Κάσας μετά από αναζήτηση */
 function buildStockMeta(o, type) {
@@ -179,7 +180,7 @@ function orderMatches(o, q1, otherQueries) {
 }
 
 function summaryLine(o) {
-  const no = o.orderNo != null ? `#${o.orderNo}` : '—';
+  const no = o.orderNo != null ? String(o.orderNo) : '—';
   const cust = o.customer ? ` · ${o.customer}` : '';
   const dim = o.h && o.w ? ` · ${o.h}×${o.w}` : o.size ? ` · ${o.size}` : '';
   return `${no}${cust}${dim}`.trim();
@@ -235,6 +236,62 @@ export function collectGlobalSearchHits(q1, otherQueries, pools) {
   pushHits(soldSasiOrders, true, 'sasi');
   pushHits(caseOrders, false, 'case');
   pushHits(soldCaseOrders, true, 'case');
+
+  return hits;
+}
+
+/** Πόσα σταθερά έχουν συμπληρωμένο dim. */
+export function countStaveraWithDim(o) {
+  const arr = o?.stavera;
+  if (!Array.isArray(arr)) return 0;
+  return arr.filter((s) => s && String(s.dim || '').trim()).length;
+}
+
+/**
+ * Παραγγελίες με τουλάχιστον ένα σταθερό (dim).
+ * Μόνο τυποποιημένες (`customOrders`), μονή και διπλή θωράκιση· όχι αρχείο πωλήσεων / άλλες λίστες.
+ * Δεν αποκλείονται πλέον τα STD_READY: αλλιώς παραγγελίες που έγιναν «έτοιμες αποθήκης» εξαφανίζονταν από τη λίστα.
+ * @param {'all'|'pending'|'done'} [filterMode] — `pending`/`done`: βλ. `staveraCompleted()` στο `utils.js` (δύο ροές: STD_BUILD vs λοιπά)
+ * @returns {Array<{ id:string, orderNo:any, customer:string|undefined, staveraCount:number, summary:string, where:string, tab:string, hitType:string, order:object, stockMeta?: object }>}
+ */
+export function collectStaveraOrdersHits(pools, filterMode = 'all') {
+  const { customOrders = [] } = pools;
+
+  const hits = [];
+
+  for (const o of customOrders) {
+    if (!o) continue;
+    if (o.orderType && o.orderType !== 'ΤΥΠΟΠΟΙΗΜΕΝΗ') continue;
+    const n = countStaveraWithDim(o);
+    if (n < 1) continue;
+    const completed = staveraCompleted(o);
+    if (filterMode === 'pending' && completed) continue;
+    if (filterMode === 'done' && !completed) continue;
+    const stockMeta = buildStockMeta(o, 'std');
+    const meta = whereStd(o, false);
+      const no = o.orderNo != null ? String(o.orderNo) : '—';
+      const cust = o.customer ? ` · ${o.customer}` : '';
+      const staveraWord = n === 1 ? '1 σταθερό' : `${n} σταθερά`;
+    hits.push({
+      id: String(o.id),
+      orderNo: o.orderNo,
+      customer: o.customer,
+      staveraCount: n,
+      summary: `${no}${cust} · ${staveraWord}`.trim(),
+      where: meta.where,
+      tab: meta.tab,
+      hitType: 'std',
+      order: o,
+      ...(stockMeta ? { stockMeta } : {}),
+    });
+  }
+
+  hits.sort((a, b) => {
+    const ao = String(a.orderNo ?? '');
+    const bo = String(b.orderNo ?? '');
+    if (ao !== bo) return ao.localeCompare(bo, undefined, { numeric: true });
+    return a.where.localeCompare(b.where);
+  });
 
   return hits;
 }

@@ -78,10 +78,80 @@ ${rows.join('')}
 </table></div>`;
 }
 
+/**
+ * Πίνακας κορυφής για εκτύπωση «αναζήτηση σταθερών»: κάθε γραμμή = διάσταση | παρατηρήσεις (ο αρ. παραγγελίας μόνο στον τίτλο).
+ */
+function buildStaveraSearchPrintTopTable(order) {
+  const arr = order?.stavera;
+  const list = Array.isArray(arr) ? arr.filter((s) => s && String(s.dim || '').trim()) : [];
+  if (!list.length) return '';
+  const dimFs = 'font-size:17px;font-weight:bold;';
+  const noteFs = 'font-size:16px;';
+  const rows = list.map((s) => {
+    const d = escapeHtml(String(s.dim).trim());
+    const nRaw = s.note != null ? String(s.note).trim() : '';
+    const n = nRaw ? escapeHtml(nRaw) : '';
+    return `<tr>
+<td style="padding:5px 14px 5px 0;vertical-align:top;white-space:nowrap;color:#1a1a1a;${dimFs}">${d}</td>
+<td style="padding:5px 0;vertical-align:top;color:#1a1a1a;${noteFs}">${n}</td>
+</tr>`;
+  });
+  return `<div class="stavera-print-grid" style="margin:0;">
+<table style="width:100%;border-collapse:collapse;table-layout:fixed;">
+<colgroup><col style="width:38%"/><col/></colgroup>
+<tbody>${rows.join('')}</tbody>
+</table></div>`;
+}
+
+/** Πίνακας 3 ημερομηνιών (ίδιος με την καθολική εκτύπωση). */
+function buildOrderDatesTableHtml(order, datesMarginTop = '7px') {
+  const d1 = order.createdAt != null ? fmtDateTime(order.createdAt) : '—';
+  const d2 = fmtDeliveryLine(order.deliveryDate ?? order.delivery_date ?? order.DeliveryDate);
+  let d3Label = 'Πώληση / Έτοιμο';
+  let d3Val = '—';
+  if (order.soldAt != null) {
+    d3Label = 'Πώληση';
+    d3Val = fmtDateTime(order.soldAt);
+  } else if (order.readyAt != null) {
+    d3Label = 'Έτοιμο';
+    d3Val = fmtDateTime(order.readyAt);
+  } else if (order.prodAt != null) {
+    d3Label = 'Έναρξη παραγωγής';
+    d3Val = fmtDateTime(order.prodAt);
+  }
+  return `
+<table style="width:100%;margin-top:${datesMarginTop};border-collapse:collapse;border-top:2px solid #333;padding-top:6px;">
+  <tr><td style="padding:3px 8px 3px 0;font-size:10px;color:#555;width:42%;">Καταχώρηση</td><td style="padding:3px 0;font-size:11px;font-weight:bold;">${escapeHtml(d1)}</td></tr>
+  <tr><td style="padding:3px 8px 3px 0;font-size:10px;color:#555;">Προγραμματισμένη παράδοση</td><td style="padding:3px 0;font-size:11px;font-weight:bold;">${escapeHtml(d2)}</td></tr>
+  <tr><td style="padding:3px 8px 3px 0;font-size:10px;color:#555;">${escapeHtml(d3Label)}</td><td style="padding:3px 0;font-size:11px;font-weight:bold;">${escapeHtml(d3Val)}</td></tr>
+</table>`;
+}
+
+/**
+ * Μόνο για εκτύπωση «Σταθερά»: τίτλος, ψιλή γραμμή, πίνακας (διάστ.|σημ.), χοντρή γραμμή, τοποθεσία, παρατηρήσεις, ημερομηνίες.
+ */
+function buildStaveraOnlyPrintFragment(order, title, whereLine) {
+  const grid = buildStaveraSearchPrintTopTable(order);
+  if (!grid) return null;
+  const notesTrim = order.notes != null ? String(order.notes).trim() : '';
+  const notesHtml = notesTrim
+    ? `<p style="margin:10px 0 0 0;padding:10px 0 0 0;font-size:12px;line-height:1.35;white-space:pre-wrap;color:#222;border-top:1px solid #ccc;"><strong>Παρατηρήσεις:</strong> ${escapeHtml(notesTrim)}</p>`
+    : '';
+  const datesHtml = buildOrderDatesTableHtml(order, '0');
+  const html = `<h1 class="stavera-print-title">${title}</h1>
+${grid}
+<hr style="border:none;border-top:2px solid #333;margin:10px 0 10px 0;"/>
+<p class="where" style="margin-bottom:0;"><strong>Τοποθεσία στη λίστα:</strong> ${whereLine}</p>
+${notesHtml}
+${datesHtml}`;
+  return { title, html };
+}
+
 function globalSearchPrintStyles() {
   return `<style>
   body{font-family:Arial,Helvetica,sans-serif;margin:6mm 8mm;color:#111;font-size:12px;}
   h1{font-size:15px;margin:0 0 2px 0;font-weight:bold;line-height:1.15;}
+  h1.stavera-print-title{padding-bottom:10px;margin:0 0 10px 0;border-bottom:1px solid #888;}
   .where{color:#444;font-size:10px;margin-bottom:4px;line-height:1.2;}
   .l1{margin:4px 0 2px 0;line-height:1.2;}
   .l2{margin:0 0 4px 0;font-size:13px;font-weight:bold;color:#1a1a1a;line-height:1.2;}
@@ -104,15 +174,20 @@ ${bodyInner}
 
 /**
  * @param {object} order
- * @param {{ where?: string }} meta
+ * @param {{ where?: string, staveraSearchPrint?: boolean }} meta — αν `staveraSearchPrint`, μόνο: τίτλος, πίνακας σταθερών, γραμμή, τοποθεσία, παρατηρήσεις, ημερομηνίες.
  * @returns {{ title: string, html: string } | null}
  */
 function buildGlobalSearchOrderFragment(order, meta = {}) {
   if (!order || typeof order !== 'object') return null;
+  const staveraSearchPrint = meta.staveraSearchPrint === true;
   const whereLine = meta.where ? escapeHtml(meta.where) : '—';
   const no = order.orderNo != null ? String(order.orderNo) : '—';
   const cust = order.customer ? String(order.customer).trim() : '';
-  const title = `VAICON — Παραγγελία #${escapeHtml(no)}`;
+  const title = `VAICON — Παραγγελία ${escapeHtml(no)}`;
+
+  if (staveraSearchPrint) {
+    return buildStaveraOnlyPrintFragment(order, title, whereLine);
+  }
 
   const { h, w } = orderDims(order);
   const dimLine = `${escapeHtml(h)}×${escapeHtml(w)} · ${escapeHtml(formatSideShort(order))}`;
@@ -143,8 +218,8 @@ function buildGlobalSearchOrderFragment(order, meta = {}) {
   const staveraLine = buildStaveraSearchPrintLine(order);
 
   const line1 = cust
-    ? `<span style="font-weight:bold;font-size:15px;">#${escapeHtml(no)}</span> <span style="color:#333;">· ${escapeHtml(cust)}</span>`
-    : `<span style="font-weight:bold;font-size:15px;">#${escapeHtml(no)}</span>`;
+    ? `<span style="font-weight:bold;font-size:15px;">${escapeHtml(no)}</span> <span style="color:#333;">· ${escapeHtml(cust)}</span>`
+    : `<span style="font-weight:bold;font-size:15px;">${escapeHtml(no)}</span>`;
 
   const statusGr = escapeHtml(statusLabelGreek(order.status));
 
@@ -178,28 +253,7 @@ function buildGlobalSearchOrderFragment(order, meta = {}) {
     ? `<p style="${notesSep}font-size:11px;line-height:1.3;white-space:pre-wrap;color:#222;"><strong>Παρατηρήσεις:</strong> ${escapeHtml(notesTrim)}</p>`
     : '';
 
-  const d1 = order.createdAt != null ? fmtDateTime(order.createdAt) : '—';
-  const d2 = fmtDeliveryLine(order.deliveryDate ?? order.delivery_date ?? order.DeliveryDate);
-
-  let d3Label = 'Πώληση / Έτοιμο';
-  let d3Val = '—';
-  if (order.soldAt != null) {
-    d3Label = 'Πώληση';
-    d3Val = fmtDateTime(order.soldAt);
-  } else if (order.readyAt != null) {
-    d3Label = 'Έτοιμο';
-    d3Val = fmtDateTime(order.readyAt);
-  } else if (order.prodAt != null) {
-    d3Label = 'Έναρξη παραγωγής';
-    d3Val = fmtDateTime(order.prodAt);
-  }
-
-  const datesBlock = `
-<table style="width:100%;margin-top:7px;border-collapse:collapse;border-top:2px solid #333;padding-top:4px;">
-  <tr><td style="padding:2px 8px 2px 0;font-size:10px;color:#555;width:42%;">Καταχώρηση</td><td style="padding:2px 0;font-size:11px;font-weight:bold;">${escapeHtml(d1)}</td></tr>
-  <tr><td style="padding:2px 8px 2px 0;font-size:10px;color:#555;">Προγραμματισμένη παράδοση</td><td style="padding:2px 0;font-size:11px;font-weight:bold;">${escapeHtml(d2)}</td></tr>
-  <tr><td style="padding:2px 8px 2px 0;font-size:10px;color:#555;">${escapeHtml(d3Label)}</td><td style="padding:2px 0;font-size:11px;font-weight:bold;">${escapeHtml(d3Val)}</td></tr>
-</table>`;
+  const datesBlock = buildOrderDatesTableHtml(order);
 
   const html = `<h1>${title}</h1>
 <p class="where"><strong>Τοποθεσία στη λίστα:</strong> ${whereLine}</p>
@@ -248,6 +302,36 @@ export function buildGlobalSearchOrdersPrintHTML(hits) {
   }
   const n = parts.length;
   const pageTitle = n === 1 ? 'VAICON — 1 παραγγελία' : `VAICON — ${n} παραγγελίες`;
+  return globalSearchPrintDocumentShell(pageTitle, parts.join(''));
+}
+
+/** Εκτύπωση μίας παραγγελίας από τη λειτουργία «Αναζήτηση σταθερών» (πίνακας σταθερών στην κορυφή). */
+export function buildStaveraSearchOrderPrintHTML(order, meta = {}) {
+  const r = buildGlobalSearchOrderFragment(order, { ...meta, staveraSearchPrint: true });
+  if (!r) {
+    return '<!DOCTYPE html><html><head><meta charset="utf-8"/></head><body><p>Δεν υπάρχουν δεδομένα.</p></body></html>';
+  }
+  return globalSearchPrintDocumentShell(r.title, r.html);
+}
+
+/** Πολλές παραγγελίες — ίδιο layout «αναζήτηση σταθερών». */
+export function buildStaveraSearchOrdersPrintHTML(hits) {
+  if (!hits || !hits.length) {
+    return '<!DOCTYPE html><html><head><meta charset="utf-8"/></head><body><p>Δεν υπάρχουν δεδομένα.</p></body></html>';
+  }
+  const parts = [];
+  for (let i = 0; i < hits.length; i++) {
+    const hit = hits[i];
+    if (!hit?.order) continue;
+    const r = buildGlobalSearchOrderFragment(hit.order, { where: hit.where, staveraSearchPrint: true });
+    if (!r) continue;
+    parts.push(`<article class="gsearch-slip">${r.html}</article>`);
+  }
+  if (!parts.length) {
+    return '<!DOCTYPE html><html><head><meta charset="utf-8"/></head><body><p>Δεν υπάρχουν δεδομένα.</p></body></html>';
+  }
+  const n = parts.length;
+  const pageTitle = n === 1 ? 'VAICON — Σταθερά · 1 παραγγελία' : `VAICON — Σταθερά · ${n} παραγγελίες`;
   return globalSearchPrintDocumentShell(pageTitle, parts.join(''));
 }
 

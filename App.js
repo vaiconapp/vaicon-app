@@ -14,8 +14,15 @@ import LocksScreen from './LocksScreen';
 import ActivityScreen from './ActivityScreen';
 import { FIREBASE_URL, hasFirebaseRealtime } from './firebaseConfig';
 import { applyFetchedBundle, subscribeFirebaseRealtime } from './firebaseRealtime';
-import { collectGlobalSearchHits } from './globalSearch';
-import { printHTML, buildGlobalSearchOrderPrintHTML, buildGlobalSearchOrdersPrintHTML } from './printUtils';
+import { collectGlobalSearchHits, collectStaveraOrdersHits } from './globalSearch';
+import {
+  printHTML,
+  buildGlobalSearchOrderPrintHTML,
+  buildGlobalSearchOrdersPrintHTML,
+  buildStaveraSearchOrderPrintHTML,
+  buildStaveraSearchOrdersPrintHTML,
+} from './printUtils';
+import { resolveLiveStdOrder, staveraSearchBadgeLine } from './utils';
 
 // ============================================================
 //  🔐 ΚΩΔΙΚΟΣ ΠΡΟΣΒΑΣΗΣ — ορίζεται στο αρχείο .env
@@ -160,11 +167,27 @@ export default function App() {
   const [paradoseisSearchOther2, setParadoseisSearchOther2] = useState('');
   const [paradoseisSearchOther3, setParadoseisSearchOther3] = useState('');
   const [globalSearchModalVisible, setGlobalSearchModalVisible] = useState(false);
+  /** Φίλτρο πριν τη λίστα σταθερών (Alert στο web δεν δουλεύει σωστά με πολλά κουμπιά) */
+  const [staveraFilterModalVisible, setStaveraFilterModalVisible] = useState(false);
+  /** true = λίστα από «Αναζήτηση σταθερών» (εκτύπωση με άλλο layout) */
+  const [globalSearchModalStaveraMode, setGlobalSearchModalStaveraMode] = useState(false);
   const [globalSearchHits, setGlobalSearchHits] = useState([]);
   /** Δείκτες γραμμών (index) με ενεργή επιλογή για εκτύπωση πολλαπλών παραγγελιών */
   const [globalSearchPrintSelected, setGlobalSearchPrintSelected] = useState(() => new Set());
   const [globalSearchHighlightOrderId, setGlobalSearchHighlightOrderId] = useState(null);
   const [globalSearchStockMeta, setGlobalSearchStockMeta] = useState(null);
+
+  /**
+   * Στη λειτουργία «Σταθερά» ενημερώνουμε κάθε γραμμή με την τρέχουσα παραγγελία από `customOrders`
+   * (τα hits κρατούν παλιό `order`· επιπλέον το `id` του hit μπορεί να μην ταιριάζει με το `id` στη λίστα).
+   */
+  const effectiveSearchHits = useMemo(() => {
+    if (!globalSearchModalStaveraMode) return globalSearchHits;
+    return globalSearchHits.map((h) => ({
+      ...h,
+      order: resolveLiveStdOrder(h, customOrders) || h.order,
+    }));
+  }, [globalSearchModalStaveraMode, globalSearchHits, customOrders]);
 
   const fetchAbortRef = useRef(null);
 
@@ -198,13 +221,16 @@ export default function App() {
   };
 
   const printSearchResultOrder = async (hit) => {
-    if (!hit.order) {
+    const order = resolveLiveStdOrder(hit, customOrders) || hit.order;
+    if (!order) {
       Alert.alert('Εκτύπωση', 'Δεν βρέθηκαν αποθηκευμένα στοιχεία παραγγελίας.');
       return;
     }
     try {
-      const html = buildGlobalSearchOrderPrintHTML(hit.order, { where: hit.where });
-      await printHTML(html, `VAICON — #${hit.orderNo}`);
+      const html = globalSearchModalStaveraMode
+        ? buildStaveraSearchOrderPrintHTML(order, { where: hit.where })
+        : buildGlobalSearchOrderPrintHTML(order, { where: hit.where });
+      await printHTML(html, `VAICON — ${hit.orderNo}`);
     } catch (e) {
       console.error(e);
       Alert.alert('Σφάλμα', 'Η εκτύπωση δεν ολοκληρώθηκε.');
@@ -212,14 +238,16 @@ export default function App() {
   };
 
   const printAllSearchResults = async () => {
-    const withOrder = globalSearchHits.filter((h) => h.order);
+    const withOrder = effectiveSearchHits.filter((h) => h.order);
     if (!withOrder.length) {
       Alert.alert('Εκτύπωση', 'Δεν βρέθηκαν αποθηκευμένα στοιχεία παραγγελίας.');
       return;
     }
     try {
-      const html = buildGlobalSearchOrdersPrintHTML(withOrder);
-      await printHTML(html, 'VAICON — αποτελέσματα');
+      const html = globalSearchModalStaveraMode
+        ? buildStaveraSearchOrdersPrintHTML(withOrder)
+        : buildGlobalSearchOrdersPrintHTML(withOrder);
+      await printHTML(html, globalSearchModalStaveraMode ? 'VAICON — σταθερά' : 'VAICON — αποτελέσματα');
     } catch (e) {
       console.error(e);
       Alert.alert('Σφάλμα', 'Η εκτύπωση δεν ολοκληρώθηκε.');
@@ -227,27 +255,27 @@ export default function App() {
   };
 
   const printableHitIndices = useMemo(
-    () => globalSearchHits.map((h, i) => (h.order ? i : -1)).filter((i) => i >= 0),
-    [globalSearchHits]
+    () => effectiveSearchHits.map((h, i) => (h.order ? i : -1)).filter((i) => i >= 0),
+    [effectiveSearchHits]
   );
 
   const selectedPrintableCount = useMemo(() => {
     let n = 0;
     for (const i of globalSearchPrintSelected) {
-      if (i >= 0 && i < globalSearchHits.length && globalSearchHits[i]?.order) n += 1;
+      if (i >= 0 && i < effectiveSearchHits.length && effectiveSearchHits[i]?.order) n += 1;
     }
     return n;
-  }, [globalSearchPrintSelected, globalSearchHits]);
+  }, [globalSearchPrintSelected, effectiveSearchHits]);
 
   const toggleGlobalSearchPrintSelect = useCallback((index) => {
-    if (!globalSearchHits[index]?.order) return;
+    if (!effectiveSearchHits[index]?.order) return;
     setGlobalSearchPrintSelected((prev) => {
       const next = new Set(prev);
       if (next.has(index)) next.delete(index);
       else next.add(index);
       return next;
     });
-  }, [globalSearchHits]);
+  }, [effectiveSearchHits]);
 
   const selectAllPrintableSearchHits = useCallback(() => {
     setGlobalSearchPrintSelected(new Set(printableHitIndices));
@@ -259,26 +287,60 @@ export default function App() {
 
   const closeGlobalSearchModal = useCallback(() => {
     setGlobalSearchPrintSelected(new Set());
+    setGlobalSearchModalStaveraMode(false);
     setGlobalSearchModalVisible(false);
   }, []);
 
   const printSelectedSearchResults = async () => {
     const picked = [...globalSearchPrintSelected]
-      .filter((i) => i >= 0 && i < globalSearchHits.length && globalSearchHits[i]?.order)
+      .filter((i) => i >= 0 && i < effectiveSearchHits.length && effectiveSearchHits[i]?.order)
       .sort((a, b) => a - b)
-      .map((i) => globalSearchHits[i]);
+      .map((i) => effectiveSearchHits[i]);
     if (!picked.length) {
       Alert.alert('Εκτύπωση', 'Διάλεξε τουλάχιστον μία παραγγελία με το τετραγωνάκι επιλογής.');
       return;
     }
     try {
-      const html = buildGlobalSearchOrdersPrintHTML(picked);
+      const html = globalSearchModalStaveraMode
+        ? buildStaveraSearchOrdersPrintHTML(picked)
+        : buildGlobalSearchOrdersPrintHTML(picked);
       await printHTML(html, `VAICON — ${picked.length} επιλεγμένες`);
     } catch (e) {
       console.error(e);
       Alert.alert('Σφάλμα', 'Η εκτύπωση δεν ολοκληρώθηκε.');
     }
   };
+
+  const openStaveraSidebarSearchWithFilter = (filterMode) => {
+    try {
+      const hits = collectStaveraOrdersHits(
+        {
+          customOrders,
+          soldOrders,
+          sasiOrders,
+          soldSasiOrders,
+          caseOrders,
+          soldCaseOrders,
+        },
+        filterMode
+      );
+      setGlobalSearchHits(hits);
+      setGlobalSearchModalStaveraMode(true);
+      setGlobalSearchPrintSelected(new Set());
+      setGlobalSearchModalVisible(true);
+    } catch (e) {
+      console.error(e);
+      Alert.alert('Σφάλμα', 'Η αναζήτηση σταθερών απέτυχε.');
+    }
+  };
+
+  /** Modal αντί για Alert: στο web το Alert με πολλά κουμπιά δεν εκτελεί σωστά τα onPress. */
+  const applyStaveraFilterChoice = (filterMode) => {
+    setStaveraFilterModalVisible(false);
+    openStaveraSidebarSearchWithFilter(filterMode);
+  };
+
+  const runStaveraSidebarSearch = () => setStaveraFilterModalVisible(true);
 
   const runGlobalSidebarSearch = () => {
     try {
@@ -306,6 +368,7 @@ export default function App() {
         return a.where.localeCompare(b.where);
       });
       setGlobalSearchHits(hits);
+      setGlobalSearchModalStaveraMode(false);
       setGlobalSearchPrintSelected(new Set());
       setGlobalSearchModalVisible(true);
     } catch (e) {
@@ -342,6 +405,10 @@ export default function App() {
       if (showCoatings) { setShowCoatings(false); return true; }
       if (showLocks) { setShowLocks(false); return true; }
       if (showCustomers) { setShowCustomers(false); return true; }
+      if (staveraFilterModalVisible) {
+        setStaveraFilterModalVisible(false);
+        return true;
+      }
       if (globalSearchModalVisible) {
         closeGlobalSearchModal();
         return true;
@@ -350,7 +417,7 @@ export default function App() {
       return false; // έξοδος από app αν ήδη στην 1η καρτέλα
     });
     return () => sub.remove();
-  }, [menuOpen, showActivity, showCoatings, showLocks, showCustomers, tabIndex, globalSearchModalVisible, closeGlobalSearchModal]);
+  }, [menuOpen, showActivity, showCoatings, showLocks, showCustomers, tabIndex, staveraFilterModalVisible, globalSearchModalVisible, closeGlobalSearchModal]);
 
   const fetchData = async () => {
     if (fetchAbortRef.current) fetchAbortRef.current.abort();
@@ -521,6 +588,14 @@ export default function App() {
             </TouchableOpacity>
           </View>
           <TouchableOpacity
+            style={styles.sidebarSearchStaveraBtn}
+            onPress={runStaveraSidebarSearch}
+            activeOpacity={0.75}
+            accessibilityLabel="Αναζήτηση παραγγελιών με σταθερά"
+          >
+            <Text style={styles.sidebarSearchStaveraBtnText}>📐 Σταθερά</Text>
+          </TouchableOpacity>
+          <TouchableOpacity
             style={[styles.sidebarBtn, TABS[tabIndex] === 'deliveries' && styles.sidebarBtnActive]}
             onPress={() => {
               clearSearchNavigationHighlight();
@@ -626,6 +701,51 @@ export default function App() {
           />
         </Modal>
 
+        {staveraFilterModalVisible ? (
+          <View
+            style={[styles.searchOverlayRoot, Platform.OS === 'web' && { position: 'fixed' }]}
+            pointerEvents="box-none"
+          >
+            <TouchableOpacity
+              style={styles.searchBackdrop}
+              activeOpacity={1}
+              onPress={() => setStaveraFilterModalVisible(false)}
+            />
+            <View style={[styles.searchModalBox, styles.staveraFilterModalBox]} pointerEvents="box-none">
+              <Text style={styles.searchModalTitle}>Σταθερά</Text>
+              <Text style={styles.staveraFilterHint}>Διάλεξε ποιες παραγγελίες να εμφανιστούν:</Text>
+              <TouchableOpacity
+                style={styles.staveraFilterOption}
+                onPress={() => applyStaveraFilterChoice('pending')}
+                activeOpacity={0.75}
+              >
+                <Text style={styles.staveraFilterOptionText}>Χωρίς «δόθηκαν για παραγωγή» και χωρίς ✓ DONE</Text>
+              </TouchableOpacity>
+              <TouchableOpacity
+                style={styles.staveraFilterOption}
+                onPress={() => applyStaveraFilterChoice('done')}
+                activeOpacity={0.75}
+              >
+                <Text style={styles.staveraFilterOptionText}>Έτοιμα (τσεκ «δόθηκαν» ή ✓ DONE)</Text>
+              </TouchableOpacity>
+              <TouchableOpacity
+                style={styles.staveraFilterOption}
+                onPress={() => applyStaveraFilterChoice('all')}
+                activeOpacity={0.75}
+              >
+                <Text style={styles.staveraFilterOptionText}>Όλα</Text>
+              </TouchableOpacity>
+              <TouchableOpacity
+                style={styles.staveraFilterCancel}
+                onPress={() => setStaveraFilterModalVisible(false)}
+                activeOpacity={0.75}
+              >
+                <Text style={styles.staveraFilterCancelText}>Ακύρωση</Text>
+              </TouchableOpacity>
+            </View>
+          </View>
+        ) : null}
+
         {globalSearchModalVisible ? (
           <View
             style={[styles.searchOverlayRoot, Platform.OS === 'web' && { position: 'fixed' }]}
@@ -638,8 +758,12 @@ export default function App() {
             />
             <View style={styles.searchModalBox} pointerEvents="box-none">
               <View style={styles.searchModalHeaderRow}>
-                <Text style={styles.searchModalTitle}>Αποτελέσματα ({globalSearchHits.length})</Text>
-                {globalSearchHits.length > 0 ? (
+                <Text style={styles.searchModalTitle}>
+                  {globalSearchModalStaveraMode
+                    ? `Σταθερά (${effectiveSearchHits.length})`
+                    : `Αποτελέσματα (${effectiveSearchHits.length})`}
+                </Text>
+                {effectiveSearchHits.length > 0 ? (
                   <TouchableOpacity
                     onPress={printAllSearchResults}
                     accessibilityLabel="Εκτύπωση όλων των αποτελεσμάτων σε ένα έγγραφο"
@@ -680,14 +804,38 @@ export default function App() {
                 </View>
               ) : null}
               <ScrollView style={{ maxHeight: 420 }} keyboardShouldPersistTaps="handled">
-                {globalSearchHits.length === 0 ? (
-                  <Text style={{ textAlign: 'center', color: '#888', padding: 20 }}>Δεν βρέθηκε καμία εγγραφή.</Text>
+                {effectiveSearchHits.length === 0 ? (
+                  <Text style={{ textAlign: 'center', color: '#888', padding: 20 }}>
+                    {globalSearchModalStaveraMode
+                      ? 'Δεν υπάρχει παραγγελία με τουλάχιστον ένα σταθερό (διάσταση).'
+                      : 'Δεν βρέθηκε καμία εγγραφή.'}
+                  </Text>
                 ) : (
-                  globalSearchHits.map((hit, i) => {
+                  effectiveSearchHits.map((hit, i) => {
                     const canPrint = !!hit.order;
                     const isSel = globalSearchPrintSelected.has(i);
                     return (
                       <View key={`${hit.id}-${i}-${hit.where}`} style={styles.searchHitRow}>
+                        <TouchableOpacity
+                          style={styles.searchHitMain}
+                          activeOpacity={0.7}
+                          onPress={() => {
+                            const live = resolveLiveStdOrder(hit, customOrders);
+                            setGlobalSearchHighlightOrderId(String(live?.id ?? hit.id));
+                            setGlobalSearchStockMeta(hit.stockMeta || null);
+                            const ix = TABS.indexOf(hit.tab);
+                            if (ix >= 0) setTabIndex(ix);
+                            closeGlobalSearchModal();
+                          }}
+                        >
+                          <Text style={styles.searchHitSummary}>{hit.summary}</Text>
+                          <Text style={styles.searchHitWhere}>{hit.where}</Text>
+                          {globalSearchModalStaveraMode && hit.order ? (
+                            <Text style={styles.searchHitStaveraLine}>
+                              Σταθερά: {staveraSearchBadgeLine(hit.order)}
+                            </Text>
+                          ) : null}
+                        </TouchableOpacity>
                         {canPrint ? (
                           <TouchableOpacity
                             style={styles.searchHitCheckbox}
@@ -700,20 +848,6 @@ export default function App() {
                         ) : (
                           <View style={styles.searchHitCheckboxPlaceholder} />
                         )}
-                        <TouchableOpacity
-                          style={styles.searchHitMain}
-                          activeOpacity={0.7}
-                          onPress={() => {
-                            setGlobalSearchHighlightOrderId(String(hit.id));
-                            setGlobalSearchStockMeta(hit.stockMeta || null);
-                            const ix = TABS.indexOf(hit.tab);
-                            if (ix >= 0) setTabIndex(ix);
-                            closeGlobalSearchModal();
-                          }}
-                        >
-                          <Text style={styles.searchHitSummary}>{hit.summary}</Text>
-                          <Text style={styles.searchHitWhere}>{hit.where}</Text>
-                        </TouchableOpacity>
                         <TouchableOpacity
                           style={styles.searchHitPrintBtn}
                           onPress={() => printSearchResultOrder(hit)}
@@ -831,6 +965,36 @@ const styles = StyleSheet.create({
     borderColor: 'rgba(229,57,53,0.55)',
   },
   sidebarSearchClearText: { color: 'white', fontWeight: 'bold', fontSize: 18, lineHeight: 22 },
+  sidebarSearchStaveraBtn: {
+    marginHorizontal: 10,
+    marginBottom: 8,
+    backgroundColor: 'rgba(21,101,192,0.45)',
+    paddingVertical: 10,
+    borderRadius: 8,
+    alignItems: 'center',
+    justifyContent: 'center',
+    borderWidth: 1,
+    borderColor: 'rgba(144,202,249,0.5)',
+  },
+  sidebarSearchStaveraBtnText: { color: '#e3f2fd', fontWeight: 'bold', fontSize: 14 },
+  staveraFilterModalBox: { maxWidth: 420 },
+  staveraFilterHint: { color: '#555', fontSize: 14, marginBottom: 12 },
+  staveraFilterOption: {
+    backgroundColor: '#e3f2fd',
+    borderRadius: 10,
+    paddingVertical: 12,
+    paddingHorizontal: 14,
+    marginBottom: 8,
+    borderWidth: 1,
+    borderColor: '#90caf9',
+  },
+  staveraFilterOptionText: { fontSize: 15, fontWeight: '600', color: '#0d47a1' },
+  staveraFilterCancel: {
+    marginTop: 6,
+    paddingVertical: 12,
+    alignItems: 'center',
+  },
+  staveraFilterCancelText: { fontSize: 15, fontWeight: '600', color: '#666' },
   searchOverlayRoot: {
     position: 'absolute',
     left: 0,
@@ -933,6 +1097,7 @@ const styles = StyleSheet.create({
   searchHitPrintBtnText: { fontSize: 20 },
   searchHitSummary: { fontSize: 15, fontWeight: '700', color: '#1a1a1a' },
   searchHitWhere: { fontSize: 12, color: '#666', marginTop: 4, lineHeight: 17 },
+  searchHitStaveraLine: { fontSize: 12, color: '#1565C0', marginTop: 2, fontWeight: '600' },
   searchModalClose: {
     marginTop: 12,
     backgroundColor: '#333',

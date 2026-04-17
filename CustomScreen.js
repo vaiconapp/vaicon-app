@@ -3,7 +3,7 @@ import { StyleSheet, Text, View, ScrollView, TouchableOpacity, TextInput, Alert,
 import { FIREBASE_URL } from './firebaseConfig';
 const SCREEN_WIDTH = Dimensions.get('window').width;
 import { logActivity } from './activityLog';
-import { fmtDate, fmtDateTime, parseDateStr } from './utils';
+import { fmtDate, fmtDateTime, parseDateStr, truthyBool } from './utils';
 import { sasiKey, caseKey } from './stockUtils';
 import { SellModal, ConfirmModal, DuplicateModal } from './CustomFormModals';
 import { HardwarePickerModal, LockPickerModal, CoatingsPickerModal, DatePickerModal } from './CustomPickers';
@@ -1617,11 +1617,51 @@ export default function CustomScreen({ customOrders, setCustomOrders, soldOrders
                         <Text style={{textAlign:'center',color:'#999',padding:16}}>Δεν υπάρχουν παραγγελίες με σταθερά</Text>
                       ):staveraOrders.map(o=>{
                         const isSelected = !!printSelected[o.id];
+                        const isGiven = truthyBool(o.staveraGiven);
+                        const doneS = truthyBool(o.staveraDone);
                         return (
-                        <View key={o.id} style={[{backgroundColor:o.staveraDone?'#e8f5e9':o.staveraGiven?'#ede7f6':'#f3e5f5', borderRadius:8, padding:10, marginBottom:6, borderLeftWidth:4, borderLeftColor:o.staveraDone?'#00C851':o.staveraGiven?'#4a148c':'#7b1fa2', elevation:1, flexDirection:'row', alignItems:'flex-start'}, searchHL(o.id)]}>
+                        <View key={o.id} style={[{backgroundColor:doneS?'#e8f5e9':isGiven?'#ede7f6':'#f3e5f5', borderRadius:8, padding:10, marginBottom:6, borderLeftWidth:4, borderLeftColor:doneS?'#00C851':isGiven?'#4a148c':'#7b1fa2', elevation:1, flexDirection:'row', alignItems:'flex-start'}, searchHL(o.id)]}>
                           <TouchableOpacity style={{marginRight:10, marginTop:2}} onPress={()=>setPrintSelected(p=>({...p,[o.id]:!p[o.id]}))}>
                             <View style={{width:28,height:28,borderRadius:6,borderWidth:2,borderColor:isSelected?'#1565c0':'#7b1fa2',backgroundColor:isSelected?'#1565c0':'white',alignItems:'center',justifyContent:'center'}}>
                               {isSelected&&<Text style={{color:'white',fontWeight:'bold',fontSize:14}}>✓</Text>}
+                            </View>
+                          </TouchableOpacity>
+                          <TouchableOpacity
+                            style={{marginRight:10, marginTop:2}}
+                            onPress={async ()=>{
+                              if (Platform.OS === 'web') {
+                                const ok = window.confirm(
+                                  isGiven
+                                    ? `Ξετσεκάρισμα σταθερών #${o.orderNo};`
+                                    : `Τα σταθερά της #${o.orderNo} δόθηκαν για παραγωγή;`
+                                );
+                                if (ok) {
+                                  const upd = { ...o, staveraGiven: !isGiven };
+                                  setCustomOrders(customOrders.map((x) => (x.id === o.id ? upd : x)));
+                                  await syncToCloud(upd);
+                                }
+                              } else {
+                                Alert.alert(
+                                  isGiven ? '☐ Ξετσεκάρισμα' : '✅ Επιβεβαίωση',
+                                  isGiven
+                                    ? `Ξετσεκάρισμα σταθερών #${o.orderNo};`
+                                    : `Τα σταθερά της #${o.orderNo} δόθηκαν για παραγωγή;`,
+                                  [
+                                    { text: 'ΑΚΥΡΟ', style: 'cancel' },
+                                    {
+                                      text: 'ΝΑΙ',
+                                      onPress: async () => {
+                                        const upd = { ...o, staveraGiven: !isGiven };
+                                        setCustomOrders(customOrders.map((x) => (x.id === o.id ? upd : x)));
+                                        await syncToCloud(upd);
+                                      },
+                                    },
+                                  ]
+                                );
+                              }
+                            }}>
+                            <View style={{width:28,height:28,borderRadius:6,borderWidth:2,borderColor:isGiven?'#4a148c':'#7b1fa2',backgroundColor:isGiven?'#4a148c':'white',alignItems:'center',justifyContent:'center'}}>
+                              {isGiven&&<Text style={{color:'white',fontWeight:'bold',fontSize:14}}>✓</Text>}
                             </View>
                           </TouchableOpacity>
                           <View style={{flex:1}}>
@@ -1634,18 +1674,18 @@ export default function CustomScreen({ customOrders, setCustomOrders, soldOrders
                                 {s.note?<Text style={{fontSize:12, color:'#555', marginTop:2}}>{s.note}</Text>:null}
                               </View>
                             ))}
-                            {o.staveraDone&&<Text style={{fontSize:11,color:'#00796B',fontWeight:'bold',marginTop:2}}>✅ Ολοκληρώθηκαν</Text>}
+                            {doneS?<Text style={{fontSize:11,color:'#00796B',fontWeight:'bold',marginTop:2}}>✅ Ολοκληρώθηκαν</Text>:null}
                           </View>
                           <View style={{justifyContent:'space-between', gap:6, marginLeft:8, paddingVertical:2}}>
                             <TouchableOpacity
-                              style={[styles.doneBtn, o.staveraDone&&styles.doneBtnActive]}
+                              style={[styles.doneBtn, doneS&&styles.doneBtnActive]}
                               onPress={async()=>{
-                                const newDone = !o.staveraDone;
+                                const newDone = !doneS;
                                 const upd={...o, staveraDone:newDone, ...(newDone && {staveraPendingAtReady:false})};
                                 setCustomOrders(customOrders.map(x=>x.id===o.id?upd:x));
                                 await syncToCloud(upd);
                               }}>
-                              <Text style={styles.doneBtnTxt}>{o.staveraDone?'↩️ UNDO':'✓ DONE'}</Text>
+                              <Text style={styles.doneBtnTxt}>{doneS?'↩️ UNDO':'✓ DONE'}</Text>
                             </TouchableOpacity>
                             <TouchableOpacity
                               style={{backgroundColor:'#ff4444', paddingHorizontal:8, paddingVertical:3, borderRadius:5, alignSelf:'stretch', alignItems:'center'}}
@@ -1679,7 +1719,8 @@ export default function CustomScreen({ customOrders, setCustomOrders, soldOrders
   const stdBuildMoniOrders = useMemo(() => customOrders.filter(o=>o.orderType==='ΤΥΠΟΠΟΙΗΜΕΝΗ'&&(o.sasiType==='ΜΟΝΗ ΘΩΡΑΚΙΣΗ'||!o.sasiType)&&o.status==='STD_BUILD').sort((a,b)=>(parseInt(a.orderNo)||0)-(parseInt(b.orderNo)||0)), [customOrders]);
   const stdBuildDipliOrders = useMemo(() => customOrders.filter(o=>o.orderType==='ΤΥΠΟΠΟΙΗΜΕΝΗ'&&o.sasiType==='ΔΙΠΛΗ ΘΩΡΑΚΙΣΗ'&&o.status==='STD_BUILD').sort((a,b)=>(parseInt(a.orderNo)||0)-(parseInt(b.orderNo)||0)), [customOrders]);
   const moniProdOrders = useMemo(() => customOrders.filter(o=>o.orderType==='ΤΥΠΟΠΟΙΗΜΕΝΗ'&&(o.sasiType==='ΜΟΝΗ ΘΩΡΑΚΙΣΗ'||!o.sasiType)&&o.status==='MONI_PROD').sort((a,b)=>(parseInt(a.orderNo)||0)-(parseInt(b.orderNo)||0)), [customOrders]);
-  const staveraTabOrders = useMemo(() => customOrders.filter(o=>o.orderType==='ΤΥΠΟΠΟΙΗΜΕΝΗ'&&(o.sasiType==='ΜΟΝΗ ΘΩΡΑΚΙΣΗ'||!o.sasiType)&&o.stavera&&o.stavera.filter(s=>s.dim).length>0&&(o.status==='STD_PENDING'||o.status==='MONI_PROD'||(o.status==='STD_READY'&&o.staveraPendingAtReady))&&!o.staveraDone).sort((a,b)=>(parseInt(a.orderNo)||0)-(parseInt(b.orderNo)||0)), [customOrders]);
+  /** ΜΟΝΗ: σταθερά σε αναμονή — συμπεριλαμβάνεται και STD_BUILD («προς κατασκευή»), όχι μόνο MONI_PROD */
+  const staveraTabOrders = useMemo(() => customOrders.filter(o=>o.orderType==='ΤΥΠΟΠΟΙΗΜΕΝΗ'&&(o.sasiType==='ΜΟΝΗ ΘΩΡΑΚΙΣΗ'||!o.sasiType)&&o.stavera&&o.stavera.filter(s=>s.dim).length>0&&(o.status==='STD_PENDING'||o.status==='STD_BUILD'||o.status==='MONI_PROD'||(o.status==='STD_READY'&&o.staveraPendingAtReady))&&!truthyBool(o.staveraDone)).sort((a,b)=>(parseInt(a.orderNo)||0)-(parseInt(b.orderNo)||0)), [customOrders]);
   const montageTabOrders = useMemo(() => customOrders.filter(o=>o.orderType==='ΤΥΠΟΠΟΙΗΜΕΝΗ'&&(o.sasiType==='ΜΟΝΗ ΘΩΡΑΚΙΣΗ'||!o.sasiType)&&!o.lock&&o.installation==='ΝΑΙ'&&o.stdInProd&&!o.stdMontDone).sort((a,b)=>(parseInt(a.orderNo)||0)-(parseInt(b.orderNo)||0)), [customOrders]);
   const dipliOrders = useMemo(() => customOrders.filter(o=>o.orderType==='ΤΥΠΟΠΟΙΗΜΕΝΗ'&&o.sasiType==='ΔΙΠΛΗ ΘΩΡΑΚΙΣΗ'&&(o.status==='STD_PENDING'||!o.status||o.status==='PENDING')&&o.status!=='STD_BUILD').sort((a,b)=>(parseInt(a.orderNo)||0)-(parseInt(b.orderNo)||0)), [customOrders]);
   const readyOrders = useMemo(() => customOrders.filter(o=>o.orderType==='ΤΥΠΟΠΟΙΗΜΕΝΗ'&&(o.sasiType==='ΜΟΝΗ ΘΩΡΑΚΙΣΗ'||!o.sasiType)&&o.status==='STD_READY').sort((a,b)=>(parseInt(a.orderNo)||0)-(parseInt(b.orderNo)||0)), [customOrders]);
@@ -2557,8 +2598,8 @@ export default function CustomScreen({ customOrders, setCustomOrders, soldOrders
                       {/* BADGES: ΜΟΝΤΑΡΙΣΜΕΝΗ + ΣΤΑΘΕΡΑ */}
                       <View style={{flexDirection:'row', flexWrap:'wrap', gap:4, marginTop:4}}>
                         {o.stdMounted&&<View style={{backgroundColor:'#1565C0', borderRadius:4, paddingHorizontal:6, paddingVertical:2}}><Text style={{color:'white', fontWeight:'bold', fontSize:11}}>🔧 ΜΟΝΤΑΡΙΣΜΕΝΗ</Text></View>}
-                        {(o.stavera&&o.stavera.filter(s=>s.dim).length>0&&!o.staveraDone)&&<View style={{backgroundColor:'#c62828', borderRadius:4, paddingHorizontal:6, paddingVertical:2}}><Text style={{color:'white', fontWeight:'bold', fontSize:11}}>🔴 ΑΝΑΜΟΝΗ ΓΙΑ ΣΤΑΘΕΡΟ</Text></View>}
-                        {(o.stavera&&o.stavera.filter(s=>s.dim).length>0&&o.staveraDone)&&<View style={{backgroundColor:'#2e7d32', borderRadius:4, paddingHorizontal:6, paddingVertical:2}}><Text style={{color:'white', fontWeight:'bold', fontSize:11}}>🟢 ΣΤΑΘΕΡΑ</Text></View>}
+                        {(o.stavera&&o.stavera.filter(s=>s.dim).length>0&&!truthyBool(o.staveraDone))&&<View style={{backgroundColor:'#c62828', borderRadius:4, paddingHorizontal:6, paddingVertical:2}}><Text style={{color:'white', fontWeight:'bold', fontSize:11}}>🔴 ΑΝΑΜΟΝΗ ΓΙΑ ΣΤΑΘΕΡΟ</Text></View>}
+                        {(o.stavera&&o.stavera.filter(s=>s.dim).length>0&&truthyBool(o.staveraDone))&&<View style={{backgroundColor:'#2e7d32', borderRadius:4, paddingHorizontal:6, paddingVertical:2}}><Text style={{color:'white', fontWeight:'bold', fontSize:11}}>🟢 ΣΤΑΘΕΡΑ</Text></View>}
                       </View>
                     </View>
                     <View style={{gap:4, marginLeft:8}}>
@@ -3129,11 +3170,11 @@ export default function CustomScreen({ customOrders, setCustomOrders, soldOrders
                     <Text style={{textAlign:'center',color:'#999',padding:12}}>Δεν υπάρχουν παραγγελίες μονής θωράκισης</Text>
                   }
 
-                  {/* ΠΑΡΑΓΓΕΛΙΕΣ ΠΡΟΣ ΠΑΡΑΓΩΓΗ — ΜΟΝΗ */}
-                  {moniProdOrders.length>0&&(<>
+                  {/* ΠΑΡΑΓΓΕΛΙΕΣ ΠΡΟΣ ΠΑΡΑΓΩΓΗ — ΜΟΝΗ (εμφανίζεται και αν υπάρχουν μόνο σταθερά από STD_BUILD / STD_PENDING χωρίς MONI_PROD) */}
+                  {(moniProdOrders.length>0||staveraTabOrders.length>0)&&(<>
                     {/* HEADER με 3 κουμπιά εκτύπωσης */}
                     <TouchableOpacity style={[styles.listHeader,{backgroundColor:'#1565C0', flexDirection:'row', alignItems:'center', justifyContent:'space-between', marginTop:8}]} onPress={()=>toggleSection('moniProd')}>
-                      <Text style={styles.listHeaderText}>🔵 ΠΑΡΑΓΓΕΛΙΕΣ ΠΡΟΣ ΠΑΡΑΓΩΓΗ ({moniProdOrders.length})</Text>
+                      <Text style={styles.listHeaderText}>🔵 ΠΑΡΑΓΓΕΛΙΕΣ ΠΡΟΣ ΠΑΡΑΓΩΓΗ (φάσεις: {moniProdOrders.length}) · Σταθερά ({staveraTabOrders.length})</Text>
                       <Text style={{color:'white'}}>{expanded.moniProd?'▲':'▼'}</Text>
                     </TouchableOpacity>
                     {expanded.moniProd&&(
@@ -3225,20 +3266,44 @@ export default function CustomScreen({ customOrders, setCustomOrders, soldOrders
                         {staveraOrders.length===0?(
                           <Text style={{textAlign:'center',color:'#999',padding:16}}>Δεν υπάρχουν παραγγελίες με σταθερά</Text>
                         ):staveraOrders.map(o=>{
-                          const isGiven = !!o.staveraGiven;
+                          const isGiven = truthyBool(o.staveraGiven);
+                          const doneS = truthyBool(o.staveraDone);
                           return (
-                          <View key={o.id} style={[{backgroundColor: o.staveraDone?'#e8f5e9': isGiven?'#ede7f6':'#f3e5f5', borderRadius:8, padding:10, marginBottom:6, borderLeftWidth:4, borderLeftColor: o.staveraDone?'#00C851': isGiven?'#4a148c':'#7b1fa2', elevation:1, flexDirection:'row', alignItems:'flex-start'}, searchHL(o.id)]}>
+                          <View key={o.id} style={[{backgroundColor: doneS?'#e8f5e9': isGiven?'#ede7f6':'#f3e5f5', borderRadius:8, padding:10, marginBottom:6, borderLeftWidth:4, borderLeftColor: doneS?'#00C851': isGiven?'#4a148c':'#7b1fa2', elevation:1, flexDirection:'row', alignItems:'flex-start'}, searchHL(o.id)]}>
                             {/* CHECKBOX */}
                             <TouchableOpacity
                               style={{marginRight:10, marginTop:2}}
-                              onPress={()=>{
-                                Alert.alert(isGiven?'☐ Ξετσεκάρισμα':'✅ Επιβεβαίωση',
-                                  isGiven?`Ξετσεκάρισμα σταθερών #${o.orderNo};`:`Τα σταθερά της #${o.orderNo} δόθηκαν για παραγωγή;`,
-                                  [{text:'ΑΚΥΡΟ',style:'cancel'},{text:'ΝΑΙ',onPress:async()=>{
-                                    const upd={...o,staveraGiven:!isGiven};
-                                    setCustomOrders(customOrders.map(x=>x.id===o.id?upd:x));
+                              onPress={async ()=>{
+                                if (Platform.OS === 'web') {
+                                  const ok = window.confirm(
+                                    isGiven
+                                      ? `Ξετσεκάρισμα σταθερών #${o.orderNo};`
+                                      : `Τα σταθερά της #${o.orderNo} δόθηκαν για παραγωγή;`
+                                  );
+                                  if (ok) {
+                                    const upd = { ...o, staveraGiven: !isGiven };
+                                    setCustomOrders(customOrders.map((x) => (x.id === o.id ? upd : x)));
                                     await syncToCloud(upd);
-                                  }}]);
+                                  }
+                                } else {
+                                  Alert.alert(
+                                    isGiven ? '☐ Ξετσεκάρισμα' : '✅ Επιβεβαίωση',
+                                    isGiven
+                                      ? `Ξετσεκάρισμα σταθερών #${o.orderNo};`
+                                      : `Τα σταθερά της #${o.orderNo} δόθηκαν για παραγωγή;`,
+                                    [
+                                      { text: 'ΑΚΥΡΟ', style: 'cancel' },
+                                      {
+                                        text: 'ΝΑΙ',
+                                        onPress: async () => {
+                                          const upd = { ...o, staveraGiven: !isGiven };
+                                          setCustomOrders(customOrders.map((x) => (x.id === o.id ? upd : x)));
+                                          await syncToCloud(upd);
+                                        },
+                                      },
+                                    ]
+                                  );
+                                }
                               }}>
                               <View style={{width:28,height:28,borderRadius:6,borderWidth:2,borderColor:isGiven?'#4a148c':'#7b1fa2',backgroundColor:isGiven?'#4a148c':'white',alignItems:'center',justifyContent:'center'}}>
                                 {isGiven&&<Text style={{color:'white',fontWeight:'bold',fontSize:14}}>✓</Text>}
@@ -3254,30 +3319,44 @@ export default function CustomScreen({ customOrders, setCustomOrders, soldOrders
                                   {s.note?<Text style={{fontSize:12, color:'#555', marginTop:2}}>{s.note}</Text>:null}
                                 </View>
                               ))}
-                              {o.staveraDone&&<Text style={{fontSize:11,color:'#00796B',fontWeight:'bold',marginTop:2}}>✅ Ολοκληρώθηκαν</Text>}
+                              {doneS?<Text style={{fontSize:11,color:'#00796B',fontWeight:'bold',marginTop:2}}>✅ Ολοκληρώθηκαν</Text>:null}
                             </View>
                             {/* DONE + ΠΙΣΩ */}
                             <View style={{justifyContent:'space-between', gap:6, marginLeft:8, paddingVertical:2}}>
                               <TouchableOpacity
-                                style={[styles.doneBtn, o.staveraDone&&styles.doneBtnActive]}
+                                style={[styles.doneBtn, doneS&&styles.doneBtnActive]}
                                 onPress={async()=>{
-                                  const newDone = !o.staveraDone;
+                                  const newDone = !doneS;
                                   const upd={...o, staveraDone:newDone, ...(newDone && {staveraPendingAtReady:false})};
                                   setCustomOrders(customOrders.map(x=>x.id===o.id?upd:x));
                                   await syncToCloud(upd);
                                 }}>
-                                <Text style={styles.doneBtnTxt}>{o.staveraDone?'↩️ UNDO':'✓ DONE'}</Text>
+                                <Text style={styles.doneBtnTxt}>{doneS?'↩️ UNDO':'✓ DONE'}</Text>
                               </TouchableOpacity>
                               <TouchableOpacity
                                 style={{backgroundColor:'#ff9800', paddingHorizontal:6, paddingVertical:6, borderRadius:6, alignItems:'center'}}
-                                onPress={()=>Alert.alert("↩ Επιστροφή",`Επιστροφή σταθερών #${o.orderNo};`,[
-                                  {text:"ΑΚΥΡΟ",style:"cancel"},
-                                  {text:"ΝΑΙ",onPress:async()=>{
-                                    const upd={...o,staveraGiven:false,staveraDone:false};
-                                    setCustomOrders(customOrders.map(x=>x.id===o.id?upd:x));
-                                    await syncToCloud(upd);
-                                  }}
-                                ])}>
+                                onPress={async ()=>{
+                                  if (Platform.OS === 'web') {
+                                    const ok = window.confirm(`Επιστροφή σταθερών #${o.orderNo};`);
+                                    if (ok) {
+                                      const upd = { ...o, staveraGiven: false, staveraDone: false };
+                                      setCustomOrders(customOrders.map((x) => (x.id === o.id ? upd : x)));
+                                      await syncToCloud(upd);
+                                    }
+                                  } else {
+                                    Alert.alert('↩ Επιστροφή', `Επιστροφή σταθερών #${o.orderNo};`, [
+                                      { text: 'ΑΚΥΡΟ', style: 'cancel' },
+                                      {
+                                        text: 'ΝΑΙ',
+                                        onPress: async () => {
+                                          const upd = { ...o, staveraGiven: false, staveraDone: false };
+                                          setCustomOrders(customOrders.map((x) => (x.id === o.id ? upd : x)));
+                                          await syncToCloud(upd);
+                                        },
+                                      },
+                                    ]);
+                                  }
+                                }}>
                                 <Text style={{color:'white', fontSize:10, fontWeight:'bold'}}>↩ ΠΙΣΩ</Text>
                               </TouchableOpacity>
                             </View>
