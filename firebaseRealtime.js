@@ -1,6 +1,17 @@
 import { initializeApp, getApps, getApp } from 'firebase/app';
 import { getDatabase, ref, onValue } from 'firebase/database';
-import { firebaseAppConfig } from './firebaseConfig';
+import { firebaseAppConfig, FIREBASE_URL } from './firebaseConfig';
+import { normalizeLoadedStdOrders } from './stdOrderMigration';
+
+async function persistMigratedMoniProdStdOrders(migrated) {
+  for (const o of migrated) {
+    try {
+      await fetch(`${FIREBASE_URL}/std_orders/${o.id}.json`, { method: 'PUT', body: JSON.stringify(o) });
+    } catch (e) {
+      console.error('persistMigratedMoniProdStdOrders', o?.id, e);
+    }
+  }
+}
 
 /**
  * Κοινή λογική: raw Firebase JSON → state (ίδια με το REST fetchData).
@@ -17,8 +28,10 @@ export function applyFetchedBundle(setters, bundle) {
 
   if (dataStd) {
     const loadedStd = Object.keys(dataStd).map(key => ({ id: key, ...dataStd[key] }));
-    setCustomOrders(loadedStd.filter(o => o.status !== 'SOLD' && o.status !== 'STD_SOLD'));
-    setSoldOrders(loadedStd.filter(o => o.status === 'SOLD' || o.status === 'STD_SOLD'));
+    const { mapped, migrated } = normalizeLoadedStdOrders(loadedStd);
+    setCustomOrders(mapped.filter(o => o.status !== 'SOLD' && o.status !== 'STD_SOLD'));
+    setSoldOrders(mapped.filter(o => o.status === 'SOLD' || o.status === 'STD_SOLD'));
+    if (migrated.length) void persistMigratedMoniProdStdOrders(migrated);
   } else {
     setCustomOrders([]);
     setSoldOrders([]);
@@ -94,8 +107,10 @@ export function subscribeFirebaseRealtime(setters) {
   mk('std_orders', data => {
     if (!data) { S.setCustomOrders([]); S.setSoldOrders([]); return; }
     const loadedStd = Object.keys(data).map(key => ({ id: key, ...data[key] }));
-    S.setCustomOrders(loadedStd.filter(o => o.status !== 'SOLD' && o.status !== 'STD_SOLD'));
-    S.setSoldOrders(loadedStd.filter(o => o.status === 'SOLD' || o.status === 'STD_SOLD'));
+    const { mapped, migrated } = normalizeLoadedStdOrders(loadedStd);
+    S.setCustomOrders(mapped.filter(o => o.status !== 'SOLD' && o.status !== 'STD_SOLD'));
+    S.setSoldOrders(mapped.filter(o => o.status === 'SOLD' || o.status === 'STD_SOLD'));
+    if (migrated.length) void persistMigratedMoniProdStdOrders(migrated);
   });
   mk('sasi_orders', data => {
     if (!data) { S.setSasiOrders([]); S.setSoldSasiOrders([]); return; }

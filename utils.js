@@ -35,7 +35,7 @@ export function truthyBool(v) {
  * Παρακολούθηση σταθερών — **δύο** ροές (να ελέγχονται πάντα και τα δύο σενάρια):
  *
  * 1. **STD_BUILD** (ΠΡΟΣ ΚΑΤΑΣΚΕΥΗ): `buildTasks.stavera` (boolean) — τσεκ «Σταθερό» στην κάρτα ΠΡΟΣ ΚΑΤΑΣΚΕΥΗ.
- * 2. **Άλλα status** (π.χ. MONI_PROD, STD_READY): `staveraGiven` (δόθηκαν) + `staveraDone` (DONE) — tab ΣΤΑΘΕΡΑ υπό ΠΑΡΑΓΓΕΛΙΕΣ ΠΡΟΣ ΠΑΡΑΓΩΓΗ.
+ * 2. **Άλλα status** (π.χ. STD_PENDING, STD_READY): `staveraGiven` (δόθηκαν) + `staveraDone` (DONE) — π.χ. αναζήτηση «Σταθερά» στο sidebar.
  *
  * Επιστρέφει true αν υπάρχει «ολοκληρωμένη» καταχώρηση για φίλτρα pending/done:
  * STD_BUILD → μόνο `buildTasks.stavera`· αλλιώς → `staveraDone` **ή** `staveraGiven`.
