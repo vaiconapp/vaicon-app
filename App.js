@@ -23,6 +23,7 @@ import {
   buildStaveraSearchOrdersPrintHTML,
 } from './printUtils';
 import { resolveLiveStdOrder, staveraSearchBadgeLine } from './utils';
+import { APP_VERSION } from './version';
 
 // ============================================================
 //  🔐 ΚΩΔΙΚΟΣ ΠΡΟΣΒΑΣΗΣ — ορίζεται στο αρχείο .env
@@ -503,6 +504,7 @@ export default function App() {
       {/* ═══ TOP BAR — οριζόντια πάνω ═══ */}
       <View style={styles.topBar}>
         <Text style={styles.topBarTitle}>VAICON</Text>
+        <Text style={styles.topBarVersion}>{APP_VERSION}</Text>
         <Text style={styles.topBarSub}>Σύστημα Διαχείρισης Τυποποιημένων Παραγγελιών</Text>
         <TouchableOpacity style={styles.topBarMenu} onPress={() => setMenuOpen(true)}>
           <Text style={styles.topBarMenuIcon}>☰</Text>
@@ -888,6 +890,7 @@ const styles = StyleSheet.create({
   topBarSub: { color: 'rgba(255,255,255,0.7)', fontSize: 18, fontWeight: '700', flex: 1 },
   topBarMenu: { padding: 8 },
   topBarMenuIcon: { color: 'white', fontSize: 30 },
+  topBarVersion: { color: 'rgba(255,255,255,0.65)', fontSize: 12, fontWeight: '700', backgroundColor: 'rgba(255,255,255,0.1)', paddingHorizontal: 8, paddingVertical: 3, borderRadius: 6, letterSpacing: 0.5, marginLeft: 20, marginRight: 20 },
   // ── SIDEBAR styles ──
   sidebar: { width: 300, backgroundColor: '#1a1a2e', flexDirection: 'column', alignItems: 'stretch', paddingVertical: 8, borderRightWidth: 1, borderRightColor: 'rgba(255,255,255,0.08)' },
   sidebarBtn: { flexDirection: 'row', alignItems: 'center', paddingVertical: 20, paddingHorizontal: 20, borderLeftWidth: 5, borderLeftColor: 'transparent', gap: 14 },
