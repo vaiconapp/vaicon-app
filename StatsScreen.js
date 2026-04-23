@@ -225,6 +225,29 @@ async function openSalesPdf(year, html) {
   }
 }
 
+function sideShort(side) {
+  if (side === 'ΑΡΙΣΤΕΡΗ' || side === 'ΑΡΙΣΤΕΡΑ') return 'ΑΡ.';
+  if (side === 'ΔΕΞΙΑ') return 'ΔΕ.';
+  return '—';
+}
+
+function buildDimStats(orders, sasiType) {
+  const filtered = orders.filter((o) => o.sasiType === sasiType);
+  const total = filtered.length;
+  if (total === 0) return { total: 0, rows: [] };
+  const counts = {};
+  filtered.forEach((o) => {
+    if (o.h == null || o.w == null || String(o.h) === '' || String(o.w) === '') return;
+    const key = `${o.h}x${o.w} ${sideShort(o.side)}`;
+    counts[key] = (counts[key] || 0) + 1;
+  });
+  const rows = Object.entries(counts)
+    .map(([label, count]) => ({ label, count, pct: (count / total) * 100 }))
+    .sort((a, b) => b.count - a.count)
+    .slice(0, 20);
+  return { total, rows };
+}
+
 /** Διαγραφή επιτρέπεται από 1/2/(year+1) */
 function isDeleteDateAllowed(year) {
   const now = new Date();
@@ -321,21 +344,26 @@ export default function StatsScreen({
       .slice(0, 5);
   }, [sasiOrdersSafe, soldSasiOrdersSafe]);
 
-  const topSizes = useMemo(() => {
-    const counts = {};
-    [...soldOrders, ...soldSasiOrdersSafe].forEach((o) => {
-      const size = o.size || (o.w && o.h ? `${o.h}x${o.w}` : null);
-      const side = o.side || '—';
-      const armor = o.armor || o.model || '—';
-      if (size) {
-        const key = `${size} | ${side} | ${armor}`;
-        counts[key] = (counts[key] || 0) + 1;
-      }
-    });
-    return Object.entries(counts)
-      .sort((a, b) => b[1] - a[1])
-      .slice(0, 20);
-  }, [soldOrders, soldSasiOrdersSafe]);
+  // Μόνο πωλημένες τυποποιημένες (όχι σασί) στην επιλεγμένη περίοδο
+  const filteredSoldStd = useMemo(() => {
+    const cutoff = periodCutoff[period];
+    return soldOrders.filter(
+      (o) =>
+        (o.orderType === 'ΤΥΠΟΠΟΙΗΜΕΝΗ' || !o.orderType) &&
+        o.soldAt &&
+        o.soldAt >= cutoff
+    );
+  }, [period, soldOrders]);
+
+  // Ομαδοποίηση ανά sasiType + διάσταση + φορά
+  const dimStatsMoni = useMemo(
+    () => buildDimStats(filteredSoldStd, 'ΜΟΝΗ ΘΩΡΑΚΙΣΗ'),
+    [filteredSoldStd]
+  );
+  const dimStatsDipli = useMemo(
+    () => buildDimStats(filteredSoldStd, 'ΔΙΠΛΗ ΘΩΡΑΚΙΣΗ'),
+    [filteredSoldStd]
+  );
 
   const salesByDay = useMemo(() => {
     const days = {};
@@ -491,22 +519,21 @@ export default function StatsScreen({
           </>
         )}
 
-        {topSizes.length > 0 && (
-          <>
-            <Text style={styles.sectionTitle}>📐 ΔΗΜΟΦΙΛΕΣΤΕΡΑ ΜΕΓΕΘΗ (ΑΠΟ ΠΩΛΗΣΕΙΣ)</Text>
-            <View style={styles.card}>
-              {topSizes.map(([combo, count], i) => (
-                <RankRow key={combo} rank={i + 1} label={combo} value={`${count} πωλ.`} />
-              ))}
-            </View>
-          </>
-        )}
-
-        <Text style={styles.sectionTitle}>💰 ΑΡΧΕΙΟ ΠΩΛΗΣΕΩΝ</Text>
-        <View style={styles.card}>
-          <StatusRow label="Ειδικές πωλήσεις" value={soldOrders.length} />
-          <StatusRow label="Τυποποιημένες πωλήσεις" value={soldSasiOrdersSafe.length} />
-          <StatusRow label="Σύνολο πωλήσεων" value={soldOrders.length + soldSasiOrdersSafe.length} bold />
+        <View style={styles.dimChartsRow}>
+          <View style={styles.dimChartHalf}>
+            <DimChart
+              title="📐 ΜΟΝΗ — ΑΝΑ ΔΙΑΣΤΑΣΗ"
+              data={dimStatsMoni}
+              color="#007AFF"
+            />
+          </View>
+          <View style={styles.dimChartHalf}>
+            <DimChart
+              title="📐 ΔΙΠΛΗ — ΑΝΑ ΔΙΑΣΤΑΣΗ"
+              data={dimStatsDipli}
+              color="#00C851"
+            />
+          </View>
         </View>
 
         <View style={styles.exportBtnRow}>
@@ -620,6 +647,50 @@ function RankRow({ rank, label, value }) {
   );
 }
 
+function DimChart({ title, data, color }) {
+  return (
+    <>
+      <Text style={styles.sectionTitle}>{title}</Text>
+      <View style={styles.card}>
+        {data.total === 0 ? (
+          <Text style={styles.emptyText}>Δεν υπάρχουν πωλήσεις στην περίοδο αυτή</Text>
+        ) : (
+          <>
+            <Text style={styles.dimTotalText}>Σύνολο: {data.total} πωλήσεις</Text>
+            {data.rows.map((row) => (
+              <DimBarRow
+                key={row.label}
+                label={row.label}
+                count={row.count}
+                pct={row.pct}
+                maxPct={data.rows[0].pct}
+                color={color}
+              />
+            ))}
+          </>
+        )}
+      </View>
+    </>
+  );
+}
+
+function DimBarRow({ label, count, pct, maxPct, color }) {
+  const fillWidth = maxPct > 0 ? Math.max(2, (pct / maxPct) * 100) : 0;
+  return (
+    <View style={styles.dimBarRow}>
+      <Text style={styles.dimBarLabel}>{label}</Text>
+      <View style={styles.dimBarTrack}>
+        <View
+          style={[styles.dimBarFill, { width: `${fillWidth}%`, backgroundColor: color }]}
+        />
+      </View>
+      <Text style={styles.dimBarValue}>
+        {pct.toFixed(1)}% <Text style={styles.dimBarCount}>({count})</Text>
+      </Text>
+    </View>
+  );
+}
+
 const styles = StyleSheet.create({
   container: { flex: 1, padding: 12, backgroundColor: '#f5f5f5' },
   periodRow: { flexDirection: 'row', marginBottom: 16, gap: 6 },
@@ -680,6 +751,65 @@ const styles = StyleSheet.create({
   bar: { width: 28, backgroundColor: '#007AFF', borderRadius: 4 },
   barValue: { fontSize: 10, color: '#007AFF', fontWeight: 'bold', marginBottom: 2 },
   barLabel: { fontSize: 9, color: '#888', position: 'absolute', bottom: 0 },
+  dimTotalText: {
+    fontSize: 12,
+    color: '#666',
+    fontWeight: '600',
+    marginBottom: 8,
+    fontStyle: 'italic',
+  },
+  dimBarRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    paddingVertical: 6,
+    borderBottomWidth: 1,
+    borderBottomColor: '#f5f5f5',
+  },
+  dimChartsRow: {
+    flexDirection: 'row',
+    gap: 8,
+  },
+  dimChartHalf: {
+    flex: 1,
+    minWidth: 0,
+  },
+  dimBarLabel: {
+    width: 95,
+    fontSize: 11,
+    fontWeight: '700',
+    color: '#333',
+  },
+  dimBarTrack: {
+    flex: 1,
+    height: 18,
+    backgroundColor: '#f0f0f0',
+    borderRadius: 9,
+    overflow: 'hidden',
+    marginHorizontal: 6,
+  },
+  dimBarFill: {
+    height: '100%',
+    borderRadius: 9,
+  },
+  dimBarValue: {
+    width: 78,
+    textAlign: 'right',
+    fontSize: 11,
+    fontWeight: '700',
+    color: '#333',
+  },
+  dimBarCount: {
+    fontSize: 11,
+    color: '#888',
+    fontWeight: '600',
+  },
+  emptyText: {
+    fontSize: 13,
+    color: '#888',
+    fontStyle: 'italic',
+    textAlign: 'center',
+    paddingVertical: 14,
+  },
   exportBtnRow: { gap: 10, marginTop: 12 },
   exportBtn: {
     padding: 14,
