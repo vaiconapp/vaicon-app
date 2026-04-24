@@ -102,6 +102,25 @@ const buildParadosiGroupTitle = (date) => {
 };
 
 /**
+ * Ίδια κριτήρια με την οθόνη ΠΑΡΑΔΟΣΕΙΣ (ΜΟΝΗ + ΔΙΠΛΗ): τουλάχιστον μία τυποποιημένη
+ * STD_BUILD / STD_PENDING με έγκυρη ημ. παράδοσης.
+ */
+export function hasParadoseisReminderOrders(customOrders = []) {
+  const list = (customOrders || []).filter(
+    (o) =>
+      o &&
+      o.orderType === 'ΤΥΠΟΠΟΙΗΜΕΝΗ' &&
+      (o.status === 'STD_BUILD' || o.status === 'STD_PENDING') &&
+      deliveryDateDisplay(o)
+  );
+  for (const o of list) {
+    const dt = parseDateStr(deliveryDateDisplay(o));
+    if (dt && !isNaN(dt.getTime())) return true;
+  }
+  return false;
+}
+
+/**
  * Οθόνη «ΠΑΡΑΔΟΣΕΙΣ»: τυποποιημένες με deliveryDate, STD_BUILD / STD_PENDING.
  */
 export function ParadoseisScreen({ customOrders = [], highlightOrderId = null, onClearSearchHighlight }) {

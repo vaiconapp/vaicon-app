@@ -167,16 +167,19 @@ export function matchesOtherFieldsQuery(o, q) {
 }
 
 /**
- * @param {string} q1 — αριθμός παραγγελίας / όνομα
+ * @param {string} q1 — αριθμός παραγγελίας / όνομα (πάντα must-match)
  * @param {string[]} otherQueries — ένα ή περισσότερα κριτήρια «λοιπών πεδίων» (κενά αγνοούνται)
+ * @param {'AND'|'OR'} [otherLogic='AND'] — λογική μεταξύ των «λοιπών πεδίων»
  */
-function orderMatches(o, q1, otherQueries) {
+function orderMatches(o, q1, otherQueries, otherLogic = 'AND') {
   if (!matchesOrderNameQuery(o, q1)) return false;
-  const qs = Array.isArray(otherQueries) ? otherQueries : [otherQueries];
-  for (const q of qs) {
-    if (!matchesOtherFieldsQuery(o, q)) return false;
+  const qsAll = Array.isArray(otherQueries) ? otherQueries : [otherQueries];
+  const qs = qsAll.filter((q) => String(q || '').trim() !== '');
+  if (qs.length === 0) return true;
+  if (otherLogic === 'OR') {
+    return qs.some((q) => matchesOtherFieldsQuery(o, q));
   }
-  return true;
+  return qs.every((q) => matchesOtherFieldsQuery(o, q));
 }
 
 function summaryLine(o) {
@@ -190,9 +193,10 @@ function summaryLine(o) {
  * @param {string} q1 — αριθμός / όνομα
  * @param {string|string[]} otherQueries — ένα ή πολλά κριτήρια λοιπών πεδίων (ίδια λογική με το δεύτερο πεδίο)
  * @param {{ customOrders:any[], soldOrders:any[], sasiOrders:any[], soldSasiOrders:any[], caseOrders:any[], soldCaseOrders:any[] }} pools
+ * @param {'AND'|'OR'} [otherLogic='AND'] — λογική μεταξύ των «λοιπών πεδίων»
  * @returns {{ id:string, orderNo:any, customer:string|undefined, summary:string, where:string, tab:string, hitType:string, order:object, stockMeta?: object }[]}
  */
-export function collectGlobalSearchHits(q1, otherQueries, pools) {
+export function collectGlobalSearchHits(q1, otherQueries, pools, otherLogic = 'AND') {
   const {
     customOrders = [],
     soldOrders = [],
@@ -208,7 +212,7 @@ export function collectGlobalSearchHits(q1, otherQueries, pools) {
 
   const pushHits = (arr, isSold, type) => {
     for (const o of arr) {
-      if (!o || !orderMatches(o, q1, otherList)) continue;
+      if (!o || !orderMatches(o, q1, otherList, otherLogic)) continue;
       const stockMeta = buildStockMeta(o, type);
 
       let meta;

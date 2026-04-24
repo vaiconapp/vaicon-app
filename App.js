@@ -2,9 +2,9 @@ import React, { useState, useEffect, useRef, useCallback, useMemo } from 'react'
 import {
   StyleSheet, Text, View, ScrollView, ActivityIndicator, Platform, UIManager,
   StatusBar, TouchableOpacity, Modal, TextInput,
-  PanResponder, Alert, BackHandler
+  PanResponder, Alert, BackHandler, Animated,
 } from 'react-native';
-import CustomScreen, { ParadoseisScreen } from './CustomScreen';
+import CustomScreen, { ParadoseisScreen, hasParadoseisReminderOrders } from './CustomScreen';
 import SasiScreen from './SasiScreen';
 import CaseScreen from './CaseScreen';
 import StatsScreen from './StatsScreen';
@@ -167,6 +167,8 @@ export default function App() {
   const [paradoseisSearchOther, setParadoseisSearchOther] = useState('');
   const [paradoseisSearchOther2, setParadoseisSearchOther2] = useState('');
   const [paradoseisSearchOther3, setParadoseisSearchOther3] = useState('');
+  /** Λογική μεταξύ «Λοιπών πεδίων» (1/2/3). Το πρώτο πεδίο (όνομα/αρ.) πάντα must-match. */
+  const [paradoseisSearchLogic, setParadoseisSearchLogic] = useState('AND');
   const [globalSearchModalVisible, setGlobalSearchModalVisible] = useState(false);
   /** Φίλτρο πριν τη λίστα σταθερών (Alert στο web δεν δουλεύει σωστά με πολλά κουμπιά) */
   const [staveraFilterModalVisible, setStaveraFilterModalVisible] = useState(false);
@@ -189,6 +191,57 @@ export default function App() {
       order: resolveLiveStdOrder(h, customOrders) || h.order,
     }));
   }, [globalSearchModalStaveraMode, globalSearchHits, customOrders]);
+
+  /** Τουλάχιστον μία παραγγελία όπως στην οθόνη ΠΑΡΑΔΟΣΕΙΣ → LED υπενθύμισης. */
+  const paradoseisReminderActive = useMemo(
+    () => hasParadoseisReminderOrders(customOrders),
+    [customOrders]
+  );
+
+  const paradoseisLedOpacity = useRef(new Animated.Value(0)).current;
+  const prevAppTabIndexRef = useRef(null);
+  const prevParadoseisReminderRef = useRef(false);
+
+  useEffect(() => {
+    const reminderTurnedOn = paradoseisReminderActive && !prevParadoseisReminderRef.current;
+    prevParadoseisReminderRef.current = paradoseisReminderActive;
+
+    if (!paradoseisReminderActive) {
+      paradoseisLedOpacity.setValue(0);
+      prevAppTabIndexRef.current = tabIndex;
+      return undefined;
+    }
+
+    const prevTab = prevAppTabIndexRef.current;
+    const tabChanged = prevTab !== tabIndex;
+    prevAppTabIndexRef.current = tabIndex;
+    if (!tabChanged && !reminderTurnedOn) return undefined;
+
+    const loop = Animated.loop(
+      Animated.sequence([
+        Animated.timing(paradoseisLedOpacity, {
+          toValue: 1,
+          duration: 420,
+          useNativeDriver: true,
+        }),
+        Animated.timing(paradoseisLedOpacity, {
+          toValue: 0.15,
+          duration: 420,
+          useNativeDriver: true,
+        }),
+      ])
+    );
+    loop.start();
+    const timer = setTimeout(() => {
+      loop.stop();
+      paradoseisLedOpacity.setValue(0);
+    }, 10000);
+    return () => {
+      clearTimeout(timer);
+      loop.stop();
+      paradoseisLedOpacity.setValue(0);
+    };
+  }, [tabIndex, paradoseisReminderActive, paradoseisLedOpacity]);
 
   const fetchAbortRef = useRef(null);
 
@@ -219,6 +272,7 @@ export default function App() {
     setParadoseisSearchOther('');
     setParadoseisSearchOther2('');
     setParadoseisSearchOther3('');
+    setParadoseisSearchLogic('AND');
   };
 
   const printSearchResultOrder = async (hit) => {
@@ -354,14 +408,19 @@ export default function App() {
         Alert.alert('', 'Γράψε τουλάχιστον σε ένα από τα πεδία αναζήτησης.');
         return;
       }
-      let hits = collectGlobalSearchHits(q1, qOther, {
-        customOrders,
-        soldOrders,
-        sasiOrders,
-        soldSasiOrders,
-        caseOrders,
-        soldCaseOrders,
-      });
+      let hits = collectGlobalSearchHits(
+        q1,
+        qOther,
+        {
+          customOrders,
+          soldOrders,
+          sasiOrders,
+          soldSasiOrders,
+          caseOrders,
+          soldCaseOrders,
+        },
+        paradoseisSearchLogic
+      );
       hits = [...hits].sort((a, b) => {
         const ao = String(a.orderNo ?? '');
         const bo = String(b.orderNo ?? '');
@@ -534,6 +593,31 @@ export default function App() {
                 </TouchableOpacity>
               );
             })}
+            <TouchableOpacity
+              style={[styles.sidebarBtn, TABS[tabIndex] === 'deliveries' && styles.sidebarBtnActive]}
+              onPress={() => {
+                clearSearchNavigationHighlight();
+                setTabIndex(TABS.indexOf('deliveries'));
+              }}>
+              <Text style={styles.sidebarIcon}>📅</Text>
+              <View style={styles.sidebarParadoseisLabelRow}>
+                <Text
+                  style={[
+                    styles.sidebarLabel,
+                    styles.sidebarLabelParadoseis,
+                    TABS[tabIndex] === 'deliveries' && styles.sidebarLabelActive,
+                  ]}
+                >
+                  ΠΑΡΑΔΟΣΕΙΣ
+                </Text>
+                <Animated.View
+                  pointerEvents="none"
+                  style={[styles.paradoseisLedDot, { opacity: paradoseisLedOpacity }]}
+                  accessibilityElementsHidden
+                  importantForAccessibility="no-hide-descendants"
+                />
+              </View>
+            </TouchableOpacity>
           </View>
           <View style={styles.sidebarDivider} />
           <View style={styles.sidebarSearchRow}>
@@ -577,6 +661,19 @@ export default function App() {
             />
           </View>
           <View style={styles.sidebarSearchActionsRow}>
+            <TouchableOpacity
+              style={[
+                styles.sidebarSearchLogicBtn,
+                paradoseisSearchLogic === 'OR' && styles.sidebarSearchLogicBtnOr,
+              ]}
+              onPress={() =>
+                setParadoseisSearchLogic((v) => (v === 'AND' ? 'OR' : 'AND'))
+              }
+              activeOpacity={0.75}
+              accessibilityLabel="Εναλλαγή λογικής λοιπών πεδίων (AND/OR)"
+            >
+              <Text style={styles.sidebarSearchLogicBtnText}>{paradoseisSearchLogic}</Text>
+            </TouchableOpacity>
             <TouchableOpacity style={styles.sidebarSearchRun} onPress={runGlobalSidebarSearch} activeOpacity={0.75}>
               <Text style={styles.sidebarSearchRunText}>🔍 Αναζήτηση</Text>
             </TouchableOpacity>
@@ -596,17 +693,6 @@ export default function App() {
             accessibilityLabel="Αναζήτηση παραγγελιών με σταθερά"
           >
             <Text style={styles.sidebarSearchStaveraBtnText}>📐 Σταθερά</Text>
-          </TouchableOpacity>
-          <TouchableOpacity
-            style={[styles.sidebarBtn, TABS[tabIndex] === 'deliveries' && styles.sidebarBtnActive]}
-            onPress={() => {
-              clearSearchNavigationHighlight();
-              setTabIndex(TABS.indexOf('deliveries'));
-            }}>
-            <Text style={styles.sidebarIcon}>📅</Text>
-            <Text style={[styles.sidebarLabel, TABS[tabIndex] === 'deliveries' && styles.sidebarLabelActive]}>
-              ΠΑΡΑΔΟΣΕΙΣ
-            </Text>
           </TouchableOpacity>
         </View>
 
@@ -893,7 +979,37 @@ const styles = StyleSheet.create({
   topBarVersion: { color: 'rgba(255,255,255,0.65)', fontSize: 12, fontWeight: '700', backgroundColor: 'rgba(255,255,255,0.1)', paddingHorizontal: 8, paddingVertical: 3, borderRadius: 6, letterSpacing: 0.5, marginLeft: 20, marginRight: 20 },
   // ── SIDEBAR styles ──
   sidebar: { width: 300, backgroundColor: '#1a1a2e', flexDirection: 'column', alignItems: 'stretch', paddingVertical: 8, borderRightWidth: 1, borderRightColor: 'rgba(255,255,255,0.08)' },
-  sidebarBtn: { flexDirection: 'row', alignItems: 'center', paddingVertical: 20, paddingHorizontal: 20, borderLeftWidth: 5, borderLeftColor: 'transparent', gap: 14 },
+  sidebarBtn: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    paddingVertical: 20,
+    paddingHorizontal: 20,
+    borderLeftWidth: 5,
+    borderLeftColor: 'transparent',
+    gap: 14,
+  },
+  sidebarParadoseisLabelRow: {
+    flex: 1,
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 6,
+    minWidth: 0,
+  },
+  sidebarLabelParadoseis: {
+    flex: 0,
+    flexShrink: 0,
+  },
+  paradoseisLedDot: {
+    width: 9,
+    height: 9,
+    borderRadius: 5,
+    backgroundColor: '#ff1744',
+    shadowColor: '#ff0000',
+    shadowOffset: { width: 0, height: 0 },
+    shadowOpacity: 0.85,
+    shadowRadius: 5,
+    elevation: 6,
+  },
   sidebarBtnActive: { backgroundColor: 'rgba(255,255,255,0.08)', borderLeftColor: '#E53935' },
   sidebarIcon: { fontSize: 26 },
   sidebarLabel: { color: 'rgba(255,255,255,0.5)', fontSize: 16, fontWeight: '700', flex: 1 },
@@ -943,6 +1059,27 @@ const styles = StyleSheet.create({
     marginBottom: 6,
     gap: 6,
   },
+  sidebarSearchLogicBtn: {
+    minWidth: 48,
+    paddingHorizontal: 8,
+    paddingVertical: 10,
+    borderRadius: 8,
+    alignItems: 'center',
+    justifyContent: 'center',
+    backgroundColor: 'rgba(25,118,210,0.35)',
+    borderWidth: 1,
+    borderColor: 'rgba(100,181,246,0.55)',
+  },
+  sidebarSearchLogicBtnOr: {
+    backgroundColor: 'rgba(255,152,0,0.35)',
+    borderColor: 'rgba(255,183,77,0.55)',
+  },
+  sidebarSearchLogicBtnText: {
+    color: 'white',
+    fontWeight: 'bold',
+    fontSize: 13,
+    letterSpacing: 0.5,
+  },
   /** 3/4 πλάτος — το υπόλοιπο 1/4 για το ✕ */
   sidebarSearchRun: {
     flex: 3,
@@ -970,6 +1107,7 @@ const styles = StyleSheet.create({
   sidebarSearchClearText: { color: 'white', fontWeight: 'bold', fontSize: 18, lineHeight: 22 },
   sidebarSearchStaveraBtn: {
     marginHorizontal: 10,
+    marginTop: 20,
     marginBottom: 8,
     backgroundColor: 'rgba(21,101,192,0.45)',
     paddingVertical: 10,
