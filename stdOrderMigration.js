@@ -4,23 +4,30 @@
  */
 export function buildTasksForMoniStdOrder(o) {
   const isDipli = o.sasiType === 'ΔΙΠΛΗ ΘΩΡΑΚΙΣΗ';
-  const isMoniWithLock = (o.sasiType === 'ΜΟΝΗ ΘΩΡΑΚΙΣΗ' || !o.sasiType) && o.lock;
   const isMoni = o.sasiType === 'ΜΟΝΗ ΘΩΡΑΚΙΣΗ' || !o.sasiType;
+  const hasLock = !!o.lock;
+  const isMoniWithLock = isMoni && hasLock;
   const hasStaveraForm = !!(o.stavera && o.stavera.some((s) => s.dim));
   const hasMontageForm = o.installation === 'ΝΑΙ';
   const hasHeightReductionForm = !!o.heightReduction;
+  const hasKypri = o.kypri === 'ΝΑΙ';
+  const isOversize = isMoni && (String(o.h) === '223' || String(o.w) === '83');
+  const noOtherTask = !hasStaveraForm && !isMoniWithLock && !hasHeightReductionForm && !hasMontageForm && !hasKypri;
   const needsBuild =
     isDipli ||
     isMoniWithLock ||
-    (isMoni && (hasStaveraForm || hasMontageForm || hasHeightReductionForm));
+    hasKypri ||
+    (isMoni && (hasStaveraForm || hasMontageForm || hasHeightReductionForm || isOversize));
   if (!needsBuild) return null;
   const sasiNeedsProduction = isMoni && (isMoniWithLock || hasHeightReductionForm);
   const tasks = {
     ...(hasStaveraForm ? { stavera: false } : {}),
-    ...(isMoniWithLock ? { lock: false } : {}),
+    ...(hasLock ? { lock: false } : {}),
     ...(hasHeightReductionForm ? { heightReduction: false } : {}),
+    ...(hasKypri ? { kypri: false, case: false } : {}),
     ...(hasMontageForm ? { montage: false } : {}),
     ...(sasiNeedsProduction || isDipli ? { sasi: false } : {}),
+    ...(isOversize && noOtherTask ? { oversize: false } : {}),
   };
   if (Object.keys(tasks).length === 0) return { sasi: false };
   return tasks;

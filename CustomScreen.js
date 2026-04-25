@@ -16,7 +16,7 @@ import { buildTasksForMoniStdOrder } from './stdOrderMigration';
 
 const STD_HEIGHTS = ['208','213','218','223'];
 const STD_WIDTHS  = ['83','88','93','98'];
-const INIT_FORM   = { customer:'', orderNo:'', h:'', w:'', hinges:'2', qty:'1', glassDim:'', glassNotes:'', armor:'ΜΟΝΗ', side:'ΔΕΞΙΑ', lock:'', notes:'', status:'PENDING', hardware:'', installation:'ΟΧΙ', caseType:'ΚΛΕΙΣΤΟΥ ΤΥΠΟΥ', caseMaterial:'DKP', deliveryDate:'', sasiType:'ΜΟΝΗ ΘΩΡΑΚΙΣΗ', coatings:[], stavera:[], heightReduction:'' };
+const INIT_FORM   = { customer:'', orderNo:'', h:'', w:'', hinges:'2', qty:'1', glassDim:'', glassNotes:'', armor:'ΜΟΝΗ', side:'ΔΕΞΙΑ', lock:'', notes:'', status:'PENDING', hardware:'', installation:'ΟΧΙ', caseType:'ΚΛΕΙΣΤΟΥ ΤΥΠΟΥ', caseMaterial:'DKP', deliveryDate:'', sasiType:'ΜΟΝΗ ΘΩΡΑΚΙΣΗ', coatings:[], stavera:[], heightReduction:'', kypri:'ΟΧΙ' };
 
 /** Νούμερο παραγγελίας σαν string (ώστε 0000 ≡ αποθηκευμένο "0000" / 0) */
 const normOrderNoStr = (v) => String(v ?? '').trim();
@@ -271,6 +271,11 @@ export default function CustomScreen({ customOrders, setCustomOrders, soldOrders
 
   const customerRef=useRef(); const orderNoRef=useRef(); const hRef=useRef();
   const customerSelectedRef = useRef(false);
+  const [blinkPhase, setBlinkPhase] = useState(1);
+  useEffect(() => {
+    const id = setInterval(() => setBlinkPhase(p => p === 1 ? 0.25 : 1), 500);
+    return () => clearInterval(id);
+  }, []);
   const prodScrollRef = useRef(null);
   const mainScrollRef = useRef(null);
   const menonNotesTimers = useRef({});
@@ -412,25 +417,28 @@ export default function CustomScreen({ customOrders, setCustomOrders, soldOrders
       }
     }
     const isDipli = customForm.sasiType === 'ΔΙΠΛΗ ΘΩΡΑΚΙΣΗ';
-    const isMoniWithLock = (customForm.sasiType==='ΜΟΝΗ ΘΩΡΑΚΙΣΗ'||!customForm.sasiType) && customForm.lock;
     const isMoni = (customForm.sasiType==='ΜΟΝΗ ΘΩΡΑΚΙΣΗ'||!customForm.sasiType);
+    const hasLock = !!customForm.lock;
+    const isMoniWithLock = isMoni && hasLock;
     const hasStaveraForm = !!(customForm.stavera && customForm.stavera.some(s=>s.dim));
     const hasMontageForm = customForm.installation === 'ΝΑΙ';
     const hasHeightReductionForm = !!customForm.heightReduction;
+    const hasKypri = customForm.kypri === 'ΝΑΙ';
+    const isOversize = isMoni && (String(customForm.h)==='223' || String(customForm.w)==='83');
+    const noOtherTask = !hasStaveraForm && !isMoniWithLock && !hasHeightReductionForm && !hasMontageForm && !hasKypri;
 
-    // Χρειάζεται κατασκευή αν: ΔΙΠΛΗ, ή ΜΟΝΗ με κλειδαριά, ή ΜΟΝΗ με σταθερό/μοντάρισμα/μείωση
-    const needsBuild = isDipli || isMoniWithLock || (isMoni && (hasStaveraForm || hasMontageForm || hasHeightReductionForm));
+    const needsBuild = isDipli || isMoniWithLock || hasKypri ||
+      (isMoni && (hasStaveraForm || hasMontageForm || hasHeightReductionForm || isOversize));
 
-    // Checklist για STD_BUILD
-    // Σασί: παραγωγή αν έχει κλειδαριά ή μείωση (ανεξάρτητα από ό,τι άλλο)
-    //        stock αν έχει ΜΟΝΟ σταθερό ή/και μοντάρισμα
     const sasiNeedsProduction = isMoni && (isMoniWithLock || hasHeightReductionForm);
     const buildTasks = needsBuild ? {
       ...(hasStaveraForm ? {stavera: false} : {}),
-      ...(isMoniWithLock ? {lock: false} : {}),
+      ...(hasLock ? {lock: false} : {}),
       ...(hasHeightReductionForm ? {heightReduction: false} : {}),
+      ...(hasKypri ? {kypri: false, case: false} : {}),
       ...(hasMontageForm ? {montage: false} : {}),
       ...(sasiNeedsProduction || isDipli ? {sasi: false} : {}),
+      ...(isOversize && noOtherTask ? {oversize: false} : {}),
     } : null;
 
     const newOrder = {...customForm, orderNo: orderNoNorm, orderType:'ΤΥΠΟΠΟΙΗΜΕΝΗ',
@@ -443,31 +451,40 @@ export default function CustomScreen({ customOrders, setCustomOrders, soldOrders
     await syncToCloud(newOrder);
     await logActivity('ΤΥΠΟΠΟΙΗΜΕΝΗ', editingOrder ? 'Επεξεργασία παραγγελίας' : 'Νέα παραγγελία', { orderNo: newOrder.orderNo, customer: newOrder.customer, size: `${newOrder.h}x${newOrder.w}`, qty: newOrder.qty });
 
-    // ── Δέσμευση στοκ — ΜΟΝΟ για νέες παραγγελίες, όχι επεξεργασία ──
-    if (!editingOrder && setSasiStock && setCaseStock) {
+    // ── Δέσμευση στοκ — sync για νέες & επεξεργασία ──
+    if (setSasiStock && setCaseStock) {
+      if (editingOrder) {
+        const oldIsMoni = (editingOrder.sasiType==='ΜΟΝΗ ΘΩΡΑΚΙΣΗ'||!editingOrder.sasiType);
+        await removeStockReservation(editingOrder.orderNo, editingOrder.h, editingOrder.w, editingOrder.side, editingOrder.caseType, oldIsMoni);
+      }
       const orderQtyR = parseInt(newOrder.qty)||1;
       const sk = sasiKey(String(newOrder.h), String(newOrder.w), newOrder.side);
       const ck = caseKey(String(newOrder.h), String(newOrder.w), newOrder.side, newOrder.caseType);
       const newRes = { orderNo: newOrder.orderNo, customer: newOrder.customer||'', qty: orderQtyR };
 
-      // Σασί: δεσμεύεται ΜΟΝΟ αν είναι ΜΟΝΗ χωρίς κλειδαριά και χωρίς μείωση ύψους
-      // Αν έχει κλειδαριά ή μείωση ύψους → το σασί κατασκευάζεται, δεν παίρνεται από stock
-      const reserveSasi = isMoni && !isMoniWithLock && !hasHeightReductionForm &&
-                          (newOrder.status === 'STD_PENDING' ||
-                           (newOrder.status === 'STD_BUILD' && (hasStaveraForm || hasMontageForm)));
+      const reserveSasi = isMoni && !isMoniWithLock && !hasHeightReductionForm;
+      const reserveCase = !hasKypri;
+
+      const fetchBase = async (path, fallback) => {
+        if (!editingOrder) return fallback;
+        try { return (await (await fetch(`${FIREBASE_URL}${path}`)).json()) || fallback; }
+        catch { return fallback; }
+      };
 
       if (reserveSasi) {
-        const existingSasi = sasiStock[sk] || { qty: 0, reservations: [] };
-        const updSasiEntry = { ...existingSasi, reservations: [...(existingSasi.reservations||[]), newRes] };
-        setSasiStock(prev=>({...prev, [sk]: updSasiEntry}));
-        await fetch(`${FIREBASE_URL}/sasi_stock/${sk}.json`,{method:'PUT',body:JSON.stringify(updSasiEntry)});
+        const base = await fetchBase(`/sasi_stock/${sk}.json`, sasiStock[sk] || { qty: 0, reservations: [] });
+        const upd = { ...base, reservations: [...(base.reservations||[]).filter(r=>r.orderNo!==newOrder.orderNo), newRes] };
+        setSasiStock(prev=>({...prev, [sk]: upd}));
+        await fetch(`${FIREBASE_URL}/sasi_stock/${sk}.json`,{method:'PUT',body:JSON.stringify(upd)});
       }
 
-      // Κάσα: πάντα (STD_PENDING ή STD_BUILD, ΜΟΝΗ ή ΔΙΠΛΗ)
-      const existingCase = caseStock[ck] || { qty: 0, reservations: [], caseType: (newOrder.caseType||'').includes('ΑΝΟΙΧΤΟΥ')?'ΚΑΣΑ ΑΝΟΙΧΤΗ':'ΚΑΣΑ ΚΛΕΙΣΤΗ' };
-      const updCaseEntry = { ...existingCase, reservations: [...(existingCase.reservations||[]), newRes] };
-      setCaseStock(prev=>({...prev, [ck]: updCaseEntry}));
-      await fetch(`${FIREBASE_URL}/case_stock/${ck}.json`,{method:'PUT',body:JSON.stringify(updCaseEntry)});
+      if (reserveCase) {
+        const caseFallback = { qty: 0, reservations: [], caseType: (newOrder.caseType||'').includes('ΑΝΟΙΧΤΟΥ')?'ΚΑΣΑ ΑΝΟΙΧΤΗ':'ΚΑΣΑ ΚΛΕΙΣΤΗ' };
+        const baseCase = await fetchBase(`/case_stock/${ck}.json`, caseStock[ck] || caseFallback);
+        const updCase = { ...baseCase, reservations: [...(baseCase.reservations||[]).filter(r=>r.orderNo!==newOrder.orderNo), newRes] };
+        setCaseStock(prev=>({...prev, [ck]: updCase}));
+        await fetch(`${FIREBASE_URL}/case_stock/${ck}.json`,{method:'PUT',body:JSON.stringify(updCase)});
+      }
     }
 
     resetForm();
@@ -512,7 +529,7 @@ export default function CustomScreen({ customOrders, setCustomOrders, soldOrders
   };
 
   const editOrder = (order) => {
-    setCustomForm(order);
+    setCustomForm({...order, kypri: order.kypri || 'ΟΧΙ'});
     setCustomerSearch(order.customer||'');
     setEditingOrder(order);
     // ΔΕΝ αφαιρούμε από τη λίστα ούτε από το Firebase εδώ —
@@ -895,11 +912,12 @@ export default function CustomScreen({ customOrders, setCustomOrders, soldOrders
       rows = orders.map(o => {
         const sk = sasiKey(String(o.h), String(o.w), o.side);
         const ck = caseKey(String(o.h), String(o.w), o.side, o.caseType);
-        const hasSasiNeeded = (('stavera' in (o.buildTasks||{})) || ('montage' in (o.buildTasks||{}))) && !('sasi' in (o.buildTasks||{}));
-        const hasCaseOk = checkStockFIFOLocal(caseStock, ck, o.orderNo);
-        const hasSasiOk = !hasSasiNeeded || checkStockFIFOLocal(sasiStock, sk, o.orderNo);
         const tasks = o.buildTasks||{};
-        const taskLabels = {stavera:'Σταθερό', lock:'Κλειδαριά', heightReduction:'Μείωση', montage:'Μοντάρ.', sasi:'Σασί'};
+        const caseReserved = !('case' in tasks);
+        const sasiReserved = !('sasi' in tasks);
+        const hasCaseOk = checkStockFIFOLocal(caseStock, ck, o.orderNo);
+        const hasSasiOk = checkStockFIFOLocal(sasiStock, sk, o.orderNo);
+        const taskLabels = {stavera:'Σταθερό', lock:'Κλειδαριά', heightReduction:'Μείωση', montage:'Μοντάρ.', sasi:'Σασί', oversize:'223/83', kypri:'Κυπρί', case:'Κάσα'};
         const checklistHtml = Object.entries(tasks).map(([k,done])=>
           `<span style="margin-right:8px;color:${done?'#155724':'#721c24'}">${done?'☑':'☐'} ${taskLabels[k]||k}</span>`
         ).join('');
@@ -908,8 +926,8 @@ export default function CustomScreen({ customOrders, setCustomOrders, soldOrders
           <td style="font-weight:bold;font-size:14px">${o.orderNo}</td>
           <td>${o.customer||'—'}</td>
           <td style="font-weight:bold">${o.h}x${o.w} ${fora}</td>
-          <td style="text-align:center;font-weight:bold;color:${hasCaseOk?'#155724':'#721c24'}">${hasCaseOk?'✓':'✗'}</td>
-          <td style="text-align:center;font-weight:bold;color:${hasSasiNeeded?(hasSasiOk?'#155724':'#721c24'):'#999'}">${hasSasiNeeded?(hasSasiOk?'✓':'✗'):'—'}</td>
+          <td style="text-align:center;font-weight:bold;color:${caseReserved?(hasCaseOk?'#155724':'#721c24'):'#999'}">${caseReserved?(hasCaseOk?'✓':'✗'):'—'}</td>
+          <td style="text-align:center;font-weight:bold;color:${sasiReserved?(hasSasiOk?'#155724':'#721c24'):'#999'}">${sasiReserved?(hasSasiOk?'✓':'✗'):'—'}</td>
           <td style="font-size:11px">${checklistHtml}</td>
           <td style="font-size:11px;color:#555">${o.notes||''}</td>
         </tr>`;
@@ -1020,11 +1038,12 @@ export default function CustomScreen({ customOrders, setCustomOrders, soldOrders
       return false;
     };
     const isMoniB = (order.sasiType==='ΜΟΝΗ ΘΩΡΑΚΙΣΗ'||!order.sasiType);
-    const hasSasiNeeded = isMoniB && (('stavera' in newTasks) || ('montage' in newTasks)) && !('sasi' in newTasks);
-    const hasCaseOk = checkFIFO(caseStock, ck);
-    const hasSasiOk = !hasSasiNeeded || checkFIFO(sasiStock, sk);
+    const caseReserved = !('case' in newTasks);
+    const sasiReserved = isMoniB && !('sasi' in newTasks);
+    const hasCaseOk = !caseReserved || checkFIFO(caseStock, ck);
+    const hasSasiOk = !sasiReserved || checkFIFO(sasiStock, sk);
 
-    if (!hasCaseOk || !hasSasiOk) return; // stock δεν είναι έτοιμο — δεν εμφανίζει modal
+    if (!hasCaseOk || !hasSasiOk) return;
 
     // Εμφάνιση confirmation modal
     setConfirmModal({
@@ -1037,6 +1056,11 @@ export default function CustomScreen({ customOrders, setCustomOrders, soldOrders
         setCustomOrders(prev => prev.map(o => o.id===order.id ? ready : o));
         await syncToCloud(ready);
         await logActivity('ΤΥΠΟΠΟΙΗΜΕΝΗ', 'Φάση → ΕΤΟΙΜΟ (κατασκευή)', {orderNo:order.orderNo, customer:order.customer, size:`${order.h}x${order.w}`});
+      },
+      onCancel: async () => {
+        const reverted = {...upd, buildTasks: {...newTasks, [taskKey]: !newTasks[taskKey]}};
+        setCustomOrders(prev => prev.map(o => o.id===order.id ? reverted : o));
+        await syncToCloud(reverted);
       }
     });
   };
@@ -1761,7 +1785,7 @@ export default function CustomScreen({ customOrders, setCustomOrders, soldOrders
         message={confirmModal.message}
         confirmText={confirmModal.confirmText}
         onConfirm={()=>{ setConfirmModal(m=>({...m,visible:false})); if(confirmModal.onConfirm) confirmModal.onConfirm(); }}
-        onCancel={()=>setConfirmModal(m=>({...m,visible:false}))}
+        onCancel={()=>{ setConfirmModal(m=>({...m,visible:false})); if(confirmModal.onCancel) confirmModal.onCancel(); }}
       />
 
       {/* Modal επιβεβαίωσης ΕΠΙΣΤΡΟΦΗ */}
@@ -2188,17 +2212,27 @@ export default function CustomScreen({ customOrders, setCustomOrders, soldOrders
                       </TouchableOpacity>
                     ))}
                   </View>
-                  {/* Τεμ. + Μείωση + Μοντάρισμα σε μία γραμμή */}
+                  {/* Τεμ. + Μείωση + Κυπρί + Μοντάρισμα σε μία γραμμή */}
                   <View style={{flexDirection:'row',gap:4,marginTop:6,alignItems:'flex-end'}}>
-                    <View style={{flex:1}}>
+                    <View style={{flex:0.45}}>
                       <Text style={vstyles.fieldLabelDark}>Τεμ.</Text>
                       <TextInput style={[styles.qtyInput,{marginTop:2,marginBottom:0,width:'100%',fontSize:16,padding:5}]} keyboardType="numeric" value={customForm.qty} onChangeText={v=>setCustomForm({...customForm,qty:v})} selectTextOnFocus/>
                     </View>
-                    <View style={{flex:1}}>
+                    <View style={{flex:0.45}}>
                       <Text style={[vstyles.fieldLabelDark,{textAlign:'center'}]}>Μείωση Ύψους</Text>
                       <TextInput style={[styles.qtyInput,{borderColor:'#ff9800',color:'#ff9800',marginTop:2,marginBottom:0,width:'100%',fontSize:16,padding:5}]} placeholder="—" keyboardType="numeric" maxLength={2} value={customForm.heightReduction} onChangeText={v=>{ const n=v.replace(/[^0-9]/g,''); setCustomForm({...customForm,heightReduction:n?'-'+n:''}); }} selectTextOnFocus/>
                     </View>
-                    <View style={{flex:2}}>
+                    <View style={{flex:1, marginLeft:18}}>
+                      <Text style={[vstyles.fieldLabelDark,{textAlign:'center'}]}>Κυπρί</Text>
+                      <View style={{flexDirection:'row',gap:3,marginTop:2}}>
+                        {['ΝΑΙ','ΟΧΙ'].map(v=>(
+                          <TouchableOpacity key={v} style={[vstyles.togBtn,customForm.kypri===v&&(v==='ΝΑΙ'?vstyles.togBtnGreen:vstyles.togBtnOn)]} onPress={()=>setCustomForm({...customForm,kypri:v})}>
+                            <Text style={[vstyles.togBtnTxt,customForm.kypri===v&&vstyles.togBtnTxtOn]}>{v}</Text>
+                          </TouchableOpacity>
+                        ))}
+                      </View>
+                    </View>
+                    <View style={{flex:1, marginLeft:18}}>
                       <Text style={[vstyles.fieldLabelDark,{textAlign:'center'}]}>Μοντάρισμα</Text>
                       <View style={{flexDirection:'row',gap:3,marginTop:2}}>
                         {['ΝΑΙ','ΟΧΙ'].map(v=>(
@@ -3065,11 +3099,13 @@ export default function CustomScreen({ customOrders, setCustomOrders, soldOrders
                           }
                           return false;
                         };
-                        const hasSasiReserved = (('stavera' in (o.buildTasks||{})) || ('montage' in (o.buildTasks||{}))) && !('sasi' in (o.buildTasks||{}));
-                        const hasSasiOk = !hasSasiReserved || checkStock(sasiStock, sk);
-                        const hasCaseOk = checkStock(caseStock, ck);
                         const tasks = o.buildTasks||{};
-                        const taskLabels = {stavera:'📐 Σταθερό', lock:'🔒 Κλειδαριά', heightReduction:'📏 Μείωση', montage:'🪛 Μοντάρ.', sasi:'🔧 Σασί'};
+                        const hasSasiReserved = !('sasi' in tasks);
+                        const hasCaseReserved = !('case' in tasks);
+                        const hasSasiOk = !hasSasiReserved || checkStock(sasiStock, sk);
+                        const hasCaseOk = !hasCaseReserved || checkStock(caseStock, ck);
+                        const stockOk = hasCaseOk && hasSasiOk;
+                        const taskLabels = {stavera:'📐 Σταθερό', lock:'🔒 Κλειδαριά', heightReduction:'📏 Μείωση', montage:'🪛 Μοντάρ.', sasi:'🔧 Σασί', kypri:'🪟 Κυπρί', case:'📦 Κάσα'};
                         const allDone = Object.keys(tasks).length>0 && Object.values(tasks).every(v=>v===true);
                         return (
                           <View key={o.id} style={[{backgroundColor:'#fff', borderRadius:8, marginBottom:6, borderLeftWidth:5, borderLeftColor: allDone?'#00C851':'#e65100', elevation:2, padding:10}, searchHL(o.id)]}>
@@ -3102,21 +3138,43 @@ export default function CustomScreen({ customOrders, setCustomOrders, soldOrders
                                 {o.notes?<Text style={{fontSize:11,color:'#888',marginTop:2}}>Σημ: {o.notes}</Text>:null}
                                 {/* CHECKBOXES ΟΡΙΖΟΝΤΙΑ */}
                                 <View style={{marginTop:6, flexDirection:'row', flexWrap:'wrap', gap:6, alignItems:'center'}}>
-                                  {Object.entries(tasks).map(([key, done])=>(
-                                    <TouchableOpacity key={key} style={{flexDirection:'row', alignItems:'center', gap:4, backgroundColor: done?'#e8f5e9':'#fff3e0', borderRadius:6, paddingHorizontal:8, paddingVertical:5, borderWidth:1, borderColor: done?'#00C851':'#e65100'}}
-                                      onPress={()=>handleBuildTaskToggle(o, key)}>
-                                      <View style={{width:18, height:18, borderRadius:4, borderWidth:2, borderColor: done?'#00C851':'#e65100', backgroundColor: done?'#00C851':'white', alignItems:'center', justifyContent:'center'}}>
-                                        {done&&<Text style={{color:'white',fontWeight:'bold',fontSize:10}}>✓</Text>}
-                                      </View>
-                                      <Text style={{fontSize:11, color: done?'#00C851':'#e65100', fontWeight:'bold'}}>{taskLabels[key]||key}</Text>
-                                    </TouchableOpacity>
-                                  ))}
+                                  {(() => {
+                                    const sasiReady = ('sasi' in tasks) ? !!tasks.sasi : hasSasiOk;
+                                    return Object.entries(tasks).map(([key, done])=>{
+                                    const isOversizeTask = key === 'oversize';
+                                    const isMontageTask = key === 'montage';
+                                    const disabled = !done && (
+                                      isOversizeTask ? !stockOk :
+                                      isMontageTask ? !sasiReady :
+                                      false
+                                    );
+                                    const label = isOversizeTask
+                                      ? (stockOk ? '📦 Έτοιμο από stock' : '❌ Λείπει stock')
+                                      : (taskLabels[key] || key);
+                                    const flashing = isOversizeTask && !done && stockOk;
+                                    const borderColor = done ? '#00C851' : (disabled ? '#bbb' : '#e65100');
+                                    const textColor = done ? '#00C851' : (disabled ? '#888' : '#e65100');
+                                    const bg = done ? '#e8f5e9' : (disabled ? '#f5f5f5' : '#fff3e0');
+                                    const opacity = flashing ? blinkPhase : (disabled ? 0.6 : 1);
+                                    return (
+                                      <TouchableOpacity key={key}
+                                        disabled={disabled}
+                                        style={{flexDirection:'row', alignItems:'center', gap:4, backgroundColor:bg, borderRadius:6, paddingHorizontal:8, paddingVertical:5, borderWidth:1, borderColor, opacity}}
+                                        onPress={()=>handleBuildTaskToggle(o, key)}>
+                                        <View style={{width:18, height:18, borderRadius:4, borderWidth:2, borderColor, backgroundColor: done?'#00C851':'white', alignItems:'center', justifyContent:'center'}}>
+                                          {done&&<Text style={{color:'white',fontWeight:'bold',fontSize:10}}>✓</Text>}
+                                        </View>
+                                        <Text style={{fontSize:11, color:textColor, fontWeight:'bold'}}>{label}</Text>
+                                      </TouchableOpacity>
+                                    );
+                                  });
+                                  })()}
                                 </View>
                               </View>
                               {/* ΚΑΣΑ + ΣΑΣΙ + ΔΙΑΓΡΑΦΗ — δεξιά */}
                               <View style={{alignItems:'flex-end', gap:4, marginLeft:8}}>
                                 <View style={{flexDirection:'row', gap:4}}>
-                                  {/* ΚΑΣΑ — πατήσιμο αν ❌ για δανεισμό (ΜΟΝΗ ΠΡΟΣ ΚΑΤΑΣΚΕΥΗ) */}
+                                  {hasCaseReserved&&(
                                   <TouchableOpacity
                                     activeOpacity={hasCaseOk ? 1 : 0.7}
                                     onPress={()=>{ if(!hasCaseOk) handleBorrowRequest(o, 'case'); }}
@@ -3125,6 +3183,7 @@ export default function CustomScreen({ customOrders, setCustomOrders, soldOrders
                                     <Text style={{fontSize:14}}>{hasCaseOk?'✅':'❌'}</Text>
                                     {!hasCaseOk&&<Text style={{fontSize:7, color:'#ff4444', fontWeight:'bold'}}>πάτα</Text>}
                                   </TouchableOpacity>
+                                  )}
                                   {hasSasiReserved&&(
                                     <TouchableOpacity
                                       activeOpacity={hasSasiOk ? 1 : 0.7}
@@ -3349,9 +3408,11 @@ export default function CustomScreen({ customOrders, setCustomOrders, soldOrders
                           }
                           return false;
                         };
-                        const hasCaseOk = checkStock(caseStock, ckD);
                         const tasks = o.buildTasks||{};
-                        const taskLabels = {stavera:'📐 Σταθερό', lock:'🔒 Κλειδαριά', heightReduction:'📏 Μείωση', montage:'🪛 Μοντάρ.', sasi:'🔧 Σασί'};
+                        const hasCaseReserved = !('case' in tasks);
+                        const hasCaseOk = !hasCaseReserved || checkStock(caseStock, ckD);
+                        const stockOk = hasCaseOk;
+                        const taskLabels = {stavera:'📐 Σταθερό', lock:'🔒 Κλειδαριά', heightReduction:'📏 Μείωση', montage:'🪛 Μοντάρ.', sasi:'🔧 Σασί', kypri:'🪟 Κυπρί', case:'📦 Κάσα'};
                         const allDone = Object.keys(tasks).length>0 && Object.values(tasks).every(v=>v===true);
                         return (
                           <View key={o.id} style={[{backgroundColor:'#fff', borderRadius:8, marginBottom:6, borderLeftWidth:5, borderLeftColor: allDone?'#00C851':'#e65100', elevation:2, padding:10}, searchHL(o.id)]}>
@@ -3392,19 +3453,31 @@ export default function CustomScreen({ customOrders, setCustomOrders, soldOrders
                                 {o.notes?<Text style={{fontSize:11,color:'#888',marginTop:2}}>Σημ: {o.notes}</Text>:null}
                                 {/* CHECKBOXES ΟΡΙΖΟΝΤΙΑ */}
                                 <View style={{marginTop:6, flexDirection:'row', flexWrap:'wrap', gap:6, alignItems:'center'}}>
-                                  {Object.entries(tasks).map(([key, done])=>(
-                                    <TouchableOpacity key={key} style={{flexDirection:'row', alignItems:'center', gap:4, backgroundColor: done?'#e8f5e9':'#fff3e0', borderRadius:6, paddingHorizontal:8, paddingVertical:5, borderWidth:1, borderColor: done?'#00C851':'#e65100'}}
-                                      onPress={()=>handleBuildTaskToggle(o, key)}>
-                                      <View style={{width:18, height:18, borderRadius:4, borderWidth:2, borderColor: done?'#00C851':'#e65100', backgroundColor: done?'#00C851':'white', alignItems:'center', justifyContent:'center'}}>
-                                        {done&&<Text style={{color:'white',fontWeight:'bold',fontSize:10}}>✓</Text>}
-                                      </View>
-                                      <Text style={{fontSize:11, color: done?'#00C851':'#e65100', fontWeight:'bold'}}>{taskLabels[key]||key}</Text>
-                                    </TouchableOpacity>
-                                  ))}
+                                  {(() => {
+                                    const sasiReady = ('sasi' in tasks) ? !!tasks.sasi : true;
+                                    return Object.entries(tasks).map(([key, done])=>{
+                                    const isMontageTask = key === 'montage';
+                                    const disabled = !done && isMontageTask && !sasiReady;
+                                    const borderColor = done ? '#00C851' : (disabled ? '#bbb' : '#e65100');
+                                    const textColor = done ? '#00C851' : (disabled ? '#888' : '#e65100');
+                                    const bg = done ? '#e8f5e9' : (disabled ? '#f5f5f5' : '#fff3e0');
+                                    return (
+                                      <TouchableOpacity key={key}
+                                        disabled={disabled}
+                                        style={{flexDirection:'row', alignItems:'center', gap:4, backgroundColor:bg, borderRadius:6, paddingHorizontal:8, paddingVertical:5, borderWidth:1, borderColor, opacity: disabled?0.6:1}}
+                                        onPress={()=>handleBuildTaskToggle(o, key)}>
+                                        <View style={{width:18, height:18, borderRadius:4, borderWidth:2, borderColor, backgroundColor: done?'#00C851':'white', alignItems:'center', justifyContent:'center'}}>
+                                          {done&&<Text style={{color:'white',fontWeight:'bold',fontSize:10}}>✓</Text>}
+                                        </View>
+                                        <Text style={{fontSize:11, color:textColor, fontWeight:'bold'}}>{taskLabels[key]||key}</Text>
+                                      </TouchableOpacity>
+                                    );
+                                  });
+                                  })()}
                                 </View>
                               </View>
                               <View style={{alignItems:'flex-end', gap:4, marginLeft:8}}>
-                                {/* ΚΑΣΑ — πατήσιμο αν ❌ για δανεισμό (ΔΙΠΛΗ ΠΡΟΣ ΚΑΤΑΣΚΕΥΗ) */}
+                                {hasCaseReserved&&(
                                 <TouchableOpacity
                                   activeOpacity={hasCaseOk ? 1 : 0.7}
                                   onPress={()=>{ if(!hasCaseOk) handleBorrowRequest(o, 'case'); }}
@@ -3413,6 +3486,7 @@ export default function CustomScreen({ customOrders, setCustomOrders, soldOrders
                                   <Text style={{fontSize:14}}>{hasCaseOk?'✅':'❌'}</Text>
                                   {!hasCaseOk&&<Text style={{fontSize:7, color:'#ff4444', fontWeight:'bold'}}>πάτα</Text>}
                                 </TouchableOpacity>
+                                )}
 
                                 {/* ΕΠΙΣΤΡΟΦΗ */}
                                 <TouchableOpacity
