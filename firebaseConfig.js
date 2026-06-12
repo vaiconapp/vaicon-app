@@ -1,16 +1,37 @@
-/** Κεντρικό URL Firebase Realtime Database — χρησιμοποιείται από όλα τα modules */
-export const FIREBASE_URL =
-  'https://vaiconcloud-default-rtdb.europe-west1.firebasedatabase.app';
-
 /**
- * Ρύθμιση για Firebase JS SDK (live sync μεταξύ PC).
- * Βάλε στο .env: EXPO_PUBLIC_FIREBASE_API_KEY=... (Web API Key από Firebase Console → Ρυθμίσεις έργου)
+ * Κεντρικό Firebase config.
+ * DEV  (expo start / localhost) → vaicon-test (δοκιμαστική βάση)
+ * PROD (Netlify build)           → vaiconcloud  (παραγωγή)
  */
-export const firebaseAppConfig = {
-  apiKey: 'AIzaSyB04iN9S_MfYMsx3V3Jn1j2rOyz5ySf-sQ',
+
+const PROD = {
+  url:       'https://vaiconcloud-default-rtdb.europe-west1.firebasedatabase.app',
+  apiKey:    'AIzaSyB04iN9S_MfYMsx3V3Jn1j2rOyz5ySf-sQ',
   authDomain: 'vaiconcloud.firebaseapp.com',
-  databaseURL: FIREBASE_URL,
-  projectId: 'vaiconcloud',
+  projectId:  'vaiconcloud',
+  useAuth:    false, // η παραγωγή κρατά τον υπάρχοντα κωδικό μέχρι να ολοκληρωθούν οι δοκιμές
+};
+
+const DEV = {
+  url:       'https://vaicon-test-default-rtdb.europe-west1.firebasedatabase.app',
+  apiKey:    'AIzaSyC2p46fX-FD5sszWHnkJB2hEJBN1bTkHWI',
+  authDomain: 'vaicon-test.firebaseapp.com',
+  projectId:  'vaicon-test',
+  useAuth:    true, // η δοκιμαστική χρησιμοποιεί Firebase Authentication (email/password)
+};
+
+const cfg = (typeof __DEV__ !== 'undefined' && __DEV__) ? DEV : PROD;
+
+export const FIREBASE_URL = cfg.url;
+
+/** true → η εφαρμογή κάνει login μέσω Firebase Authentication (email/password) */
+export const USE_FIREBASE_AUTH = cfg.useAuth;
+
+export const firebaseAppConfig = {
+  apiKey:      cfg.apiKey,
+  authDomain:  cfg.authDomain,
+  databaseURL: cfg.url,
+  projectId:   cfg.projectId,
 };
 
 /** Αν λείπει apiKey, η εφαρμογή χρησιμοποιεί μόνο REST (fetch) όπως πριν */
