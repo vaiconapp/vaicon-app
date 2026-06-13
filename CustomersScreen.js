@@ -3,10 +3,10 @@ import { StyleSheet, Text, View, ScrollView, TouchableOpacity, TextInput, Alert,
 import { FIREBASE_URL } from './firebaseConfig';
 import { fmtDate } from './utils';
 
-const INIT = { name: '', phone: '', identifier: '' };
+const INIT = { name: '', phone: '', phone2: '', phone3: '', phoneViber: '', email: '', identifier: '' };
 
 export default function CustomersScreen({ customers, setCustomers, onClose, prefillName, onCustomerAdded, allOrders=[], setCustomOrders, setSoldOrders }) {
-  const [form, setForm] = useState(prefillName ? { name: prefillName, phone: '', identifier: '' } : INIT);
+  const [form, setForm] = useState(prefillName ? { ...INIT, name: prefillName } : INIT);
   const [editingId, setEditingId] = useState(null);
   const [search, setSearch] = useState('');
   const [selectedCustomerOrders, setSelectedCustomerOrders] = useState(null); // πελάτης για εμφάνιση παραγγελιών
@@ -125,7 +125,10 @@ export default function CustomersScreen({ customers, setCustomers, onClose, pref
   };
 
   const editCustomer = (c) => {
-    setForm({ name: c.name || '', phone: c.phone || '', identifier: c.identifier || '' });
+    setForm({
+      name: c.name || '', phone: c.phone || '', phone2: c.phone2 || '', phone3: c.phone3 || '',
+      phoneViber: c.phoneViber || '', email: c.email || '', identifier: c.identifier || '',
+    });
     setEditingId(c.id);
   };
 
@@ -150,7 +153,8 @@ export default function CustomersScreen({ customers, setCustomers, onClose, pref
 
   const filtered = customers.filter(c =>
     c.name?.toLowerCase().includes(search.toLowerCase()) ||
-    c.phone?.includes(search) ||
+    [c.phone, c.phone2, c.phone3, c.phoneViber].some(p => p && String(p).includes(search)) ||
+    c.email?.toLowerCase().includes(search.toLowerCase()) ||
     c.identifier?.toLowerCase().includes(search.toLowerCase())
   );
 
@@ -175,7 +179,19 @@ export default function CustomersScreen({ customers, setCustomers, onClose, pref
             </View>
           )}
           <TextInput style={styles.input} placeholder="Όνομα Πελάτη *" value={form.name} onChangeText={v => setForm({...form, name:v})} />
-          <TextInput style={styles.input} placeholder="Τηλέφωνο Επικοινωνίας" keyboardType="phone-pad" value={form.phone} onChangeText={v => setForm({...form, phone:v})} />
+          <View style={{flexDirection:'row', gap:6, marginBottom:8}}>
+            <TextInput style={[styles.input, {flex:1, marginBottom:0}]} placeholder="Τηλ #1" keyboardType="phone-pad" value={form.phone} onChangeText={v => setForm({...form, phone:v})} />
+            <TextInput style={[styles.input, {flex:1, marginBottom:0}]} placeholder="Τηλ #2" keyboardType="phone-pad" value={form.phone2} onChangeText={v => setForm({...form, phone2:v})} />
+            <TextInput style={[styles.input, {flex:1, marginBottom:0}]} placeholder="Τηλ #3" keyboardType="phone-pad" value={form.phone3} onChangeText={v => setForm({...form, phone3:v})} />
+            {(editingId && customers.find(c=>c.id===editingId)?.viberOptOut) ? (
+              <View style={[styles.input, {flex:1, marginBottom:0, backgroundColor:'#ffebee', borderColor:'#c62828', borderWidth:1.5, justifyContent:'center'}]}>
+                <Text style={{color:'#c62828', fontWeight:'bold', fontSize:13}}>🚫 Απεγγραφή Viber</Text>
+              </View>
+            ) : (
+              <TextInput style={[styles.input, {flex:1, marginBottom:0}]} placeholder="Viber" keyboardType="phone-pad" value={form.phoneViber} onChangeText={v => setForm({...form, phoneViber:v})} />
+            )}
+          </View>
+          <TextInput style={styles.input} placeholder="Email (προαιρετικό)" keyboardType="email-address" autoCapitalize="none" value={form.email} onChangeText={v => setForm({...form, email:v})} />
           <TextInput style={styles.input} placeholder="Αναγνωριστικό (π.χ. Γιώργης Μαραθώνας)" value={form.identifier} onChangeText={v => setForm({...form, identifier:v})} />
 
           <View style={{ flexDirection:'row', gap:8 }}>
@@ -205,7 +221,15 @@ export default function CustomersScreen({ customers, setCustomers, onClose, pref
             >
               <View style={{ flex:1 }}>
                 <Text style={styles.customerName}>{c.name}</Text>
-                {c.phone ? <Text style={styles.customerDetail}>📞 {c.phone}</Text> : null}
+                {[c.phone, c.phone2, c.phone3].filter(Boolean).length > 0 ? (
+                  <Text style={styles.customerDetail}>📞 {[c.phone, c.phone2, c.phone3].filter(Boolean).join(' · ')}</Text>
+                ) : null}
+                {c.phoneViber ? (
+                  <Text style={[styles.customerDetail, {color: c.viberOptOut ? '#c62828' : '#7360f2', fontWeight:'bold'}]}>
+                    {c.viberOptOut ? '🚫 ' : '📱 '}Viber: {c.phoneViber}{c.viberOptOut ? ' (απεγγράφηκε)' : ''}
+                  </Text>
+                ) : null}
+                {c.email ? <Text style={styles.customerDetail}>✉️ {c.email}</Text> : null}
                 {c.identifier ? <Text style={styles.customerDetail}>🏷 {c.identifier}</Text> : null}
                 <Text style={styles.customerDate}>📅 {fmtDate(c.createdAt)}</Text>
               </View>

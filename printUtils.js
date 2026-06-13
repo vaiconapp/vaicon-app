@@ -12,6 +12,17 @@ function escapeHtml(s) {
     .replace(/"/g, '&quot;');
 }
 
+const PEEPHOLE_WARN_NOTE = 'ΠΡΟΣΟΧΗ ΟΧΙ ΤΡΥΠΗΜΑ ΓΙΑ ΜΑΤΙ';
+
+/** Παρατηρήσεις για εκτύπωση: escape + ανάδειξη της σημείωσης ματιού (κόκκινο/έντονο, όπως vaicon-eidikes). */
+export function notesHtmlWithWarning(notes) {
+  if (notes == null || String(notes).trim() === '') return '';
+  return escapeHtml(String(notes)).replace(
+    new RegExp(PEEPHOLE_WARN_NOTE, 'g'),
+    `<span style="color:#c62828;font-weight:bold;font-size:1.3em">${PEEPHOLE_WARN_NOTE}</span>`
+  );
+}
+
 /** Κατάσταση με ελληνικό τίτλο (ίδια λογική με την εφαρμογή). */
 function statusLabelGreek(st) {
   const map = {
@@ -135,7 +146,7 @@ function buildStaveraOnlyPrintFragment(order, title, whereLine) {
   if (!grid) return null;
   const notesTrim = order.notes != null ? String(order.notes).trim() : '';
   const notesHtml = notesTrim
-    ? `<p style="margin:10px 0 0 0;padding:10px 0 0 0;font-size:12px;line-height:1.35;white-space:pre-wrap;color:#222;border-top:1px solid #ccc;"><strong>Παρατηρήσεις:</strong> ${escapeHtml(notesTrim)}</p>`
+    ? `<p style="margin:10px 0 0 0;padding:10px 0 0 0;font-size:12px;line-height:1.35;white-space:pre-wrap;color:#222;border-top:1px solid #ccc;"><strong>Παρατηρήσεις:</strong> ${notesHtmlWithWarning(notesTrim)}</p>`
     : '';
   const datesHtml = buildOrderDatesTableHtml(order, '0');
   const html = `<h1 class="stavera-print-title">${title}</h1>
@@ -250,7 +261,7 @@ function buildGlobalSearchOrderFragment(order, meta = {}) {
 
   const notesSep = extraRows.length > 0 ? 'border-top:1px solid #ccc;padding-top:5px;margin-top:6px;' : 'margin-top:6px;';
   const notesBlock = notesTrim
-    ? `<p style="${notesSep}font-size:11px;line-height:1.3;white-space:pre-wrap;color:#222;"><strong>Παρατηρήσεις:</strong> ${escapeHtml(notesTrim)}</p>`
+    ? `<p style="${notesSep}font-size:11px;line-height:1.3;white-space:pre-wrap;color:#222;"><strong>Παρατηρήσεις:</strong> ${notesHtmlWithWarning(notesTrim)}</p>`
     : '';
 
   const datesBlock = buildOrderDatesTableHtml(order);
@@ -390,7 +401,7 @@ export const buildPrintHTML = (copies, phaseKey=null) => {
         <td style="font-size:15px">${kleidaria}</td>
         <td style="font-size:15px">${o.caseType||'—'}</td>
         <td style="font-size:15px">${o.caseMaterial||'DKP'}</td>
-        <td style="min-width:140px;font-size:13px">${o.notes||''}</td>
+        <td style="min-width:140px;font-size:13px">${notesHtmlWithWarning(o.notes)}</td>
         <td style="font-size:12px;color:#444">${datesLine}</td>
       </tr>`;
     }).join('');
@@ -417,7 +428,7 @@ export const buildPrintHTML = (copies, phaseKey=null) => {
         <td style="font-size:16px">${mentesedesVal}</td>
         <td style="font-size:15px">${tzami}</td>
         <td style="font-size:15px">${kleidaria}</td>
-        <td style="min-width:140px;font-size:13px">${o.notes||''}</td>
+        <td style="min-width:140px;font-size:13px">${notesHtmlWithWarning(o.notes)}</td>
         <td style="font-size:12px;color:#444">${datesLine}</td>
       </tr>`;
     }).join('');
@@ -448,7 +459,7 @@ export const buildPrintHTML = (copies, phaseKey=null) => {
         <td style="font-size:13px">${kleidaria}</td>
         <td style="font-size:13px">${o.caseType||'—'}</td>
         <td style="font-size:13px">${coatings}</td>
-        <td style="min-width:140px;font-size:13px">${o.notes||''}</td>
+        <td style="min-width:140px;font-size:13px">${notesHtmlWithWarning(o.notes)}</td>
         <td style="font-size:12px;color:#444">${datesLine}</td>
       </tr>`;
     }).join('');
@@ -473,7 +484,7 @@ export const buildPrintHTML = (copies, phaseKey=null) => {
         <td style="font-size:13px">${mentesedesVal}</td>
         <td style="font-size:13px">${o.caseType||'—'}</td>
         <td style="font-size:13px">${o.caseMaterial||'DKP'}</td>
-        <td style="min-width:140px;font-size:13px">${o.notes||''}</td>
+        <td style="min-width:140px;font-size:13px">${notesHtmlWithWarning(o.notes)}</td>
         <td style="font-size:12px;color:#444">${datesLine}</td>
       </tr>`;
     }).join('');
@@ -505,7 +516,7 @@ export const buildPrintHTML = (copies, phaseKey=null) => {
           <td>${(o.armor||'ΜΟΝΗ')+' ΘΩΡ.'}</td>
           <td>${o.caseType||'—'}</td>
           <td style="font-weight:bold">${mat}</td>
-          <td style="min-width:180px">${o.notes||''}</td>
+          <td style="min-width:180px">${notesHtmlWithWarning(o.notes)}</td>
         </tr>`;
       }).join('');
       const total = totalQty(orders);
@@ -529,7 +540,7 @@ export const buildPrintHTML = (copies, phaseKey=null) => {
           <td>${dimCell(o)}</td>
           <td style="font-weight:bold">${fora}</td>
           <td style="font-weight:bold">${armor} ΘΩΡ.</td>
-          <td style="min-width:180px">${o.notes||''}</td>
+          <td style="min-width:180px">${notesHtmlWithWarning(o.notes)}</td>
         </tr>`;
       }).join('');
       const total = totalQty(orders);
@@ -557,7 +568,7 @@ export const buildPrintHTML = (copies, phaseKey=null) => {
         <td>${kleidaria}</td>
         <td>${o.caseType||'—'}</td>
         <td>${o.caseMaterial||'DKP'}</td>
-        <td style="min-width:180px">${o.notes||''}</td>
+        <td style="min-width:180px">${notesHtmlWithWarning(o.notes)}</td>
       </tr>`;
     }).join('');
     const total = totalQty(orders);
@@ -592,7 +603,7 @@ export const buildPrintHTML = (copies, phaseKey=null) => {
         <td>${o.caseMaterial||'DKP'}</td>
         <td>${o.installation==='ΝΑΙ'?'✓':''}</td>
         ${showCoatings?`<td>${(o.coatings&&o.coatings.length>0)?o.coatings.join(', '):''}</td>`:''}
-        <td style="min-width:120px">${o.notes||''}</td>
+        <td style="min-width:120px">${notesHtmlWithWarning(o.notes)}</td>
         <td style="font-size:10px;color:#444">${datesLine}</td>
       </tr>`;
     }).join('');

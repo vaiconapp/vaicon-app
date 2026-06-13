@@ -6,3 +6,11 @@
 [build]
   command = "npx expo export -p web"
   publish = "dist"
+  functions = "netlify/functions"
+
+# Ειδοποιήσεις πελατών (Viber/SMS μέσω Yuboto) — ίδιο σύστημα με vaicon-eidikes.
+# Υποχρεωτικά env vars στο Netlify για live αποστολή:
+#   YUBOTO_API_KEY, YUBOTO_SENDER, YUBOTO_VIBER_SENDER, YUBOTO_TEST_MODE,
+#   FIREBASE_DB_URL, FIREBASE_SERVICE_ACCOUNT
+[functions]
+  node_bundler = "esbuild"

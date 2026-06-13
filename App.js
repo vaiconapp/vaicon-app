@@ -12,6 +12,7 @@ import CustomersScreen from './CustomersScreen';
 import CoatingsScreen from './CoatingsScreen';
 import LocksScreen from './LocksScreen';
 import ActivityScreen from './ActivityScreen';
+import MessagesScreen from './MessagesScreen';
 import { FIREBASE_URL, hasFirebaseRealtime, USE_FIREBASE_AUTH } from './firebaseConfig';
 import { applyFetchedBundle, subscribeFirebaseRealtime } from './firebaseRealtime';
 import { installFetchAuthInterceptor, signIn as fbSignIn, signOutUser as fbSignOutUser, watchAuth } from './fbAuth';
@@ -32,6 +33,23 @@ import { APP_VERSION } from './version';
 // ============================================================
 const VAICON_PASSWORD = process.env.EXPO_PUBLIC_VAICON_PASSWORD || '';
 const STORAGE_KEY = "vaicon_auth_v1";
+
+// ============================================================
+//  Χρήστες & ρόλοι — ίδιο μοντέλο με το vaicon-eidikes.
+//  Με Firebase Auth (dev/μετά το go-live) η ταυτότητα βγαίνει από το email
+//  (user10@vaicon.local → USER 10). Με κοινό κωδικό (παραγωγή σήμερα) δεν
+//  υπάρχει ταυτότητα χρήστη και τα μηνύματα μένουν ανενεργά.
+// ============================================================
+const APP_USERS = ['USER 10', 'USER 12', 'USER 14', 'USER 16', 'USER 18', 'GUEST', 'ADMIN'];
+const lockKey = (u) => String(u || '').toUpperCase().replace(/\s+/g, '');
+const roleForEmail = (e) => e.startsWith('admin') ? 'admin' : e.startsWith('guest') ? 'guest' : 'user';
+const userFromEmail = (email) => {
+  if (!email) return null;
+  const e = String(email).toLowerCase();
+  const local = e.split('@')[0].toUpperCase();
+  const username = local.replace(/^USER(\d+)$/, 'USER $1');
+  return { username, role: roleForEmail(e), email: e };
+};
 
 // Με Firebase Auth ενεργό, προσθέτουμε αυτόματα το token σε όλα τα REST writes.
 if (USE_FIREBASE_AUTH) installFetchAuthInterceptor();
@@ -177,6 +195,15 @@ const loginStyles = StyleSheet.create({
   hint: { fontSize: 11, color: '#aaa', marginTop: 20, textAlign: 'center', lineHeight: 16 },
 });
 
+// Στυλ για τα modal των μηνυμάτων (ίδια εμφάνιση με vaicon-eidikes)
+const msgStyles = StyleSheet.create({
+  overlay: { flex: 1, backgroundColor: 'rgba(0,0,0,0.6)', justifyContent: 'center', alignItems: 'center', padding: 16 },
+  box: { backgroundColor: 'white', borderRadius: 14, padding: 20, width: '100%', elevation: 8, borderTopWidth: 10, borderTopColor: '#1565C0' },
+  title: { fontSize: 20, fontWeight: 'bold', color: '#1565C0', textAlign: 'center', marginBottom: 6 },
+  btn: { backgroundColor: '#1565C0', borderRadius: 10, padding: 14, alignItems: 'center' },
+  btnTxt: { color: 'white', fontWeight: 'bold', fontSize: 15, letterSpacing: 0.5 },
+});
+
 if (Platform.OS === 'android' && UIManager.setLayoutAnimationEnabledExperimental) {
   UIManager.setLayoutAnimationEnabledExperimental(true);
 }
@@ -189,6 +216,7 @@ const NAV_TABS = ['customNew', 'customMoni', 'customDipli', 'sasi', 'cases'];
 export default function App() {
   // Με Firebase Auth, η αλήθεια έρχεται από το watchAuth (παρακάτω). Αλλιώς, από το localStorage.
   const [isLoggedIn, setIsLoggedIn] = useState(USE_FIREBASE_AUTH ? false : isRemembered());
+  const [currentUser, setCurrentUser] = useState(null);
   const [tabIndex, setTabIndex] = useState(0);
   const [loading, setLoading] = useState(true);
   const [menuOpen, setMenuOpen] = useState(false);
@@ -196,6 +224,14 @@ export default function App() {
   const [showCoatings, setShowCoatings] = useState(false);
   const [showLocks, setShowLocks] = useState(false);
   const [showActivity, setShowActivity] = useState(false);
+  // Μηνύματα (ίδιο σύστημα με vaicon-eidikes, κοινός κόμβος messages στη βάση)
+  const [showMessages, setShowMessages] = useState(false);
+  const [incomingMsg, setIncomingMsg] = useState(null);
+  const [showInbox, setShowInbox] = useState(false);
+  const [inbox, setInbox] = useState([]);
+  const [unreadPrompt, setUnreadPrompt] = useState(0);
+  const nextPromptAtRef = useRef(0);
+  const [userLabels, setUserLabels] = useState({});
   const [pendingCustomer, setPendingCustomer] = useState(null); // όνομα πελάτη από CustomScreen
   const [pendingCustomerCallback, setPendingCustomerCallback] = useState(null);
 
@@ -487,11 +523,90 @@ export default function App() {
   };
 
   // Με Firebase Auth: παρακολούθηση κατάστασης σύνδεσης (πηγή αλήθειας).
+  // Από το email βγαίνει και η ταυτότητα/ρόλος του χρήστη (για τα μηνύματα).
   useEffect(() => {
     if (!USE_FIREBASE_AUTH) return;
-    const unsub = watchAuth(user => setIsLoggedIn(!!user));
+    const unsub = watchAuth(user => {
+      setIsLoggedIn(!!user);
+      setCurrentUser(user && user.email ? userFromEmail(user.email) : null);
+    });
     return unsub;
   }, []);
+
+  // Έλεγχος για αδιάβαστα μηνύματα (μόνο απλοί χρήστες). Επαναλαμβανόμενη
+  // υπενθύμιση: το popup ξαναβγαίνει κάθε 5' μέχρι να διαβαστούν όλα.
+  useEffect(() => {
+    if (!isLoggedIn || !currentUser?.username || currentUser.role !== 'user') return;
+    const myKey = lockKey(currentUser.username);
+    const pickUnread = (data) => {
+      const unread = Object.values(data || {}).filter(m => m && m.read === false);
+      if (!unread.length) { nextPromptAtRef.current = 0; setUnreadPrompt(0); return; }
+      if (Date.now() >= (nextPromptAtRef.current || 0)) setUnreadPrompt(unread.length);
+    };
+    const load = async () => { try { const r = await fetch(`${FIREBASE_URL}/messages/${myKey}.json`); pickUnread(await r.json()); } catch {} };
+    load();
+    const iv = setInterval(load, 15000);
+    return () => clearInterval(iv);
+  }, [isLoggedIn, currentUser]);
+
+  // Ονόματα χρηστών (user_labels) — φορτώνονται στο login του admin για το MessagesScreen.
+  useEffect(() => {
+    if (!isLoggedIn || currentUser?.role !== 'admin') return;
+    let alive = true;
+    (async () => {
+      try {
+        const r = await fetch(`${FIREBASE_URL}/user_labels.json`);
+        const data = (await r.json()) || {};
+        if (alive) setUserLabels(data);
+      } catch {}
+    })();
+    return () => { alive = false; };
+  }, [isLoggedIn, currentUser]);
+
+  const loadInbox = async () => {
+    if (!currentUser?.username) return [];
+    try {
+      const r = await fetch(`${FIREBASE_URL}/messages/${lockKey(currentUser.username)}.json`);
+      const d = (await r.json()) || {};
+      const arr = Object.keys(d).map(id => ({ id, ...d[id] }));
+      [...arr].sort((a, b) => (a.ts || 0) - (b.ts || 0)).forEach((m, i) => { m._num = i + 1; });
+      const sorted = arr.sort((a, b) => (b.ts || 0) - (a.ts || 0));
+      setInbox(sorted);
+      return sorted;
+    } catch { setInbox([]); return []; }
+  };
+
+  // Ανοίγει το inbox και αναδύει αυτόματα το παλαιότερο αδιάβαστο (αναγκαστική ανάγνωση).
+  const openInbox = async () => {
+    setMenuOpen(false);
+    setUnreadPrompt(0);
+    setShowInbox(true);
+    const arr = await loadInbox();
+    const oldestUnread = arr.filter(m => m.read === false).sort((a, b) => (a.ts || 0) - (b.ts || 0))[0];
+    if (oldestUnread) setIncomingMsg(oldestUnread);
+  };
+
+  useEffect(() => {
+    if (!showInbox) return;
+    const iv = setInterval(loadInbox, 12000);
+    return () => clearInterval(iv);
+  }, [showInbox]);
+
+  const dismissMsg = async () => {
+    const m = incomingMsg;
+    if (!m || !currentUser?.username) { setIncomingMsg(null); return; }
+    const wasUnread = m.read === false;
+    if (wasUnread) {
+      setInbox(prev => prev.map(x => x.id === m.id ? { ...x, read: true, readAt: Date.now() } : x));
+      try { await fetch(`${FIREBASE_URL}/messages/${lockKey(currentUser.username)}/${m.id}.json`, { method: 'PATCH', body: JSON.stringify({ read: true, readAt: Date.now() }) }); } catch {}
+    }
+    // Αναγκαστική ουρά: μόλις διαβαστεί, αναδύεται αυτόματα το επόμενο (παλαιότερο) αδιάβαστο.
+    const next = wasUnread
+      ? inbox.filter(x => x.id !== m.id && x.read === false).sort((a, b) => (a.ts || 0) - (b.ts || 0))[0]
+      : null;
+    setIncomingMsg(next || null);
+    if (!next) setUnreadPrompt(0);
+  };
 
   useEffect(() => {
     // Με Firebase Auth ξεκινάμε το sync μόνο αφού συνδεθεί ο χρήστης
@@ -519,6 +634,10 @@ export default function App() {
   useEffect(() => {
     if (Platform.OS === 'web') return;
     const sub = BackHandler.addEventListener('hardwareBackPress', () => {
+      if (incomingMsg) { return true; } // αναγκαστική ανάγνωση — δεν παρακάμπτεται
+      if (unreadPrompt > 0) { setUnreadPrompt(0); nextPromptAtRef.current = Date.now() + 5 * 60 * 1000; return true; }
+      if (showInbox) { setShowInbox(false); return true; }
+      if (showMessages) { setShowMessages(false); return true; }
       if (menuOpen) { setMenuOpen(false); return true; }
       if (showActivity) { setShowActivity(false); return true; }
       if (showCoatings) { setShowCoatings(false); return true; }
@@ -536,7 +655,7 @@ export default function App() {
       return false; // έξοδος από app αν ήδη στην 1η καρτέλα
     });
     return () => sub.remove();
-  }, [menuOpen, showActivity, showCoatings, showLocks, showCustomers, tabIndex, staveraFilterModalVisible, globalSearchModalVisible, closeGlobalSearchModal]);
+  }, [menuOpen, showActivity, showCoatings, showLocks, showCustomers, tabIndex, staveraFilterModalVisible, globalSearchModalVisible, closeGlobalSearchModal, incomingMsg, unreadPrompt, showInbox, showMessages]);
 
   const fetchData = async () => {
     if (fetchAbortRef.current) fetchAbortRef.current.abort();
@@ -600,6 +719,13 @@ export default function App() {
     },
   })).current;
 
+  const isGuest = currentUser?.role === 'guest';
+  const GUEST_TABS = ['customMoni', 'customDipli'];
+  // Ο guest βλέπει μόνο ΜΟΝΗ/ΔΙΠΛΗ — αν βρεθεί αλλού, τον γυρνάμε στη ΜΟΝΗ.
+  useEffect(() => {
+    if (isGuest && !GUEST_TABS.includes(TABS[tabIndex])) setTabIndex(TABS.indexOf('customMoni'));
+  }, [isGuest, tabIndex]);
+
   if (Platform.OS === 'web' && !isLoggedIn) return <LoginScreen onSuccess={() => setIsLoggedIn(true)} />;
 
   if (loading) return (
@@ -613,7 +739,8 @@ export default function App() {
     </View>
   );
 
-  const view = TABS[tabIndex];
+  const view = isGuest && !GUEST_TABS.includes(TABS[tabIndex]) ? 'customMoni' : TABS[tabIndex];
+  const navTabs = isGuest ? GUEST_TABS : NAV_TABS;
 
   return (
     <View style={{ flex: 1, backgroundColor: '#f5f5f5', position: 'relative' }}>
@@ -623,7 +750,22 @@ export default function App() {
       <View style={styles.topBar}>
         <Text style={styles.topBarTitle}>VAICON</Text>
         <Text style={styles.topBarVersion}>{APP_VERSION}</Text>
+        {currentUser?.username ? (
+          <View style={{ backgroundColor: '#8B0000', borderRadius: 6, paddingHorizontal: 10, paddingVertical: 3, marginLeft: 8, marginRight: 8, borderWidth: 1, borderColor: 'rgba(255,255,255,0.25)' }}>
+            <Text style={{ color: 'white', fontSize: 13, fontWeight: 'bold' }}>
+              👤 {userLabels[lockKey(currentUser.username)] || currentUser.username}
+            </Text>
+          </View>
+        ) : null}
         <Text style={styles.topBarSub}>Σύστημα Διαχείρισης Τυποποιημένων Παραγγελιών</Text>
+        {currentUser?.role === 'user' && (
+          <TouchableOpacity
+            style={{ flexDirection: 'row', alignItems: 'center', gap: 6, backgroundColor: 'rgba(255,255,255,0.18)', paddingHorizontal: 12, paddingVertical: 7, borderRadius: 8, marginRight: 8 }}
+            onPress={openInbox}>
+            <Text style={{ fontSize: 18 }}>✉️</Text>
+            <Text style={{ color: 'white', fontSize: 14, fontWeight: 'bold', letterSpacing: 0.5 }}>ΜΗΝΥΜΑΤΑ</Text>
+          </TouchableOpacity>
+        )}
         <TouchableOpacity style={styles.topBarMenu} onPress={() => setMenuOpen(true)}>
           <Text style={styles.topBarMenuIcon}>☰</Text>
         </TouchableOpacity>
@@ -635,7 +777,7 @@ export default function App() {
         <View style={styles.sidebar}>
           {/* TAB BUTTONS */}
           <View style={{ flex: 1 }}>
-            {NAV_TABS.map((tab) => {
+            {navTabs.map((tab) => {
               const isActive = TABS[tabIndex] === tab;
               return (
                 <TouchableOpacity
@@ -652,7 +794,7 @@ export default function App() {
                 </TouchableOpacity>
               );
             })}
-            <TouchableOpacity
+            {!isGuest && <TouchableOpacity
               style={[styles.sidebarBtn, TABS[tabIndex] === 'deliveries' && styles.sidebarBtnActive]}
               onPress={() => {
                 clearSearchNavigationHighlight();
@@ -676,8 +818,9 @@ export default function App() {
                   importantForAccessibility="no-hide-descendants"
                 />
               </View>
-            </TouchableOpacity>
+            </TouchableOpacity>}
           </View>
+          {!isGuest && (<>
           <View style={styles.sidebarDivider} />
           <View style={styles.sidebarSearchRow}>
             <TextInput
@@ -753,12 +896,13 @@ export default function App() {
           >
             <Text style={styles.sidebarSearchStaveraBtnText}>📐 Σταθερά</Text>
           </TouchableOpacity>
+          </>)}
         </View>
 
         {/* ═══ ΚΥΡΙΟ ΠΕΡΙΕΧΟΜΕΝΟ δεξιά ═══ */}
         <View style={{ flex: 1 }} {...panResponder.panHandlers}>
           <View style={{ flex: 1, display: (view === 'customMoni' || view === 'customDipli' || view === 'customNew') ? 'flex' : 'none' }}>
-            <CustomScreen customOrders={customOrders} setCustomOrders={setCustomOrders} soldOrders={soldOrders} setSoldOrders={setSoldOrders} customers={customers} onRequestAddCustomer={(name, cb)=>{ setPendingCustomer(name); setPendingCustomerCallback(()=>cb); setShowCustomers(true); }} sasiStock={sasiStock} setSasiStock={setSasiStock} caseStock={caseStock} setCaseStock={setCaseStock} sasiOrders={sasiOrders} setSasiOrders={setSasiOrders} caseOrders={caseOrders} setCaseOrders={setCaseOrders} coatings={coatings} dipliSasiStock={dipliSasiStock} setDipliSasiStock={setDipliSasiStock} locks={locks} formOnly={view === 'customNew'} forcedTab={view === 'customMoni' ? 'ΜΟΝΗ' : view === 'customDipli' ? 'ΔΙΠΛΗ' : null} setTabIndex={setTabIndex} highlightOrderId={globalSearchHighlightOrderId} onClearSearchHighlight={clearSearchNavigationHighlight} />
+            <CustomScreen customOrders={customOrders} setCustomOrders={setCustomOrders} soldOrders={soldOrders} setSoldOrders={setSoldOrders} customers={customers} onRequestAddCustomer={(name, cb)=>{ setPendingCustomer(name); setPendingCustomerCallback(()=>cb); setShowCustomers(true); }} sasiStock={sasiStock} setSasiStock={setSasiStock} caseStock={caseStock} setCaseStock={setCaseStock} sasiOrders={sasiOrders} setSasiOrders={setSasiOrders} caseOrders={caseOrders} setCaseOrders={setCaseOrders} coatings={coatings} dipliSasiStock={dipliSasiStock} setDipliSasiStock={setDipliSasiStock} locks={locks} isGuest={isGuest} formOnly={view === 'customNew'} forcedTab={view === 'customMoni' ? 'ΜΟΝΗ' : view === 'customDipli' ? 'ΔΙΠΛΗ' : null} setTabIndex={setTabIndex} highlightOrderId={globalSearchHighlightOrderId} onClearSearchHighlight={clearSearchNavigationHighlight} />
           </View>
           {view === 'sasi'   && <SasiScreen sasiStock={sasiStock} setSasiStock={setSasiStock} stockHighlight={globalSearchStockMeta} onClearSearchHighlight={clearSearchNavigationHighlight} />}
           {view === 'cases'  && <CaseScreen caseStock={caseStock} setCaseStock={setCaseStock} stockHighlight={globalSearchStockMeta} onClearSearchHighlight={clearSearchNavigationHighlight} />}
@@ -772,6 +916,7 @@ export default function App() {
           <TouchableOpacity style={styles.menuOverlay} onPress={() => setMenuOpen(false)}>
             <View style={styles.menuPanel}>
               <Text style={styles.menuTitle}>ΜΕΝΟΥ</Text>
+              {!isGuest && (<>
               <TouchableOpacity style={styles.menuItem} onPress={() => { setMenuOpen(false); clearSearchNavigationHighlight(); setTabIndex(TABS.indexOf('stats')); }}>
                 <Text style={styles.menuItemText}>📊 ΣΤΑΤΙΣΤΙΚΑ</Text>
               </TouchableOpacity>
@@ -787,6 +932,12 @@ export default function App() {
               <TouchableOpacity style={styles.menuItem} onPress={() => { setMenuOpen(false); setShowActivity(true); }}>
                 <Text style={styles.menuItemText}>📜 ΙΣΤΟΡΙΚΟ ΚΙΝΗΣΕΩΝ</Text>
               </TouchableOpacity>
+              </>)}
+              {currentUser?.role === 'admin' && (
+                <TouchableOpacity style={[styles.menuItem, { backgroundColor: '#eef4ff' }]} onPress={() => { setMenuOpen(false); setShowMessages(true); }}>
+                  <Text style={[styles.menuItemText, { color: '#1565C0' }]}>✉️ ΜΗΝΥΜΑΤΑ</Text>
+                </TouchableOpacity>
+              )}
               <TouchableOpacity style={styles.menuItem} onPress={async () => { setMenuOpen(false); await fetchData(); Alert.alert("VAICON", "Τα δεδομένα ανανεώθηκαν!"); }}>
                 <Text style={styles.menuItemText}>🔄 ΑΝΑΝΕΩΣΗ</Text>
               </TouchableOpacity>
@@ -850,6 +1001,97 @@ export default function App() {
               if (pendingCustomerCallback) { pendingCustomerCallback(newCustomer); setPendingCustomerCallback(null); }
             }}
           />
+        </Modal>
+
+        {/* ΜΗΝΥΜΑΤΑ — οθόνη admin (αποστολή/αρχείο) */}
+        <Modal visible={showMessages} animationType="slide" onRequestClose={() => setShowMessages(false)}>
+          <MessagesScreen
+            users={APP_USERS.filter(u => u !== 'GUEST' && u !== 'ADMIN')}
+            userLabels={userLabels}
+            lockKey={lockKey}
+            onClose={() => setShowMessages(false)}
+          />
+        </Modal>
+
+        {/* ΜΗΝΥΜΑΤΑ — inbox χρήστη */}
+        <Modal visible={showInbox} transparent animationType="slide" onRequestClose={() => setShowInbox(false)}>
+          <View style={msgStyles.overlay}>
+            <View style={[msgStyles.box, { maxWidth: 560, maxHeight: '85%' }]}>
+              <Text style={msgStyles.title}>📬 Τα μηνύματά μου</Text>
+              {inbox.length === 0 ? (
+                <Text style={{ textAlign: 'center', color: '#aaa', marginVertical: 30, fontSize: 15 }}>Δεν υπάρχουν μηνύματα.</Text>
+              ) : (
+                <ScrollView style={{ marginVertical: 12 }}>
+                  {inbox.map(m => (
+                    <TouchableOpacity key={m.id} onPress={() => setIncomingMsg(m)}
+                      style={{ flexDirection: 'row', alignItems: 'center', gap: 10, backgroundColor: m.read ? '#f5f5f5' : '#bcd4ff', borderRadius: 10, padding: 14, marginBottom: 8, borderLeftWidth: 6, borderLeftColor: m.read ? '#bbb' : '#0d47a1' }}>
+                      <View style={{ width: 36, height: 36, borderRadius: 18, backgroundColor: m.read ? '#bbb' : '#0d47a1', alignItems: 'center', justifyContent: 'center' }}>
+                        <Text style={{ fontSize: 15, fontWeight: '900', color: 'white' }}>{m._num}</Text>
+                      </View>
+                      <View style={{ flex: 1 }}>
+                        <Text numberOfLines={2} style={{ fontSize: 16, color: m.read ? '#222' : '#0d2c66', fontWeight: m.read ? '400' : '700', marginBottom: 6 }}>{m.text}</Text>
+                        <Text style={{ fontSize: 13, color: m.read ? '#444' : '#0d47a1', fontWeight: '700' }}>
+                          {m.ts ? new Date(m.ts).toLocaleString('el-GR') : ''}{m.read ? '  ·  ✓ διαβασμένο' : '  ·  ● νέο'}
+                        </Text>
+                      </View>
+                    </TouchableOpacity>
+                  ))}
+                </ScrollView>
+              )}
+              <TouchableOpacity style={msgStyles.btn} onPress={() => setShowInbox(false)}>
+                <Text style={msgStyles.btnTxt}>ΚΛΕΙΣΙΜΟ</Text>
+              </TouchableOpacity>
+            </View>
+          </View>
+        </Modal>
+
+        {/* ΜΗΝΥΜΑΤΑ — αναγκαστική ανάγνωση (κλείνει ΜΟΝΟ με το κουμπί ΔΙΑΒΑΣΤΗΚΕ) */}
+        <Modal visible={!!incomingMsg} transparent animationType="fade" onRequestClose={() => {}}>
+          <View style={msgStyles.overlay}>
+            <View style={[msgStyles.box, { maxWidth: 560, padding: 26 }, showInbox && { marginBottom: 70, marginLeft: 40 }]}>
+              <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 10 }}>
+                {incomingMsg?._num ? (
+                  <View style={{ width: 36, height: 36, borderRadius: 18, backgroundColor: '#0d47a1', alignItems: 'center', justifyContent: 'center' }}>
+                    <Text style={{ fontSize: 15, fontWeight: '900', color: 'white' }}>{incomingMsg._num}</Text>
+                  </View>
+                ) : null}
+                <Text style={[msgStyles.title, { fontSize: 19, marginBottom: 0 }]}>Μήνυμα από τον Διαχειριστή</Text>
+                <View style={{ width: 42, height: 42, borderRadius: 21, backgroundColor: '#1565C0', alignItems: 'center', justifyContent: 'center', elevation: 4 }}>
+                  <Text style={{ fontSize: 24 }}>✉️</Text>
+                </View>
+              </View>
+              <ScrollView style={{ maxHeight: 380, marginVertical: 22 }}>
+                <Text style={{ fontSize: 27, color: '#222', textAlign: 'center', lineHeight: 38 }}>{incomingMsg?.text}</Text>
+              </ScrollView>
+              <TouchableOpacity style={[msgStyles.btn, { backgroundColor: '#2e7d32', padding: 18 }]} onPress={dismissMsg}>
+                <Text style={[msgStyles.btnTxt, { fontSize: 18 }]}>✓ ΔΙΑΒΑΣΤΗΚΕ</Text>
+              </TouchableOpacity>
+            </View>
+          </View>
+        </Modal>
+
+        {/* ΜΗΝΥΜΑΤΑ — υπενθύμιση νέων μηνυμάτων (επαναλαμβάνεται κάθε 5') */}
+        <Modal visible={unreadPrompt > 0 && !incomingMsg} transparent animationType="fade" onRequestClose={() => { setUnreadPrompt(0); nextPromptAtRef.current = Date.now() + 5 * 60 * 1000; }}>
+          <View style={msgStyles.overlay}>
+            <View style={[msgStyles.box, { maxWidth: 420, padding: 28, alignItems: 'center' }]}>
+              <View style={{ width: 56, height: 56, borderRadius: 28, backgroundColor: '#1565C0', alignItems: 'center', justifyContent: 'center', marginBottom: 12, elevation: 4 }}>
+                <Text style={{ fontSize: 30 }}>✉️</Text>
+              </View>
+              <Text style={{ fontSize: 22, fontWeight: 'bold', color: '#1565C0', textAlign: 'center' }}>
+                {unreadPrompt === 1 ? 'Έχεις 1 νέο μήνυμα' : `Έχεις ${unreadPrompt} νέα μηνύματα`}
+              </Text>
+              <TouchableOpacity
+                style={[msgStyles.btn, { padding: 16, alignSelf: 'stretch', marginTop: 20 }]}
+                onPress={() => { nextPromptAtRef.current = Date.now() + 5 * 60 * 1000; openInbox(); }}>
+                <Text style={[msgStyles.btnTxt, { fontSize: 17 }]}>ΔΙΑΒΑΣΕ</Text>
+              </TouchableOpacity>
+              <TouchableOpacity
+                style={[msgStyles.btn, { backgroundColor: '#999', padding: 12, alignSelf: 'stretch', marginTop: 10 }]}
+                onPress={() => { setUnreadPrompt(0); nextPromptAtRef.current = Date.now() + 5 * 60 * 1000; }}>
+                <Text style={[msgStyles.btnTxt, { fontSize: 14 }]}>ΑΡΓΟΤΕΡΑ</Text>
+              </TouchableOpacity>
+            </View>
+          </View>
         </Modal>
 
         {staveraFilterModalVisible ? (

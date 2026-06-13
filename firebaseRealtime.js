@@ -87,21 +87,38 @@ export function subscribeFirebaseRealtime(setters) {
   const { setLoading, setActivityRefreshKey, ...S } = setters;
   const unsubs = [];
 
+  let done = false;
+  const finish = () => { if (!done) { done = true; setLoading(false); } };
+
   let readyCount = 0;
+  const TOTAL_PATHS = 9;
   const onFirstSnapshot = () => {
     readyCount++;
-    if (readyCount >= 9) setLoading(false);
+    if (readyCount >= TOTAL_PATHS) finish();
   };
+
+  // Δίχτυ ασφαλείας: ακόμη κι αν κάποιο path αργήσει/απορριφθεί, η οθόνη
+  // δεν μένει για πάντα στο spinner. Δείχνουμε ό,τι έχει φορτώσει μέχρι τότε.
+  const loadTimeout = setTimeout(() => {
+    if (!done) {
+      console.warn(`[VAICON] Realtime: ${readyCount}/${TOTAL_PATHS} paths φόρτωσαν στα 12s — συνεχίζω χωρίς να περιμένω τα υπόλοιπα.`);
+      finish();
+    }
+  }, 12000);
+  unsubs.push(() => clearTimeout(loadTimeout));
 
   const mk = (path, apply) => {
     let first = true;
-    unsubs.push(onValue(ref(db, path), snap => {
-      apply(snap.val());
-      if (first) {
-        first = false;
-        onFirstSnapshot();
-      }
-    }));
+    const markFirst = () => { if (first) { first = false; onFirstSnapshot(); } };
+    unsubs.push(onValue(
+      ref(db, path),
+      snap => { apply(snap.val()); markFirst(); },
+      err => {
+        // π.χ. permission_denied από τα Security Rules ή αποτυχία σύνδεσης.
+        console.error(`[VAICON] Realtime read error στο "${path}":`, err && err.message ? err.message : err);
+        markFirst(); // μετράει ώστε να μην κολλάει ολόκληρη η φόρτωση
+      },
+    ));
   };
 
   mk('std_orders', data => {
