@@ -21,13 +21,15 @@ function buildTasksForMoniStdOrder(o) {
   const hasMontageForm = o.installation === 'ΝΑΙ';
   const hasHeightReductionForm = !!o.heightReduction;
   const hasKypri = o.kypri === 'ΝΑΙ';
+  const coats = (o.coatings || []).filter((c) => c && String(c).trim());
+  const hasCoatings = coats.length > 0;
   const isOversize = isMoni && (String(o.h) === '223' || String(o.w) === '83');
   const noOtherTask = !hasStaveraForm && !isMoniWithLock && !hasHeightReductionForm && !hasMontageForm && !hasKypri;
   const needsBuild =
     isDipli ||
     isMoniWithLock ||
     hasKypri ||
-    (isMoni && (hasStaveraForm || hasMontageForm || hasHeightReductionForm || isOversize));
+    (isMoni && (hasStaveraForm || hasMontageForm || hasHeightReductionForm || isOversize || hasCoatings));
   if (!needsBuild) return null;
   const sasiNeedsProduction = isMoni && (isMoniWithLock || hasHeightReductionForm);
   const tasks = {
@@ -38,9 +40,30 @@ function buildTasksForMoniStdOrder(o) {
     ...(hasMontageForm ? { montage: false } : {}),
     ...(sasiNeedsProduction || isDipli ? { sasi: false } : {}),
     ...(isOversize && noOtherTask ? { oversize: false } : {}),
+    ...Object.fromEntries(coats.map((_, i) => [`epend${i}`, false])),
   };
   if (Object.keys(tasks).length === 0) return { sasi: false };
   return tasks;
+}
+
+function migrateCoatingsToStdBuild(o) {
+  if (o.orderType !== 'ΤΥΠΟΠΟΙΗΜΕΝΗ') return null;
+  const coats = (o.coatings || []).filter((c) => c && String(c).trim());
+  if (coats.length === 0) return null;
+  const isPending = !o.status || o.status === 'STD_PENDING' || o.status === 'PENDING';
+  if (isPending && !o.stdInProd) {
+    const tasks = buildTasksForMoniStdOrder(o);
+    if (!tasks) return null;
+    return { ...o, status: 'STD_BUILD', buildTasks: tasks };
+  }
+  if (o.status === 'STD_BUILD') {
+    const tasks = { ...(o.buildTasks || {}) };
+    let changed = false;
+    coats.forEach((_, i) => { if (!(`epend${i}` in tasks)) { tasks[`epend${i}`] = false; changed = true; } });
+    if (!changed) return null;
+    return { ...o, buildTasks: tasks };
+  }
+  return null;
 }
 
 const sasiKey = (h, w, side) => `${h}_${w}_${side}`;
@@ -57,6 +80,48 @@ function truthyBool(v) {
     if (s === 'false' || s === '0' || s === 'no' || s === 'οχι' || s === 'όχι') return false;
   }
   return false;
+}
+
+// ΑΝΤΙΓΡΑΦΟ από formatHelpers.js (suggestNextOrderNo, findDuplicateCustomers, custSortKey)
+function suggestNextOrderNo(presentNos = [], ledgerNos = [], startAt = 1) {
+  const toInt = (x) => { const n = parseInt(String(x), 10); return Number.isFinite(n) ? n : null; };
+  let max = startAt - 1;
+  for (const x of [...presentNos, ...ledgerNos]) { const n = toInt(x); if (n != null && n > max) max = n; }
+  return String(max + 1);
+}
+const groupOrderNo = (base, seq) => `${String(base).trim()}-${seq}`;
+const phoneKey = (p) => { const d = String(p || '').replace(/\D/g, ''); return d.length > 10 ? d.slice(-10) : d; };
+const normTxt = (s) => String(s || '').normalize('NFD').replace(/[\u0300-\u036f]/g, '').toLowerCase().replace(/[.,;·]/g, ' ').replace(/\s+/g, ' ').trim();
+const custSortKey = (c) => String(c?.name || '').replace(/^[^\p{L}]+/u, '').toLocaleLowerCase('el');
+const PHONE_FIELDS = ['phone', 'phone2', 'phone3', 'phoneViber'];
+function findDuplicateCustomers(form, customers, excludeId) {
+  const phones = PHONE_FIELDS.map(k => phoneKey(form[k])).filter(Boolean);
+  const id = normTxt(form.identifier), nm = normTxt(form.name);
+  return (customers || []).filter(c => {
+    if (!c || (excludeId && c.id === excludeId)) return false;
+    const cph = PHONE_FIELDS.map(k => phoneKey(c[k])).filter(Boolean);
+    if (phones.length && phones.some(p => cph.includes(p))) return true;
+    if (id && normTxt(c.identifier) === id) return true;
+    if (nm && normTxt(c.name) === nm) return true;
+    return false;
+  });
+}
+
+// ΑΝΤΙΓΡΑΦΟ από τον φύλακα ετικετών Firebase (fbAuth.js / App.js / fbUtils.js)
+const FB_BAD_KEY = /[.#$/\[\]]/;
+function firstBadFbKey(val) {
+  if (Array.isArray(val)) { for (const v of val) { const b = firstBadFbKey(v); if (b) return b; } return null; }
+  if (val && typeof val === 'object') {
+    for (const k of Object.keys(val)) { if (FB_BAD_KEY.test(k)) return k; const b = firstBadFbKey(val[k]); if (b) return b; }
+  }
+  return null;
+}
+const FBASE = 'https://x-default-rtdb.europe-west1.firebasedatabase.app';
+function badKeyInWrite(url, body) {
+  const path = String(url).split('?')[0].replace(FBASE, '').replace(/\.json$/, '').replace(/^\//, '');
+  for (const seg of path.split('/')) { if (seg && FB_BAD_KEY.test(decodeURIComponent(seg))) return decodeURIComponent(seg); }
+  if (typeof body === 'string' && body) { try { return firstBadFbKey(JSON.parse(body)); } catch {} }
+  return null;
 }
 
 // ---------- ΥΠΟΔΟΜΗ TEST ----------
@@ -263,6 +328,55 @@ group('Κυπρί — case παράγεται από στοκ, sasi ακολου
     null);
 });
 
+group('Επενδύσεις — μονή με επενδύσεις πάει προς κατασκευή (task ανά επένδυση)', () => {
+  test('ΜΟΝΗ σκέτη + 1 επένδυση → {epend0}',
+    buildTasksForMoniStdOrder(moni({ h: '213', w: '88', coatings: ['ΕΞΩ ΔΡΥΣ'] })),
+    { epend0: false });
+  test('ΜΟΝΗ σκέτη + 2 επενδύσεις → {epend0,epend1}',
+    buildTasksForMoniStdOrder(moni({ h: '213', w: '88', coatings: ['ΕΞΩ ΔΡΥΣ', 'ΜΕΣΑ ΛΕΥΚΟ'] })),
+    { epend0: false, epend1: false });
+  test('κενές/whitespace επενδύσεις αγνοούνται → null',
+    buildTasksForMoniStdOrder(moni({ h: '213', w: '88', coatings: ['', '  '] })),
+    null);
+  test('ΜΟΝΗ + κλειδαριά + 1 επένδυση → {lock,sasi,epend0}',
+    buildTasksForMoniStdOrder(moni({ h: '213', w: '88', lock: 'CISA', coatings: ['ΕΞΩ ΔΡΥΣ'] })),
+    { lock: false, sasi: false, epend0: false });
+  test('ΜΟΝΗ oversize + 2 επενδύσεις → {oversize,epend0,epend1}',
+    buildTasksForMoniStdOrder(moni({ h: '223', w: '88', coatings: ['ΕΞΩ ΔΡΥΣ', 'ΜΕΣΑ ΛΕΥΚΟ'] })),
+    { oversize: false, epend0: false, epend1: false });
+  test('ΔΙΠΛΗ + 2 επενδύσεις → {sasi,epend0,epend1}',
+    buildTasksForMoniStdOrder(dipli({ h: '213', w: '88', coatings: ['ΕΞΩ ΔΡΥΣ', 'ΜΕΣΑ ΛΕΥΚΟ'] })),
+    { sasi: false, epend0: false, epend1: false });
+});
+
+group('Migration — παλιές παραγγελίες με επενδύσεις → προς κατασκευή', () => {
+  const std = (extras = {}) => ({ orderType: 'ΤΥΠΟΠΟΙΗΜΕΝΗ', sasiType: 'ΜΟΝΗ ΘΩΡΑΚΙΣΗ', h: '213', w: '88', ...extras });
+  test('STD_PENDING μονή + επενδύσεις → STD_BUILD με epend',
+    migrateCoatingsToStdBuild(std({ status: 'STD_PENDING', coatings: ['ΕΞΩ', 'ΜΕΣΑ'] })),
+    { orderType: 'ΤΥΠΟΠΟΙΗΜΕΝΗ', sasiType: 'ΜΟΝΗ ΘΩΡΑΚΙΣΗ', h: '213', w: '88', status: 'STD_BUILD', coatings: ['ΕΞΩ', 'ΜΕΣΑ'], buildTasks: { epend0: false, epend1: false } });
+  test('χωρίς status (παλιό) μονή + 1 επένδυση → STD_BUILD',
+    migrateCoatingsToStdBuild(std({ coatings: ['ΕΞΩ'] })).status,
+    'STD_BUILD');
+  test('STD_PENDING χωρίς επενδύσεις → καμία αλλαγή (null)',
+    migrateCoatingsToStdBuild(std({ status: 'STD_PENDING' })),
+    null);
+  test('STD_PENDING σε μοντάρισμα (stdInProd) → δεν πειράζεται (null)',
+    migrateCoatingsToStdBuild(std({ status: 'STD_PENDING', stdInProd: true, coatings: ['ΕΞΩ'] })),
+    null);
+  test('STD_READY → δεν πειράζεται (null)',
+    migrateCoatingsToStdBuild(std({ status: 'STD_READY', coatings: ['ΕΞΩ'] })),
+    null);
+  test('STD_BUILD με lock χωρίς epend + 2 επενδύσεις → προσθήκη epend κρατώντας τα υπόλοιπα',
+    migrateCoatingsToStdBuild(std({ status: 'STD_BUILD', coatings: ['ΕΞΩ', 'ΜΕΣΑ'], buildTasks: { lock: true, sasi: false } })).buildTasks,
+    { lock: true, sasi: false, epend0: false, epend1: false });
+  test('STD_BUILD που έχει ήδη epend → idempotent (null)',
+    migrateCoatingsToStdBuild(std({ status: 'STD_BUILD', coatings: ['ΕΞΩ'], buildTasks: { epend0: true } })),
+    null);
+  test('Ειδική (όχι ΤΥΠΟΠΟΙΗΜΕΝΗ) → null',
+    migrateCoatingsToStdBuild({ orderType: 'ΕΙΔΙΚΗ', status: 'STD_PENDING', coatings: ['ΕΞΩ'] }),
+    null);
+});
+
 group('sasiKey / caseKey', () => {
   test('sasiKey 223,88,ΔΕΞΙΑ',
     sasiKey('223', '88', 'ΔΕΞΙΑ'),
@@ -301,6 +415,68 @@ group('truthyBool — Firebase boolean parsing', () => {
   test('truthyBool(null) → false', truthyBool(null), false);
   test('truthyBool(undefined) → false', truthyBool(undefined), false);
   test('truthyBool("") → false', truthyBool(''), false);
+});
+
+group('suggestNextOrderNo — αυτόματη αρίθμηση (μεγαλύτερο + 1)', () => {
+  test('κενά → 1', suggestNextOrderNo([], []), '1');
+  test('συνεχόμενα 1..3 → 4', suggestNextOrderNo(['1','2','3'], []), '4');
+  test('ΔΕΝ γεμίζει κενό: present 1,2,5 → 6', suggestNextOrderNo(['1','2','5'], []), '6');
+  test('πήδημα 100→105 (present 100,105) → 106', suggestNextOrderNo(['100','105'], ['100','105']), '106');
+  test('διαγραμμένο μένει στο μητρώο → ψηλότερο+1', suggestNextOrderNo(['1','2'], ['1','2','3']), '4');
+  test('κοινό: ειδικές(3)+τυποποιημένες(4) → 5', suggestNextOrderNo(['3'], ['4']), '5');
+  test('μη-αριθμητικά αγνοούνται (ΑΒΓ): present 1,2 → 3', suggestNextOrderNo(['1','ΑΒΓ','2'], []), '3');
+  test('startAt=100, κανένα → 100', suggestNextOrderNo([], [], 100), '100');
+  test('μεγαλύτερο σε ledger υπερισχύει: present 5, ledger 40 → 41', suggestNextOrderNo(['5'], ['40']), '41');
+});
+
+group('groupOrderNo / ομάδα πορτών — μορφή & αρίθμηση με παύλα', () => {
+  test('groupOrderNo("145",1) → "145-1"', groupOrderNo('145', 1), '145-1');
+  test('groupOrderNo("145",3) → "145-3"', groupOrderNo('145', 3), '145-3');
+  test('groupOrderNo με κενά → trim βάσης', groupOrderNo(' 145 ', 2), '145-2');
+  test('suffixed ΔΕΝ ανεβάζει το επόμενο: [145-1,145-2] → 146', suggestNextOrderNo(['145-1', '145-2'], []), '146');
+  test('μικτά suffixed+σκέτα: [145-1,145-2,146] → 147', suggestNextOrderNo(['145-1', '145-2', '146'], []), '147');
+  test('suffixed στο μητρώο μετράει ως βάση: ledger 145-1 → 146', suggestNextOrderNo([], ['145-1']), '146');
+});
+
+group('φύλακας ετικετών Firebase — firstBadFbKey/badKeyInWrite', () => {
+  test('τελεία σε key → εντοπίζεται', firstBadFbKey({ 'PVC. ΕΞΩ': { dim: '1' } }), 'PVC. ΕΞΩ');
+  test('κάθετος σε key → εντοπίζεται', firstBadFbKey({ '7016/9010': 1 }), '7016/9010');
+  test('# $ [ ] σε key → εντοπίζεται', firstBadFbKey({ 'a#b': 1 }), 'a#b');
+  test('φωλιασμένο coatingDetails με τελεία → εντοπίζεται', firstBadFbKey({ coatingDetails: { 'PVC. ΜΕΣΑ': {} } }), 'PVC. ΜΕΣΑ');
+  test('τιμή με τελεία (όχι key) → ΟΚ (null)', firstBadFbKey({ customer: 'Παπα. Α.Ε.', notes: 'x/y' }), null);
+  test('καθαρό αντικείμενο → null', firstBadFbKey({ orderNo: '8149', coatings: ['PVC ΕΞΩ'] }), null);
+  test('πίνακας με καθαρά → null', firstBadFbKey([{ a: 1 }, { b: 2 }]), null);
+  test('διαδρομή order_seq/8149.2 → εντοπίζεται', badKeyInWrite(`${FBASE}/order_seq/8149.2.json`, null), '8149.2');
+  test('διαδρομή καθαρή + body με bad key → εντοπίζεται', badKeyInWrite(`${FBASE}/special_orders/123.json?auth=t`, JSON.stringify({ coatingDetails: { 'PVC. ΕΞΩ': {} } })), 'PVC. ΕΞΩ');
+  test('διαδρομή+body καθαρά → null', badKeyInWrite(`${FBASE}/special_orders/123.json`, JSON.stringify({ orderNo: '8149' })), null);
+});
+
+group('findDuplicateCustomers — έλεγχος διπλότυπου πελάτη', () => {
+  const list = [
+    { id:'1', name:'Παπαδόπουλος Γιώργος', phone:'6971234567', identifier:'Μαραθώνας' },
+    { id:'2', name:'Νικολάου Άννα', phone:'+30 2101234567', city:'Αθήνα' },
+  ];
+  test('ίδιο τηλέφωνο με +30 → match',
+    findDuplicateCustomers({ phone:'2101234567' }, list).map(c=>c.id), ['2']);
+  test('ίδιο όνομα με κόμμα/τόνους → match',
+    findDuplicateCustomers({ name:'παπαδοπουλος, γιωργος' }, list).map(c=>c.id), ['1']);
+  test('ίδιο αναγνωριστικό → match',
+    findDuplicateCustomers({ identifier:'μαραθωνας' }, list).map(c=>c.id), ['1']);
+  test('ίδια μόνο πόλη → ΟΧΙ match',
+    findDuplicateCustomers({ city:'Αθήνα' }, list), []);
+  test('μικρό όνομα ίδιο μόνο → ΟΧΙ match (διαφορετικό πλήρες)',
+    findDuplicateCustomers({ name:'Γιώργος' }, list), []);
+  test('excludeId αγνοεί τον εαυτό του',
+    findDuplicateCustomers({ phone:'6971234567' }, list, '1'), []);
+  test('κενή φόρμα → κανένα match',
+    findDuplicateCustomers({ name:'', phone:'' }, list), []);
+});
+
+group('custSortKey — αλφαβητική ταξινόμηση', () => {
+  test('αγνοεί σύμβολα μπροστά', custSortKey({ name:'   *Ζαχαρίας' }), 'ζαχαρίας');
+  test('αγνοεί κεφαλαία/πεζά', custSortKey({ name:'αλεξης' }), custSortKey({ name:'ΑΛΕΞΗΣ' }));
+  const arr = [{name:'Ζ'},{name:'-Α'},{name:'1 Β'}].sort((a,b)=>custSortKey(a).localeCompare(custSortKey(b),'el'));
+  test('ταξινόμηση αγνοώντας σύμβολα/αριθμούς μπροστά', arr.map(x=>x.name), ['-Α','1 Β','Ζ']);
 });
 
 // ---------- ΑΠΟΤΕΛΕΣΜΑ ----------

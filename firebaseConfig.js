@@ -1,15 +1,15 @@
 /**
  * Κεντρικό Firebase config.
  * DEV  (expo start / localhost) → vaicon-test (δοκιμαστική βάση)
- * PROD (Netlify build)           → vaiconcloud  (παραγωγή)
+ * PROD (Netlify build)           → vaicon-eidikes (κοινή ζωντανή βάση)
  */
 
 const PROD = {
-  url:       'https://vaiconcloud-default-rtdb.europe-west1.firebasedatabase.app',
-  apiKey:    'AIzaSyB04iN9S_MfYMsx3V3Jn1j2rOyz5ySf-sQ',
-  authDomain: 'vaiconcloud.firebaseapp.com',
-  projectId:  'vaiconcloud',
-  useAuth:    false, // η παραγωγή κρατά τον υπάρχοντα κωδικό μέχρι να ολοκληρωθούν οι δοκιμές
+  url:       'https://vaicon-eidikes-default-rtdb.europe-west1.firebasedatabase.app',
+  apiKey:    'AIzaSyDTAyLh1-Jrdpz_TRUFbpQhqZHNhfPg47U',
+  authDomain: 'vaicon-eidikes.firebaseapp.com',
+  projectId:  'vaicon-eidikes',
+  useAuth:    true,
 };
 
 const DEV = {

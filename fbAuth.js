@@ -96,6 +96,46 @@ export function installFetchAuthInterceptor() {
   interceptorInstalled = true;
 }
 
+// ── Φύλακας ετικετών Firebase (πάντα ενεργός, ανεξάρτητα από auth) ──
+// Η βάση απορρίπτει . / # $ [ ] σε ΟΝΟΜΑΤΑ πεδίων/διαδρομής (όχι σε τιμές).
+const FB_BAD_KEY = /[.#$/\[\]]/;
+const firstBadFbKey = (val) => {
+  if (Array.isArray(val)) { for (const v of val) { const b = firstBadFbKey(v); if (b) return b; } return null; }
+  if (val && typeof val === 'object') {
+    for (const k of Object.keys(val)) { if (FB_BAD_KEY.test(k)) return k; const b = firstBadFbKey(val[k]); if (b) return b; }
+  }
+  return null;
+};
+const badKeyInWrite = (url, body) => {
+  const path = String(url).split('?')[0].replace(FIREBASE_URL, '').replace(/\.json$/, '').replace(/^\//, '');
+  for (const seg of path.split('/')) { if (seg && FB_BAD_KEY.test(decodeURIComponent(seg))) return decodeURIComponent(seg); }
+  if (typeof body === 'string' && body) { try { return firstBadFbKey(JSON.parse(body)); } catch {} }
+  return null;
+};
+
+let keyGuardInstalled = false;
+export function installFbKeyGuard() {
+  if (keyGuardInstalled) return;
+  if (typeof window === 'undefined' || typeof window.fetch !== 'function') return;
+  keyGuardInstalled = true;
+  const originalFetch = window.fetch.bind(window);
+  window.fetch = async (input, init) => {
+    let url = '';
+    try { url = typeof input === 'string' ? input : (input && input.url) || ''; } catch { url = ''; }
+    if (url && url.indexOf(FIREBASE_URL) === 0) {
+      const method = ((init && init.method) || (typeof input !== 'string' && input && input.method) || 'GET').toUpperCase();
+      if (method !== 'GET' && method !== 'DELETE') {
+        const bad = badKeyInWrite(url, init && init.body);
+        if (bad) {
+          if (typeof window.alert === 'function') window.alert(`⚠️ Δεν αποθηκεύτηκε.\nΤο πεδίο «${bad}» έχει χαρακτήρα που δεν επιτρέπεται ( . / # $ [ ] ).\nΔιόρθωσέ το (π.χ. «PVC. ΕΞΩ» → «PVC ΕΞΩ»).`);
+          return new Response(JSON.stringify({ error: 'invalid key' }), { status: 400 });
+        }
+      }
+    }
+    return originalFetch(input, init);
+  };
+}
+
 /** Σύνδεση με email/password. Πετάει error αν αποτύχει. */
 export async function signIn(email, password) {
   const cred = await signInWithEmailAndPassword(authInstance(), email, password);

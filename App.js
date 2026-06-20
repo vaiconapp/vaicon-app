@@ -13,9 +13,13 @@ import CoatingsScreen from './CoatingsScreen';
 import LocksScreen from './LocksScreen';
 import ActivityScreen from './ActivityScreen';
 import MessagesScreen from './MessagesScreen';
+import SellerLogScreen from './SellerLogScreen';
+import ApprovalScreen from './ApprovalScreen';
+import ApprovalHistoryScreen from './ApprovalHistoryScreen';
+import SellerSubmissionsScreen from './SellerSubmissionsScreen';
 import { FIREBASE_URL, hasFirebaseRealtime, USE_FIREBASE_AUTH } from './firebaseConfig';
 import { applyFetchedBundle, subscribeFirebaseRealtime } from './firebaseRealtime';
-import { installFetchAuthInterceptor, signIn as fbSignIn, signOutUser as fbSignOutUser, watchAuth } from './fbAuth';
+import { installFetchAuthInterceptor, installFbKeyGuard, signIn as fbSignIn, signOutUser as fbSignOutUser, watchAuth } from './fbAuth';
 import { collectGlobalSearchHits, collectStaveraOrdersHits } from './globalSearch';
 import {
   printHTML,
@@ -40,17 +44,21 @@ const STORAGE_KEY = "vaicon_auth_v1";
 //  (user10@vaicon.local → USER 10). Με κοινό κωδικό (παραγωγή σήμερα) δεν
 //  υπάρχει ταυτότητα χρήστη και τα μηνύματα μένουν ανενεργά.
 // ============================================================
-const APP_USERS = ['USER 10', 'USER 12', 'USER 14', 'USER 16', 'USER 18', 'GUEST', 'ADMIN'];
+const APP_USERS = ['USER 10', 'USER 12', 'USER 14', 'USER 16', 'USER 18', 'SELLER 1', 'SELLER 2', 'SELLER 3', 'SELLER 4', 'SELLER 5', 'GUEST', 'ADMIN'];
+const SELLERS = ['SELLER 1', 'SELLER 2', 'SELLER 3', 'SELLER 4', 'SELLER 5'];
 const lockKey = (u) => String(u || '').toUpperCase().replace(/\s+/g, '');
 const roleForEmail = (e) => e.startsWith('admin') ? 'admin' : e.startsWith('guest') ? 'guest' : 'user';
+const isSellerEmail = (e) => String(e || '').toLowerCase().startsWith('seller');
 const userFromEmail = (email) => {
   if (!email) return null;
   const e = String(email).toLowerCase();
   const local = e.split('@')[0].toUpperCase();
-  const username = local.replace(/^USER(\d+)$/, 'USER $1');
+  const username = local.replace(/^(USER|SELLER)(\d+)$/, '$1 $2');
   return { username, role: roleForEmail(e), email: e };
 };
 
+// Φύλακας ετικετών Firebase — πάντα ενεργός (dev & prod, με ή χωρίς auth).
+installFbKeyGuard();
 // Με Firebase Auth ενεργό, προσθέτουμε αυτόματα το token σε όλα τα REST writes.
 if (USE_FIREBASE_AUTH) installFetchAuthInterceptor();
 
@@ -178,6 +186,45 @@ function LoginScreen({ onSuccess }) {
   );
 }
 
+function LockedScreen({ name, onLogout }) {
+  return (
+    <View style={{ flex: 1, backgroundColor: '#7f0000', justifyContent: 'center', alignItems: 'center', padding: 24 }}>
+      <Text style={{ fontSize: 80 }}>🔒</Text>
+      <Text style={{ fontSize: 34, fontWeight: 'bold', color: '#fff', marginTop: 10, letterSpacing: 2 }}>ΚΛΕΙΔΩΜΕΝΟ</Text>
+      <Text style={{ fontSize: 16, color: '#ffd6d6', marginTop: 14, textAlign: 'center', lineHeight: 24 }}>
+        Η πρόσβαση έχει κλειδωθεί από τον διαχειριστή.{'\n'}Επικοινωνήστε με τον διαχειριστή για ξεκλείδωμα.
+      </Text>
+      {name ? <Text style={{ fontSize: 14, color: '#ffb3b3', marginTop: 18 }}>Χρήστης: {name}</Text> : null}
+      {onLogout ? (
+        <TouchableOpacity onPress={onLogout} style={{ marginTop: 30, borderWidth: 2, borderColor: '#fff', borderRadius: 10, paddingHorizontal: 24, paddingVertical: 12 }}>
+          <Text style={{ color: '#fff', fontWeight: 'bold', fontSize: 15 }}>🔐 ΑΠΟΣΥΝΔΕΣΗ</Text>
+        </TouchableOpacity>
+      ) : null}
+    </View>
+  );
+}
+
+function PwdInput({ value, onChangeText, error, onSubmit, autoFocus = true }) {
+  const [show, setShow] = useState(false);
+  return (
+    <View style={{ flexDirection: 'row', alignItems: 'center' }}>
+      <TextInput
+        style={[statsAuthStyles.input, error && statsAuthStyles.inputError, { flex: 1 }]}
+        secureTextEntry={!show}
+        value={value}
+        onChangeText={onChangeText}
+        placeholder="Κωδικός..."
+        autoComplete="off"
+        autoFocus={autoFocus}
+        onSubmitEditing={onSubmit}
+      />
+      <TouchableOpacity onPress={() => setShow(v => !v)} style={{ padding: 10, marginLeft: 4 }}>
+        <Text style={{ fontSize: 22 }}>{show ? '🙈' : '👁️'}</Text>
+      </TouchableOpacity>
+    </View>
+  );
+}
+
 const loginStyles = StyleSheet.create({
   bg: { flex: 1, backgroundColor: '#1a1a1a', justifyContent: 'center', alignItems: 'center' },
   card: { backgroundColor: '#fff', borderRadius: 16, padding: 32, width: '90%', maxWidth: 400, alignItems: 'center', elevation: 10 },
@@ -204,6 +251,30 @@ const msgStyles = StyleSheet.create({
   btnTxt: { color: 'white', fontWeight: 'bold', fontSize: 15, letterSpacing: 0.5 },
 });
 
+const statsAuthStyles = StyleSheet.create({
+  overlay: { flex: 1, backgroundColor: 'rgba(0,0,0,0.5)', justifyContent: 'center', alignItems: 'center', padding: 20 },
+  box: { backgroundColor: 'white', borderRadius: 16, padding: 24, width: '100%', maxWidth: 380, elevation: 10 },
+  title: { fontSize: 18, fontWeight: 'bold', color: '#8B0000', textAlign: 'center', marginBottom: 6 },
+  subtitle: { fontSize: 13, color: '#666', textAlign: 'center', marginBottom: 16 },
+  input: { borderWidth: 2, borderColor: '#ddd', borderRadius: 10, padding: 14, fontSize: 18, letterSpacing: 2, textAlign: 'center' },
+  inputError: { borderColor: '#ff4444' },
+  errorTxt: { color: '#ff4444', fontSize: 13, marginTop: 8, textAlign: 'center', fontWeight: 'bold' },
+  btnRow: { flexDirection: 'row', gap: 10, marginTop: 16 },
+  btn: { flex: 1, padding: 12, borderRadius: 10, alignItems: 'center' },
+  btnTxt: { color: 'white', fontWeight: 'bold', fontSize: 14 },
+});
+
+const adminStyles = StyleSheet.create({
+  row: { flexDirection: 'row', alignItems: 'center', gap: 8, paddingVertical: 7, borderBottomWidth: 1, borderBottomColor: '#eee' },
+  name: { width: 70, fontSize: 14, fontWeight: 'bold', color: '#1a1a1a' },
+  labelInput: { flex: 1, paddingHorizontal: 8, paddingVertical: 5, fontSize: 13, borderWidth: 1, borderColor: '#ccc', borderRadius: 6, backgroundColor: '#fafafa' },
+  badge: { fontSize: 14, fontWeight: 'bold' },
+  badgeLocked: { color: '#E65100' },
+  badgeOpen: { color: '#2e7d32' },
+  toggle: { paddingHorizontal: 10, paddingVertical: 7, borderRadius: 8 },
+  toggleTxt: { color: 'white', fontWeight: 'bold', fontSize: 12 },
+});
+
 if (Platform.OS === 'android' && UIManager.setLayoutAnimationEnabledExperimental) {
   UIManager.setLayoutAnimationEnabledExperimental(true);
 }
@@ -217,13 +288,25 @@ export default function App() {
   // Με Firebase Auth, η αλήθεια έρχεται από το watchAuth (παρακάτω). Αλλιώς, από το localStorage.
   const [isLoggedIn, setIsLoggedIn] = useState(USE_FIREBASE_AUTH ? false : isRemembered());
   const [currentUser, setCurrentUser] = useState(null);
-  const [tabIndex, setTabIndex] = useState(0);
+  const [tabIndex, setTabIndex] = useState(TABS.indexOf('customMoni'));
+  const [unlockedTab, setUnlockedTab] = useState(null); // ποια καρτέλα είναι ξεκλείδωτη για αλλαγές (μία τη φορά)
+  const [showCustomerLookup, setShowCustomerLookup] = useState(false);
   const [loading, setLoading] = useState(true);
   const [menuOpen, setMenuOpen] = useState(false);
   const [showCustomers, setShowCustomers] = useState(false);
   const [showCoatings, setShowCoatings] = useState(false);
   const [showLocks, setShowLocks] = useState(false);
   const [showActivity, setShowActivity] = useState(false);
+  const [showSellerLog, setShowSellerLog] = useState(false);
+  const [sellerFilter, setSellerFilter] = useState('');
+  const [sellerFilterOpen, setSellerFilterOpen] = useState(false);
+  const [showApprovals, setShowApprovals] = useState(false);
+  const [showApprovalHistory, setShowApprovalHistory] = useState(false);
+  const [showApprovalRights, setShowApprovalRights] = useState(false);
+  const [approvalRights, setApprovalRights] = useState({});
+  const [pendingApprovalCount, setPendingApprovalCount] = useState(0);
+  const [showSellerSubs, setShowSellerSubs] = useState(false);
+  const [editSubmission, setEditSubmission] = useState(null);
   // Μηνύματα (ίδιο σύστημα με vaicon-eidikes, κοινός κόμβος messages στη βάση)
   const [showMessages, setShowMessages] = useState(false);
   const [incomingMsg, setIncomingMsg] = useState(null);
@@ -232,6 +315,19 @@ export default function App() {
   const [unreadPrompt, setUnreadPrompt] = useState(0);
   const nextPromptAtRef = useRef(0);
   const [userLabels, setUserLabels] = useState({});
+  const [lockedUsers, setLockedUsers] = useState({}); // app_lock: κλείδωμα συσκευής ανά χρήστη
+  const [labelDrafts, setLabelDrafts] = useState({});
+  const [adminAuthOpen, setAdminAuthOpen] = useState(false);
+  const [adminAuthPwd, setAdminAuthPwd] = useState('');
+  const [adminAuthError, setAdminAuthError] = useState(false);
+  const [adminPanelOpen, setAdminPanelOpen] = useState(false);
+  const [adminUnlocked, setAdminUnlocked] = useState(false);
+  const [backupRunning, setBackupRunning] = useState(false);
+  const [backupSuccess, setBackupSuccess] = useState(null);
+  const [restorePayload, setRestorePayload] = useState(null);
+  const [restoreFileError, setRestoreFileError] = useState(null);
+  const [restoreConfirmText, setRestoreConfirmText] = useState('');
+  const [restoreRunning, setRestoreRunning] = useState(false);
   const [pendingCustomer, setPendingCustomer] = useState(null); // όνομα πελάτη από CustomScreen
   const [pendingCustomerCallback, setPendingCustomerCallback] = useState(null);
 
@@ -533,6 +629,22 @@ export default function App() {
     return unsub;
   }, []);
 
+  // Δικαιώματα έγκρισης + αριθμός παραγγελιών προς έγκριση (για όσους εγκρίνουν).
+  useEffect(() => {
+    if (!isLoggedIn) return;
+    const load = async () => {
+      try { const r = await fetch(`${FIREBASE_URL}/approval_rights.json`); setApprovalRights((await r.json()) || {}); } catch {}
+      try {
+        const r = await fetch(`${FIREBASE_URL}/seller_submissions.json`); const d = await r.json();
+        const n = d ? Object.values(d).filter(s => s.status === 'PENDING' && s.orderType === 'ΤΥΠΟΠΟΙΗΜΕΝΗ').length : 0;
+        setPendingApprovalCount(n);
+      } catch {}
+    };
+    load();
+    const t = setInterval(load, 10000);
+    return () => clearInterval(t);
+  }, [isLoggedIn]);
+
   // Έλεγχος για αδιάβαστα μηνύματα (μόνο απλοί χρήστες). Επαναλαμβανόμενη
   // υπενθύμιση: το popup ξαναβγαίνει κάθε 5' μέχρι να διαβαστούν όλα.
   useEffect(() => {
@@ -557,11 +669,142 @@ export default function App() {
       try {
         const r = await fetch(`${FIREBASE_URL}/user_labels.json`);
         const data = (await r.json()) || {};
-        if (alive) setUserLabels(data);
+        if (alive) { setUserLabels(data); setLabelDrafts(data); }
       } catch {}
     })();
     return () => { alive = false; };
   }, [isLoggedIn, currentUser]);
+
+  // Κλείδωμα συσκευής ανά χρήστη (app_lock). Polling — όχι μόνιμη σύνδεση.
+  useEffect(() => {
+    if (!isLoggedIn) return;
+    const load = async () => { try { const r = await fetch(`${FIREBASE_URL}/app_lock.json`); setLockedUsers((await r.json()) || {}); } catch {} };
+    load();
+    const iv = setInterval(load, 6000);
+    return () => clearInterval(iv);
+  }, [isLoggedIn]);
+
+  const writeLock = async (key, val) => {
+    setLockedUsers(prev => { const n = { ...prev }; if (val) n[key] = true; else delete n[key]; return n; });
+    try { await fetch(`${FIREBASE_URL}/app_lock/${key}.json`, val ? { method: 'PUT', body: 'true' } : { method: 'DELETE' }); } catch {}
+  };
+  const lockAllUsers = async () => {
+    const obj = {}; APP_USERS.filter(u => u !== 'GUEST' && u !== 'ADMIN').forEach(u => { obj[lockKey(u)] = true; });
+    setLockedUsers(prev => ({ ...prev, ...obj }));
+    try { const cur = (await (await fetch(`${FIREBASE_URL}/app_lock.json`)).json()) || {}; await fetch(`${FIREBASE_URL}/app_lock.json`, { method: 'PUT', body: JSON.stringify({ ...cur, ...obj }) }); } catch {}
+  };
+  const unlockAllUsers = async () => {
+    setLockedUsers({});
+    try { await fetch(`${FIREBASE_URL}/app_lock.json`, { method: 'DELETE' }); } catch {}
+  };
+
+  // ── Πάνελ Διαχειριστή: κωδικός (owner code = κωδικός του admin), ονόματα, backup/restore ──
+  const verifyAdminCode = async (code) => {
+    try { await fbSignIn(currentUser?.email || 'admin@vaicon.local', code); return true; } catch { return false; }
+  };
+  const openAdmin = () => {
+    setMenuOpen(false);
+    if (adminUnlocked) { setAdminPanelOpen(true); }
+    else { setAdminAuthPwd(''); setAdminAuthError(false); setAdminAuthOpen(true); }
+  };
+  const tryOpenAdmin = async () => {
+    if (await verifyAdminCode(adminAuthPwd)) {
+      setAdminAuthOpen(false); setAdminAuthPwd(''); setAdminAuthError(false);
+      setAdminUnlocked(true); setAdminPanelOpen(true);
+    } else { setAdminAuthError(true); setAdminAuthPwd(''); setTimeout(() => setAdminAuthError(false), 2000); }
+  };
+  const saveLabel = async (k, val) => {
+    const trimmed = (val || '').trim();
+    if ((userLabels[k] || '') === trimmed) return;
+    try {
+      await fetch(`${FIREBASE_URL}/user_labels/${k}.json`, trimmed
+        ? { method: 'PUT', body: JSON.stringify(trimmed) }
+        : { method: 'DELETE' });
+      setUserLabels(prev => { const n = { ...prev }; if (trimmed) n[k] = trimmed; else delete n[k]; return n; });
+    } catch {}
+  };
+
+  const downloadBlob = (text, filename) => {
+    const blob = new Blob([text], { type: 'application/json' });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url; a.download = filename;
+    document.body.appendChild(a); a.click(); document.body.removeChild(a);
+    setTimeout(() => URL.revokeObjectURL(url), 1000);
+  };
+  const BACKUP_NODES = ['std_orders', 'sasi_orders', 'case_orders', 'sasi_stock', 'case_stock', 'dipli_sasi_stock', 'customers', 'coatings', 'locks', 'user_labels', 'activity_log', 'messages', 'app_lock', 'order_files', 'upload_tokens', 'order_seq', 'seller_submissions', 'approval_log', 'approval_rights'];
+  const doBackup = async () => {
+    if (Platform.OS !== 'web') { Alert.alert('Μη διαθέσιμο', 'Το backup είναι διαθέσιμο μόνο από browser.'); return; }
+    setBackupRunning(true);
+    try {
+      const fullData = {};
+      for (const p of BACKUP_NODES) {
+        const r = await fetch(`${FIREBASE_URL}/${p}.json`);
+        if (!r.ok) continue;
+        const d = await r.json();
+        if (d !== null && d !== undefined) fullData[p] = d;
+      }
+      if (Object.keys(fullData).length === 0) throw new Error('Σφάλμα ανάγνωσης βάσης');
+      const now = new Date();
+      const pad = n => String(n).padStart(2, '0');
+      const createdAtStr = `${pad(now.getDate())}/${pad(now.getMonth() + 1)}/${now.getFullYear()} ${pad(now.getHours())}:${pad(now.getMinutes())}`;
+      const payload = { createdAt: now.getTime(), createdAtStr, version: APP_VERSION, data: fullData };
+      const json = JSON.stringify(payload, null, 2);
+      const filename = `vaicon-app-backup-${pad(now.getDate())}-${pad(now.getMonth() + 1)}-${now.getFullYear()}_${pad(now.getHours())}-${pad(now.getMinutes())}.json`;
+      if (window.showSaveFilePicker) {
+        try {
+          const handle = await window.showSaveFilePicker({ suggestedName: filename, types: [{ description: 'JSON', accept: { 'application/json': ['.json'] } }] });
+          const writable = await handle.createWritable();
+          await writable.write(json); await writable.close();
+        } catch (e) {
+          if (e.name === 'AbortError') { setBackupRunning(false); return; }
+          downloadBlob(json, filename);
+        }
+      } else { downloadBlob(json, filename); }
+      setBackupSuccess(createdAtStr);
+    } catch (e) {
+      Alert.alert('Σφάλμα', 'Το backup απέτυχε: ' + (e.message || String(e)));
+    } finally { setBackupRunning(false); }
+  };
+  const validateBackup = (parsed) => {
+    if (!parsed || typeof parsed !== 'object') return 'Το αρχείο δεν είναι έγκυρο.';
+    if (typeof parsed.createdAt !== 'number' || !parsed.data || typeof parsed.data !== 'object') return 'Το αρχείο δεν είναι έγκυρο backup του VAICON.';
+    const present = ['std_orders', 'customers', 'coatings', 'locks'].filter(k => k in parsed.data);
+    if (present.length === 0) return 'Το backup δεν περιέχει δεδομένα της εφαρμογής.';
+    return null;
+  };
+  const openRestoreFilePicker = () => {
+    if (Platform.OS !== 'web') { Alert.alert('Μη διαθέσιμο', 'Η επαναφορά είναι διαθέσιμη μόνο από browser.'); return; }
+    const input = document.createElement('input');
+    input.type = 'file'; input.accept = '.json,application/json';
+    input.onchange = async (e) => {
+      const file = e.target.files?.[0];
+      if (!file) return;
+      try {
+        const parsed = JSON.parse(await file.text());
+        const err = validateBackup(parsed);
+        if (err) { setRestoreFileError(err); return; }
+        setRestorePayload(parsed); setRestoreConfirmText('');
+      } catch { setRestoreFileError('Το αρχείο δεν διαβάζεται ως JSON.'); }
+    };
+    input.click();
+  };
+  const doRestore = async () => {
+    if (!restorePayload?.data) return;
+    setRestoreRunning(true);
+    try {
+      for (const p of BACKUP_NODES) {
+        const val = (p in restorePayload.data) ? restorePayload.data[p] : null;
+        const res = await fetch(`${FIREBASE_URL}/${p}.json`, { method: 'PUT', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(val) });
+        if (!res.ok) throw new Error(`${p} (${res.status})`);
+      }
+      if (Platform.OS === 'web') window.location.reload();
+      else Alert.alert('Επαναφορά', 'Ολοκληρώθηκε. Επανεκκινήστε την εφαρμογή.');
+    } catch (e) {
+      setRestoreRunning(false);
+      Alert.alert('Σφάλμα', 'Η επαναφορά απέτυχε: ' + (e.message || String(e)));
+    }
+  };
 
   const loadInbox = async () => {
     if (!currentUser?.username) return [];
@@ -720,13 +963,31 @@ export default function App() {
   })).current;
 
   const isGuest = currentUser?.role === 'guest';
+  const isSeller = isSellerEmail(currentUser?.email);
+  const sellerKey = isSeller && currentUser?.username ? lockKey(currentUser.username) : null;
+  const isAdmin = currentUser?.role === 'admin';
+  const canApprove = !isSeller && !isGuest && (isAdmin || (!!currentUser?.username && !!approvalRights[lockKey(currentUser.username)]));
+  const myLockKey = currentUser?.username ? lockKey(currentUser.username) : null;
+  const amLocked = !!(myLockKey && currentUser?.role === 'user' && lockedUsers[myLockKey]);
   const GUEST_TABS = ['customMoni', 'customDipli'];
+  const SELLER_TABS = ['customNew', 'customMoni', 'customDipli'];
   // Ο guest βλέπει μόνο ΜΟΝΗ/ΔΙΠΛΗ — αν βρεθεί αλλού, τον γυρνάμε στη ΜΟΝΗ.
   useEffect(() => {
     if (isGuest && !GUEST_TABS.includes(TABS[tabIndex])) setTabIndex(TABS.indexOf('customMoni'));
   }, [isGuest, tabIndex]);
+  // Ο πωλητής βλέπει μόνο ΚΑΤΑΧΩΡΗΣΗ/ΜΟΝΗ/ΔΙΠΛΗ.
+  useEffect(() => {
+    if (isSeller && !SELLER_TABS.includes(TABS[tabIndex])) setTabIndex(TABS.indexOf('customMoni'));
+  }, [isSeller, tabIndex]);
+
+  // Αυτόματο κλείδωμα: μόλις φύγεις από την ξεκλείδωτη καρτέλα, ξανακλειδώνει.
+  useEffect(() => {
+    if (unlockedTab && TABS[tabIndex] !== unlockedTab) setUnlockedTab(null);
+  }, [tabIndex, unlockedTab]);
 
   if (Platform.OS === 'web' && !isLoggedIn) return <LoginScreen onSuccess={() => setIsLoggedIn(true)} />;
+
+  if (amLocked) return <LockedScreen name={userLabels[myLockKey] || currentUser.username} onLogout={() => { forgetLogin(); if (USE_FIREBASE_AUTH) { void fbSignOutUser(); } setAdminUnlocked(false); setAdminPanelOpen(false); setIsLoggedIn(false); }} />;
 
   if (loading) return (
     <View style={styles.loading}>
@@ -739,8 +1000,8 @@ export default function App() {
     </View>
   );
 
-  const view = isGuest && !GUEST_TABS.includes(TABS[tabIndex]) ? 'customMoni' : TABS[tabIndex];
-  const navTabs = isGuest ? GUEST_TABS : NAV_TABS;
+  const view = (isGuest && !GUEST_TABS.includes(TABS[tabIndex])) || (isSeller && !SELLER_TABS.includes(TABS[tabIndex])) ? 'customMoni' : TABS[tabIndex];
+  const navTabs = isGuest ? GUEST_TABS : isSeller ? SELLER_TABS : NAV_TABS;
 
   return (
     <View style={{ flex: 1, backgroundColor: '#f5f5f5', position: 'relative' }}>
@@ -766,6 +1027,14 @@ export default function App() {
             <Text style={{ color: 'white', fontSize: 14, fontWeight: 'bold', letterSpacing: 0.5 }}>ΜΗΝΥΜΑΤΑ</Text>
           </TouchableOpacity>
         )}
+        {canApprove && pendingApprovalCount > 0 && (
+          <TouchableOpacity
+            style={{ flexDirection: 'row', alignItems: 'center', gap: 6, backgroundColor: '#ff9800', paddingHorizontal: 12, paddingVertical: 7, borderRadius: 8, marginRight: 8 }}
+            onPress={() => setShowApprovals(true)}>
+            <Text style={{ fontSize: 16 }}>🔔</Text>
+            <Text style={{ color: 'white', fontSize: 14, fontWeight: 'bold' }}>ΠΡΟΣ ΕΓΚΡΙΣΗ ({pendingApprovalCount})</Text>
+          </TouchableOpacity>
+        )}
         <TouchableOpacity style={styles.topBarMenu} onPress={() => setMenuOpen(true)}>
           <Text style={styles.topBarMenuIcon}>☰</Text>
         </TouchableOpacity>
@@ -779,22 +1048,44 @@ export default function App() {
           <View style={{ flex: 1 }}>
             {navTabs.map((tab) => {
               const isActive = TABS[tabIndex] === tab;
+              const lockable = !isGuest && ['customMoni','customDipli','sasi','cases'].includes(tab);
+              const unlocked = unlockedTab === tab;
               return (
-                <TouchableOpacity
-                  key={tab}
-                  style={[styles.sidebarBtn, isActive && styles.sidebarBtnActive]}
-                  onPress={() => {
-                    clearSearchNavigationHighlight();
-                    setTabIndex(TABS.indexOf(tab));
-                  }}>
-                  <Text style={styles.sidebarIcon}>{TAB_ICONS[tab]}</Text>
-                  <Text style={[styles.sidebarLabel, isActive && styles.sidebarLabelActive]}>
-                    {TAB_LABELS[tab]}
-                  </Text>
-                </TouchableOpacity>
+                <View key={tab} style={{ flexDirection:'row', alignItems:'stretch' }}>
+                  <TouchableOpacity
+                    style={[styles.sidebarBtn, { flex:1 }, isActive && styles.sidebarBtnActive]}
+                    onPress={() => {
+                      clearSearchNavigationHighlight();
+                      setTabIndex(TABS.indexOf(tab));
+                    }}>
+                    <Text style={styles.sidebarIcon}>{TAB_ICONS[tab]}</Text>
+                    <Text style={[styles.sidebarLabel, isActive && styles.sidebarLabelActive]}>
+                      {TAB_LABELS[tab]}
+                    </Text>
+                  </TouchableOpacity>
+                  {lockable && (
+                    <TouchableOpacity
+                      style={[styles.sidebarLockBtn, unlocked && styles.sidebarLockBtnOpen]}
+                      onPress={() => {
+                        clearSearchNavigationHighlight();
+                        setTabIndex(TABS.indexOf(tab));
+                        setUnlockedTab(u => u === tab ? null : tab);
+                      }}>
+                      <Text style={styles.sidebarLockIcon}>{unlocked ? '🔓' : '🔒'}</Text>
+                    </TouchableOpacity>
+                  )}
+                </View>
               );
             })}
-            {!isGuest && <TouchableOpacity
+            {isSeller && (
+              <TouchableOpacity
+                style={[styles.sidebarBtn, { marginTop: 28, backgroundColor: '#0d47a1', borderWidth: 2, borderColor: 'rgba(255,255,255,0.2)' }]}
+                onPress={() => setShowSellerSubs(true)}>
+                <Text style={styles.sidebarIcon}>📤</Text>
+                <Text style={[styles.sidebarLabel, { color: 'white' }]}>ΟΙ ΥΠΟΒΟΛΕΣ{'\n'}ΜΟΥ</Text>
+              </TouchableOpacity>
+            )}
+            {!isGuest && !isSeller && <TouchableOpacity
               style={[styles.sidebarBtn, TABS[tabIndex] === 'deliveries' && styles.sidebarBtnActive]}
               onPress={() => {
                 clearSearchNavigationHighlight();
@@ -820,8 +1111,38 @@ export default function App() {
               </View>
             </TouchableOpacity>}
           </View>
-          {!isGuest && (<>
+          {!isGuest && !isSeller && (<>
           <View style={styles.sidebarDivider} />
+          {/* ΦΙΛΤΡΟ ΠΩΛΗΤΗ — δείχνει μόνο τα δικά του */}
+          <View style={{ zIndex: 30 }}>
+            <TouchableOpacity
+              onPress={() => setSellerFilterOpen(o => !o)}
+              style={[styles.sidebarLookupBtn, sellerFilter && styles.sidebarLookupBtnActive]}>
+              <Text style={styles.sidebarLookupBtnText} numberOfLines={1}>
+                {sellerFilter ? `🧑‍💼 ${userLabels[sellerFilter] || (SELLERS.find(s => lockKey(s) === sellerFilter) || sellerFilter)}` : '🧑‍💼 ΠΩΛΗΤΗΣ'}
+              </Text>
+            </TouchableOpacity>
+            {sellerFilterOpen && (
+              <View style={{ backgroundColor: '#fff', borderRadius: 8, borderWidth: 1, borderColor: '#1565C0', marginHorizontal: 10, marginBottom: 6, overflow: 'hidden' }}>
+                <TouchableOpacity onPress={() => { setSellerFilter(''); setSellerFilterOpen(false); }} style={{ paddingVertical: 10, paddingHorizontal: 12, borderBottomWidth: 1, borderBottomColor: '#eee' }}>
+                  <Text style={{ color: '#555', fontWeight: 'bold', fontSize: 14 }}>— Όλοι</Text>
+                </TouchableOpacity>
+                {SELLERS.map(s => { const k = lockKey(s); return (
+                  <TouchableOpacity key={k} onPress={() => { setSellerFilter(k); setSellerFilterOpen(false); }} style={{ paddingVertical: 10, paddingHorizontal: 12, borderBottomWidth: 1, borderBottomColor: '#eee', backgroundColor: sellerFilter === k ? '#e3f2fd' : '#fff' }}>
+                    <Text style={{ color: '#1a1a1a', fontWeight: 'bold', fontSize: 14 }}>{userLabels[k] || s}</Text>
+                  </TouchableOpacity>
+                ); })}
+              </View>
+            )}
+          </View>
+          <TouchableOpacity
+            style={[styles.sidebarLookupBtn, showCustomerLookup && styles.sidebarLookupBtnActive]}
+            onPress={() => {
+              if (!['customNew','customMoni','customDipli'].includes(TABS[tabIndex])) setTabIndex(TABS.indexOf('customMoni'));
+              setShowCustomerLookup(v => !v);
+            }}>
+            <Text style={styles.sidebarLookupBtnText}>🔍 ΠΕΛΑΤΕΣ</Text>
+          </TouchableOpacity>
           <View style={styles.sidebarSearchRow}>
             <TextInput
               style={[styles.sidebarSearchInput, styles.sidebarSearchInputOrderName]}
@@ -902,10 +1223,10 @@ export default function App() {
         {/* ═══ ΚΥΡΙΟ ΠΕΡΙΕΧΟΜΕΝΟ δεξιά ═══ */}
         <View style={{ flex: 1 }} {...panResponder.panHandlers}>
           <View style={{ flex: 1, display: (view === 'customMoni' || view === 'customDipli' || view === 'customNew') ? 'flex' : 'none' }}>
-            <CustomScreen customOrders={customOrders} setCustomOrders={setCustomOrders} soldOrders={soldOrders} setSoldOrders={setSoldOrders} customers={customers} onRequestAddCustomer={(name, cb)=>{ setPendingCustomer(name); setPendingCustomerCallback(()=>cb); setShowCustomers(true); }} sasiStock={sasiStock} setSasiStock={setSasiStock} caseStock={caseStock} setCaseStock={setCaseStock} sasiOrders={sasiOrders} setSasiOrders={setSasiOrders} caseOrders={caseOrders} setCaseOrders={setCaseOrders} coatings={coatings} dipliSasiStock={dipliSasiStock} setDipliSasiStock={setDipliSasiStock} locks={locks} isGuest={isGuest} formOnly={view === 'customNew'} forcedTab={view === 'customMoni' ? 'ΜΟΝΗ' : view === 'customDipli' ? 'ΔΙΠΛΗ' : null} setTabIndex={setTabIndex} highlightOrderId={globalSearchHighlightOrderId} onClearSearchHighlight={clearSearchNavigationHighlight} />
+            <CustomScreen customOrders={customOrders} setCustomOrders={setCustomOrders} soldOrders={soldOrders} setSoldOrders={setSoldOrders} customers={customers} onRequestAddCustomer={(name, cb)=>{ setPendingCustomer(name); setPendingCustomerCallback(()=>cb); setShowCustomers(true); }} sasiStock={sasiStock} setSasiStock={setSasiStock} caseStock={caseStock} setCaseStock={setCaseStock} sasiOrders={sasiOrders} setSasiOrders={setSasiOrders} caseOrders={caseOrders} setCaseOrders={setCaseOrders} coatings={coatings} dipliSasiStock={dipliSasiStock} setDipliSasiStock={setDipliSasiStock} locks={locks} isGuest={isGuest || (view !== 'customNew' && unlockedTab !== view)} locked={!isGuest && view !== 'customNew' && unlockedTab !== view} formOnly={view === 'customNew'} forcedTab={view === 'customMoni' ? 'ΜΟΝΗ' : view === 'customDipli' ? 'ΔΙΠΛΗ' : null} setTabIndex={setTabIndex} highlightOrderId={globalSearchHighlightOrderId} onClearSearchHighlight={clearSearchNavigationHighlight} currentUserName={currentUser?.username ? (userLabels[lockKey(currentUser.username)] || currentUser.username) : ''} showCustomerLookup={showCustomerLookup} setShowCustomerLookup={setShowCustomerLookup} isSeller={isSeller} sellerKey={sellerKey} filterSellerKey={sellerFilter || null} editSubmission={editSubmission} onEditSubmissionDone={() => setEditSubmission(null)} />
           </View>
-          {view === 'sasi'   && <SasiScreen sasiStock={sasiStock} setSasiStock={setSasiStock} stockHighlight={globalSearchStockMeta} onClearSearchHighlight={clearSearchNavigationHighlight} />}
-          {view === 'cases'  && <CaseScreen caseStock={caseStock} setCaseStock={setCaseStock} stockHighlight={globalSearchStockMeta} onClearSearchHighlight={clearSearchNavigationHighlight} />}
+          {view === 'sasi'   && <SasiScreen sasiStock={sasiStock} setSasiStock={setSasiStock} stockHighlight={globalSearchStockMeta} onClearSearchHighlight={clearSearchNavigationHighlight} locked={isGuest || unlockedTab !== 'sasi'} />}
+          {view === 'cases'  && <CaseScreen caseStock={caseStock} setCaseStock={setCaseStock} stockHighlight={globalSearchStockMeta} onClearSearchHighlight={clearSearchNavigationHighlight} locked={isGuest || unlockedTab !== 'cases'} />}
           {view === 'deliveries' && <ParadoseisScreen customOrders={customOrders} highlightOrderId={globalSearchHighlightOrderId} onClearSearchHighlight={clearSearchNavigationHighlight} />}
           {view === 'stats'  && <StatsScreen customOrders={customOrders} soldOrders={soldOrders} setSoldOrders={setSoldOrders} sasiOrders={sasiOrders} soldSasiOrders={soldSasiOrders} FIREBASE_URL={FIREBASE_URL} onClearSearchHighlight={clearSearchNavigationHighlight} />}
         </View>
@@ -916,10 +1237,7 @@ export default function App() {
           <TouchableOpacity style={styles.menuOverlay} onPress={() => setMenuOpen(false)}>
             <View style={styles.menuPanel}>
               <Text style={styles.menuTitle}>ΜΕΝΟΥ</Text>
-              {!isGuest && (<>
-              <TouchableOpacity style={styles.menuItem} onPress={() => { setMenuOpen(false); clearSearchNavigationHighlight(); setTabIndex(TABS.indexOf('stats')); }}>
-                <Text style={styles.menuItemText}>📊 ΣΤΑΤΙΣΤΙΚΑ</Text>
-              </TouchableOpacity>
+              {!isGuest && !isSeller && (<>
               <TouchableOpacity style={styles.menuItem} onPress={() => { setMenuOpen(false); setShowCustomers(true); }}>
                 <Text style={styles.menuItemText}>👥 ΠΕΛΑΤΕΣ</Text>
               </TouchableOpacity>
@@ -932,10 +1250,28 @@ export default function App() {
               <TouchableOpacity style={styles.menuItem} onPress={() => { setMenuOpen(false); setShowActivity(true); }}>
                 <Text style={styles.menuItemText}>📜 ΙΣΤΟΡΙΚΟ ΚΙΝΗΣΕΩΝ</Text>
               </TouchableOpacity>
+              <TouchableOpacity style={styles.menuItem} onPress={() => { setMenuOpen(false); setShowApprovalHistory(true); }}>
+                <Text style={styles.menuItemText}>📋 ΙΣΤΟΡΙΚΟ ΕΓΚΡΙΣΕΩΝ</Text>
+              </TouchableOpacity>
               </>)}
               {currentUser?.role === 'admin' && (
                 <TouchableOpacity style={[styles.menuItem, { backgroundColor: '#eef4ff' }]} onPress={() => { setMenuOpen(false); setShowMessages(true); }}>
                   <Text style={[styles.menuItemText, { color: '#1565C0' }]}>✉️ ΜΗΝΥΜΑΤΑ</Text>
+                </TouchableOpacity>
+              )}
+              {currentUser?.role === 'admin' && (
+                <TouchableOpacity style={[styles.menuItem, { backgroundColor: '#eef4ff' }]} onPress={() => { setMenuOpen(false); setShowSellerLog(true); }}>
+                  <Text style={[styles.menuItemText, { color: '#1565C0' }]}>📒 ΑΝΑΘΕΣΕΙΣ ΠΩΛΗΤΩΝ</Text>
+                </TouchableOpacity>
+              )}
+              {currentUser?.role === 'admin' && (
+                <TouchableOpacity style={[styles.menuItem, { backgroundColor: '#eef4ff' }]} onPress={() => { setMenuOpen(false); setShowApprovalRights(true); }}>
+                  <Text style={[styles.menuItemText, { color: '#1565C0' }]}>✅ ΕΓΚΡΙΣΕΙΣ ΠΑΡΑΓΓΕΛΙΩΝ</Text>
+                </TouchableOpacity>
+              )}
+              {currentUser?.role === 'admin' && (
+                <TouchableOpacity style={[styles.menuItem, { backgroundColor: '#fff4e6' }]} onPress={openAdmin}>
+                  <Text style={[styles.menuItemText, { color: '#E65100' }]}>🛡️ ΔΙΑΧΕΙΡΙΣΤΗΣ</Text>
                 </TouchableOpacity>
               )}
               <TouchableOpacity style={styles.menuItem} onPress={async () => { setMenuOpen(false); await fetchData(); Alert.alert("VAICON", "Τα δεδομένα ανανεώθηκαν!"); }}>
@@ -946,6 +1282,7 @@ export default function App() {
                 const doLogout = () => {
                   forgetLogin();
                   if (USE_FIREBASE_AUTH) { void fbSignOutUser(); }
+                  setAdminUnlocked(false); setAdminPanelOpen(false);
                   setIsLoggedIn(false);
                 };
                 if (Platform.OS === 'web') {
@@ -970,6 +1307,78 @@ export default function App() {
             refreshKey={activityRefreshKey}
             onClose={() => setShowActivity(false)}
           />
+        </Modal>
+
+        {/* ΑΝΑΘΕΣΕΙΣ ΠΩΛΗΤΩΝ — μόνο διαχειριστής */}
+        <Modal visible={showSellerLog} animationType="slide" onRequestClose={() => setShowSellerLog(false)}>
+          <SellerLogScreen
+            onClose={() => setShowSellerLog(false)}
+            resolveLabel={(k) => userLabels[k] || (SELLERS.find(s => lockKey(s) === k) || k)}
+          />
+        </Modal>
+
+        {/* ΠΡΟΣ ΕΓΚΡΙΣΗ — όσοι έχουν δικαίωμα */}
+        <Modal visible={showApprovals} animationType="slide" onRequestClose={() => setShowApprovals(false)}>
+          <ApprovalScreen
+            onClose={() => setShowApprovals(false)}
+            currentUserName={currentUser?.username ? (userLabels[lockKey(currentUser.username)] || currentUser.username) : ''}
+            resolveLabel={(k) => userLabels[k] || (SELLERS.find(s => lockKey(s) === k) || k)}
+            coatings={coatings}
+          />
+        </Modal>
+
+        {/* ΙΣΤΟΡΙΚΟ ΕΓΚΡΙΣΕΩΝ */}
+        <Modal visible={showApprovalHistory} animationType="slide" onRequestClose={() => setShowApprovalHistory(false)}>
+          <ApprovalHistoryScreen
+            onClose={() => setShowApprovalHistory(false)}
+            resolveLabel={(k) => userLabels[k] || (SELLERS.find(s => lockKey(s) === k) || k)}
+          />
+        </Modal>
+
+        {/* ΟΙ ΥΠΟΒΟΛΕΣ ΜΟΥ — πωλητής */}
+        <Modal visible={showSellerSubs} animationType="slide" onRequestClose={() => setShowSellerSubs(false)}>
+          <View style={{ flex: 1 }}>
+            <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', backgroundColor: '#1a1a2e', paddingHorizontal: 16, paddingVertical: 14 }}>
+              <Text style={{ color: '#fff', fontSize: 17, fontWeight: 'bold' }}>📤 ΟΙ ΥΠΟΒΟΛΕΣ ΜΟΥ</Text>
+              <TouchableOpacity onPress={() => setShowSellerSubs(false)}><Text style={{ color: '#fff', fontSize: 22, fontWeight: 'bold' }}>✕</Text></TouchableOpacity>
+            </View>
+            <SellerSubmissionsScreen sellerKey={sellerKey} coatings={coatings} onEditSubmission={(sub) => { setShowSellerSubs(false); setTabIndex(TABS.indexOf('customNew')); setEditSubmission(sub); }} />
+          </View>
+        </Modal>
+
+        {/* ΔΙΚΑΙΩΜΑΤΑ ΕΓΚΡΙΣΗΣ — admin */}
+        <Modal visible={showApprovalRights} transparent animationType="fade" onRequestClose={() => setShowApprovalRights(false)}>
+          <View style={statsAuthStyles.overlay}>
+            <View style={[statsAuthStyles.box, { maxWidth: 460 }]}>
+              <Text style={[statsAuthStyles.title, { color: '#1565C0' }]}>✅ Δικαιώματα Έγκρισης</Text>
+              <Text style={statsAuthStyles.subtitle}>Τσέκαρε ποιοι χρήστες μπορούν να εγκρίνουν παραγγελίες πωλητών. (Ο διαχειριστής εγκρίνει πάντα.)</Text>
+              {APP_USERS.filter(u => u !== 'GUEST' && u !== 'ADMIN' && !SELLERS.includes(u)).map((u) => {
+                const k = lockKey(u);
+                const on = !!approvalRights[k];
+                return (
+                  <TouchableOpacity key={k} style={adminStyles.row} onPress={async () => {
+                    const next = !on;
+                    setApprovalRights(prev => ({ ...prev, [k]: next }));
+                    try {
+                      const res = await fetch(`${FIREBASE_URL}/approval_rights/${k}.json`, next ? { method: 'PUT', body: 'true' } : { method: 'DELETE' });
+                      if (!res.ok) throw new Error();
+                    } catch {
+                      setApprovalRights(prev => ({ ...prev, [k]: on }));
+                      Alert.alert('Σφάλμα', 'Η αλλαγή δεν αποθηκεύτηκε. Δοκίμασε ξανά.');
+                    }
+                  }}>
+                    <Text style={[adminStyles.name, { width: 120 }]}>{userLabels[k] || u}</Text>
+                    <View style={{ marginLeft: 'auto', width: 26, height: 26, borderRadius: 6, borderWidth: 2, borderColor: on ? '#1565C0' : '#bbb', backgroundColor: on ? '#1565C0' : '#fff', alignItems: 'center', justifyContent: 'center' }}>
+                      {on && <Text style={{ color: '#fff', fontWeight: 'bold' }}>✓</Text>}
+                    </View>
+                  </TouchableOpacity>
+                );
+              })}
+              <TouchableOpacity style={[statsAuthStyles.btn, { backgroundColor: '#1565C0', marginTop: 14 }]} onPress={() => setShowApprovalRights(false)}>
+                <Text style={statsAuthStyles.btnTxt}>ΕΝΤΑΞΕΙ</Text>
+              </TouchableOpacity>
+            </View>
+          </View>
         </Modal>
 
         {/* ΕΠΕΝΔΥΣΕΙΣ SCREEN */}
@@ -1000,6 +1409,9 @@ export default function App() {
               setPendingCustomer(null);
               if (pendingCustomerCallback) { pendingCustomerCallback(newCustomer); setPendingCustomerCallback(null); }
             }}
+            sellers={SELLERS}
+            currentUserName={currentUser?.username ? (userLabels[lockKey(currentUser.username)] || currentUser.username) : ''}
+            resolveLabel={(k) => userLabels[k] || (SELLERS.find(s => lockKey(s) === k) || k)}
           />
         </Modal>
 
@@ -1011,6 +1423,154 @@ export default function App() {
             lockKey={lockKey}
             onClose={() => setShowMessages(false)}
           />
+        </Modal>
+
+        {/* ΔΙΑΧΕΙΡΙΣΤΗΣ — κωδικός πρόσβασης (owner code) */}
+        <Modal visible={adminAuthOpen} transparent animationType="fade" onRequestClose={() => setAdminAuthOpen(false)}>
+          <View style={statsAuthStyles.overlay}>
+            <View style={statsAuthStyles.box}>
+              <Text style={[statsAuthStyles.title, { color: '#E65100' }]}>🛡️ Διαχειριστής</Text>
+              <Text style={statsAuthStyles.subtitle}>Δώσε τον κωδικό διαχειριστή</Text>
+              <PwdInput value={adminAuthPwd} onChangeText={setAdminAuthPwd} error={adminAuthError} onSubmit={tryOpenAdmin} />
+              {adminAuthError && <Text style={statsAuthStyles.errorTxt}>❌ Λάθος κωδικός</Text>}
+              <View style={statsAuthStyles.btnRow}>
+                <TouchableOpacity style={[statsAuthStyles.btn, { backgroundColor: '#666' }]} onPress={() => { setAdminAuthOpen(false); setAdminAuthPwd(''); }}>
+                  <Text style={statsAuthStyles.btnTxt}>ΑΚΥΡΟ</Text>
+                </TouchableOpacity>
+                <TouchableOpacity style={[statsAuthStyles.btn, { backgroundColor: '#E65100' }]} onPress={tryOpenAdmin}>
+                  <Text style={statsAuthStyles.btnTxt}>ΕΙΣΟΔΟΣ</Text>
+                </TouchableOpacity>
+              </View>
+            </View>
+          </View>
+        </Modal>
+
+        {/* ΔΙΑΧΕΙΡΙΣΤΗΣ — πάνελ */}
+        <Modal visible={adminPanelOpen} transparent animationType="fade" onRequestClose={() => setAdminPanelOpen(false)}>
+          <View style={statsAuthStyles.overlay}>
+            <View style={[statsAuthStyles.box, { maxWidth: 460 }]}>
+              <Text style={[statsAuthStyles.title, { color: '#E65100' }]}>🛡️ Κλείδωμα Χρηστών</Text>
+              <Text style={statsAuthStyles.subtitle}>Πάτησε για να κλειδώσεις/ξεκλειδώσεις. Ισχύει αμέσως.</Text>
+              {APP_USERS.filter(u => u !== 'GUEST' && u !== 'ADMIN').map((u) => {
+                const k = lockKey(u);
+                const isLocked = !!(lockedUsers && lockedUsers[k]);
+                return (
+                  <View key={k} style={adminStyles.row}>
+                    <Text style={adminStyles.name}>{u}</Text>
+                    <TextInput
+                      style={adminStyles.labelInput}
+                      placeholder="Όνομα..."
+                      placeholderTextColor="#aaa"
+                      value={labelDrafts[k] || ''}
+                      onChangeText={(t) => setLabelDrafts(d => ({ ...d, [k]: t }))}
+                      onBlur={() => saveLabel(k, labelDrafts[k])}
+                      onSubmitEditing={() => saveLabel(k, labelDrafts[k])}
+                      maxLength={20}
+                    />
+                    <Text style={[adminStyles.badge, isLocked ? adminStyles.badgeLocked : adminStyles.badgeOpen]}>{isLocked ? '🔒' : '🔓'}</Text>
+                    <TouchableOpacity style={[adminStyles.toggle, { backgroundColor: isLocked ? '#2e7d32' : '#E65100' }]} onPress={() => writeLock(k, !isLocked)}>
+                      <Text style={adminStyles.toggleTxt}>{isLocked ? 'Ξεκλείδωσε' : 'Κλείδωσε'}</Text>
+                    </TouchableOpacity>
+                  </View>
+                );
+              })}
+              <View style={[statsAuthStyles.btnRow, { marginTop: 14 }]}>
+                <TouchableOpacity style={[statsAuthStyles.btn, { backgroundColor: '#E65100' }]} onPress={lockAllUsers}>
+                  <Text style={statsAuthStyles.btnTxt}>🔒 ΚΛΕΙΔΩΜΑ ΟΛΩΝ</Text>
+                </TouchableOpacity>
+                <TouchableOpacity style={[statsAuthStyles.btn, { backgroundColor: '#2e7d32' }]} onPress={unlockAllUsers}>
+                  <Text style={statsAuthStyles.btnTxt}>🔓 ΞΕΚΛΕΙΔΩΜΑ ΟΛΩΝ</Text>
+                </TouchableOpacity>
+              </View>
+              <View style={{ height: 1, backgroundColor: '#eee', marginTop: 14, marginBottom: 10 }} />
+              <TouchableOpacity style={[statsAuthStyles.btn, { backgroundColor: '#1976d2' }]} onPress={() => { setAdminPanelOpen(false); setTabIndex(TABS.indexOf('stats')); }}>
+                <Text style={statsAuthStyles.btnTxt}>📊 ΣΤΑΤΙΣΤΙΚΑ</Text>
+              </TouchableOpacity>
+              <TouchableOpacity style={[statsAuthStyles.btn, { backgroundColor: '#2e7d32', marginTop: 8 }]} onPress={() => { setAdminPanelOpen(false); doBackup(); }}>
+                <Text style={statsAuthStyles.btnTxt}>💾 BACKUP</Text>
+              </TouchableOpacity>
+              <TouchableOpacity style={[statsAuthStyles.btn, { backgroundColor: '#E65100', marginTop: 8 }]} onPress={() => { setAdminPanelOpen(false); openRestoreFilePicker(); }}>
+                <Text style={statsAuthStyles.btnTxt}>♻️ ΕΠΑΝΑΦΟΡΑ</Text>
+              </TouchableOpacity>
+              <View style={{ height: 1, backgroundColor: '#eee', marginTop: 14, marginBottom: 10 }} />
+              <TouchableOpacity style={[statsAuthStyles.btn, { backgroundColor: '#8B0000' }]} onPress={() => { setAdminUnlocked(false); setAdminPanelOpen(false); }}>
+                <Text style={statsAuthStyles.btnTxt}>🔐 ΚΛΕΙΔΩΜΑ ΠΡΟΣΒΑΣΗΣ (απαιτεί κωδικό ξανά)</Text>
+              </TouchableOpacity>
+              <TouchableOpacity style={[statsAuthStyles.btn, { backgroundColor: '#666', marginTop: 10 }]} onPress={() => setAdminPanelOpen(false)}>
+                <Text style={statsAuthStyles.btnTxt}>ΚΛΕΙΣΙΜΟ</Text>
+              </TouchableOpacity>
+            </View>
+          </View>
+        </Modal>
+
+        {/* BACKUP — σε εξέλιξη */}
+        <Modal visible={backupRunning} transparent animationType="fade">
+          <View style={statsAuthStyles.overlay}>
+            <View style={[statsAuthStyles.box, { alignItems: 'center' }]}>
+              <ActivityIndicator size="large" color="#2e7d32" />
+              <Text style={{ marginTop: 14, fontWeight: 'bold', color: '#2e7d32', fontSize: 15 }}>Δημιουργία αντιγράφου...</Text>
+            </View>
+          </View>
+        </Modal>
+
+        {/* BACKUP — επιτυχία */}
+        <Modal visible={!!backupSuccess} transparent animationType="fade" onRequestClose={() => setBackupSuccess(null)}>
+          <View style={statsAuthStyles.overlay}>
+            <View style={statsAuthStyles.box}>
+              <Text style={[statsAuthStyles.title, { color: '#2e7d32' }]}>✅ Backup Ολοκληρώθηκε</Text>
+              <Text style={statsAuthStyles.subtitle}>Αποθηκεύτηκε στον υπολογιστή σου.{"\n"}Ημερομηνία: {backupSuccess}</Text>
+              <TouchableOpacity style={[statsAuthStyles.btn, { backgroundColor: '#2e7d32', marginTop: 8 }]} onPress={() => setBackupSuccess(null)}>
+                <Text style={statsAuthStyles.btnTxt}>OK</Text>
+              </TouchableOpacity>
+            </View>
+          </View>
+        </Modal>
+
+        {/* ΕΠΑΝΑΦΟΡΑ — μη έγκυρο αρχείο */}
+        <Modal visible={!!restoreFileError} transparent animationType="fade" onRequestClose={() => setRestoreFileError(null)}>
+          <View style={statsAuthStyles.overlay}>
+            <View style={statsAuthStyles.box}>
+              <Text style={[statsAuthStyles.title, { color: '#8B0000' }]}>⚠️ Μη έγκυρο αρχείο</Text>
+              <Text style={statsAuthStyles.subtitle}>{restoreFileError}</Text>
+              <TouchableOpacity style={[statsAuthStyles.btn, { backgroundColor: '#8B0000', marginTop: 8 }]} onPress={() => setRestoreFileError(null)}>
+                <Text style={statsAuthStyles.btnTxt}>OK</Text>
+              </TouchableOpacity>
+            </View>
+          </View>
+        </Modal>
+
+        {/* ΕΠΑΝΑΦΟΡΑ — επιβεβαίωση */}
+        <Modal visible={!!restorePayload} transparent animationType="fade" onRequestClose={() => { if (!restoreRunning) { setRestorePayload(null); setRestoreConfirmText(''); } }}>
+          <View style={statsAuthStyles.overlay}>
+            <View style={[statsAuthStyles.box, { maxWidth: 460 }]}>
+              <Text style={[statsAuthStyles.title, { color: '#8B0000', fontSize: 20 }]}>⚠️ ΠΡΟΣΟΧΗ</Text>
+              <View style={{ backgroundColor: '#fff0f0', borderLeftWidth: 4, borderLeftColor: '#8B0000', padding: 12, borderRadius: 6, marginBottom: 12 }}>
+                <Text style={{ color: '#8B0000', fontWeight: 'bold', fontSize: 14, lineHeight: 20 }}>
+                  Θα αντικατασταθούν ΟΛΑ τα τρέχοντα δεδομένα από το backup της:{"\n"}
+                  <Text style={{ fontSize: 16 }}>{restorePayload?.createdAtStr || '—'}</Text>{"\n\n"}
+                  Όλες οι αλλαγές μετά από αυτή την ημερομηνία θα χαθούν οριστικά.
+                </Text>
+              </View>
+              <Text style={{ fontSize: 12, color: '#666', marginBottom: 6 }}>Πληκτρολόγησε <Text style={{ fontWeight: 'bold', color: '#8B0000' }}>ΕΠΑΝΑΦΟΡΑ</Text> για επιβεβαίωση:</Text>
+              <TextInput
+                style={[statsAuthStyles.input, { textAlign: 'left' }]}
+                value={restoreConfirmText} onChangeText={setRestoreConfirmText}
+                placeholder="ΕΠΑΝΑΦΟΡΑ" autoCapitalize="characters" editable={!restoreRunning}
+              />
+              <View style={statsAuthStyles.btnRow}>
+                <TouchableOpacity disabled={restoreRunning} style={[statsAuthStyles.btn, { backgroundColor: '#666', opacity: restoreRunning ? 0.5 : 1 }]} onPress={() => { setRestorePayload(null); setRestoreConfirmText(''); }}>
+                  <Text style={statsAuthStyles.btnTxt}>ΑΚΥΡΟ</Text>
+                </TouchableOpacity>
+                <TouchableOpacity
+                  disabled={restoreRunning || restoreConfirmText.trim().toUpperCase() !== 'ΕΠΑΝΑΦΟΡΑ'}
+                  style={[statsAuthStyles.btn, { backgroundColor: '#8B0000', opacity: (restoreRunning || restoreConfirmText.trim().toUpperCase() !== 'ΕΠΑΝΑΦΟΡΑ') ? 0.4 : 1 }]}
+                  onPress={doRestore}
+                >
+                  <Text style={statsAuthStyles.btnTxt}>{restoreRunning ? 'ΕΠΑΝΑΦΟΡΑ...' : 'ΕΠΑΝΑΦΟΡΑ'}</Text>
+                </TouchableOpacity>
+              </View>
+            </View>
+          </View>
         </Modal>
 
         {/* ΜΗΝΥΜΑΤΑ — inbox χρήστη */}
@@ -1315,11 +1875,17 @@ const styles = StyleSheet.create({
     shadowRadius: 5,
     elevation: 6,
   },
+  sidebarLockBtn: { justifyContent: 'center', alignItems: 'center', paddingHorizontal: 16 },
+  sidebarLockBtnOpen: {},
+  sidebarLockIcon: { fontSize: 28 },
   sidebarBtnActive: { backgroundColor: 'rgba(255,255,255,0.08)', borderLeftColor: '#E53935' },
   sidebarIcon: { fontSize: 26 },
   sidebarLabel: { color: 'rgba(255,255,255,0.5)', fontSize: 16, fontWeight: '700', flex: 1 },
   sidebarLabelActive: { color: 'white' },
   sidebarDivider: { borderTopWidth: 1, borderTopColor: 'rgba(255,255,255,0.12)', marginHorizontal: 12, marginBottom: 4 },
+  sidebarLookupBtn: { backgroundColor: '#0d47a1', borderRadius: 8, marginHorizontal: 10, marginBottom: 6, paddingVertical: 10, alignItems: 'center', borderWidth: 2, borderColor: 'rgba(255,255,255,0.15)' },
+  sidebarLookupBtnActive: { backgroundColor: '#1565c0', borderColor: 'rgba(255,255,255,0.45)' },
+  sidebarLookupBtnText: { color: '#fff', fontWeight: 'bold', fontSize: 14, letterSpacing: 1 },
   sidebarSearchRow: {
     flexDirection: 'row',
     alignItems: 'center',

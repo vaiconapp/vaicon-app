@@ -1,5 +1,6 @@
 import React from 'react';
 import { Modal, View, Text, TouchableOpacity, ScrollView, TextInput } from 'react-native';
+import { sortCoatingsGrouped } from './formatHelpers';
 
 export function HardwarePickerModal({ visible, onClose, customForm, setCustomForm, showCustomHardwareInput, setShowCustomHardwareInput, customHardwareText, setCustomHardwareText }) {
   return (
@@ -112,7 +113,7 @@ export function CoatingsPickerModal({ visible, onClose, customForm, setCustomFor
             {coatings.length===0 && (
               <Text style={{padding:20,color:'#aaa',textAlign:'center'}}>Δεν υπάρχουν επενδύσεις. Προσθέστε από το μενού ☰.</Text>
             )}
-            {coatings.map(c=>{
+            {sortCoatingsGrouped(coatings).map(c=>{
               const selected = (customForm.coatings||[]).includes(c.name);
               const n = c.name?.toLowerCase()||'';
               const bg = n.includes('μέσα')||n.includes('μεσα') ? '#E8F4FD' : n.includes('έξω')||n.includes('εξω') ? '#FFF3E0' : '#fff';

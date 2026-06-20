@@ -1,7 +1,7 @@
 import React, { useState } from 'react';
 import { StyleSheet, Text, View, ScrollView, TouchableOpacity, TextInput, Alert } from 'react-native';
 import { FIREBASE_URL } from './firebaseConfig';
-import { SIZE_OPTIONS, COLOR_OPTIONS, COLOR_MAP, getFormatStyle } from './formatHelpers';
+import { SIZE_OPTIONS, COLOR_OPTIONS, COLOR_MAP, getFormatStyle, sortCoatingsGrouped, canMoveCoatingInGroup } from './formatHelpers';
 
 export default function CoatingsScreen({ coatings, setCoatings, onClose }) {
   const [form, setForm] = useState('');
@@ -43,7 +43,7 @@ export default function CoatingsScreen({ coatings, setCoatings, onClose }) {
   const moveCoating = async (index, direction) => {
     const newList = [...sorted];
     const swapIndex = index + direction;
-    if (swapIndex < 0 || swapIndex >= newList.length) return;
+    if (!canMoveCoatingInGroup(newList, index, direction)) return;
     [newList[index], newList[swapIndex]] = [newList[swapIndex], newList[index]];
     const withOrder = newList.map((c, i) => ({ ...c, order: i }));
     setCoatings(withOrder);
@@ -52,6 +52,8 @@ export default function CoatingsScreen({ coatings, setCoatings, onClose }) {
 
   const saveCoating = async () => {
     if (!form.trim()) return Alert.alert("Προσοχή", "Βάλτε όνομα επένδυσης.");
+    const badChar = (form.match(/[.#$/\[\]]/) || [])[0];
+    if (badChar) return Alert.alert("Μη επιτρεπτός χαρακτήρας", `Το όνομα «${form.trim()}» έχει τον χαρακτήρα « ${badChar} » που δεν επιτρέπεται ( . / # $ [ ] ).\nΑφαίρεσέ τον (π.χ. «PVC. ΕΞΩ» → «PVC ΕΞΩ»).`);
     if (editingId) {
       const existing = coatings.find(c => c.id === editingId);
       if (!existing) return Alert.alert("Προσοχή", "Η εγγραφή δεν βρέθηκε, ανανεώστε τη σελίδα.");
@@ -104,7 +106,7 @@ export default function CoatingsScreen({ coatings, setCoatings, onClose }) {
     return '#007AFF';
   };
 
-  const sorted = [...coatings].sort((a, b) => (a.order ?? a.createdAt) - (b.order ?? b.createdAt));
+  const sorted = sortCoatingsGrouped(coatings);
   const filtered = sorted.filter(c => c.name.toLowerCase().includes(search.toLowerCase()));
 
   return (
@@ -186,11 +188,11 @@ export default function CoatingsScreen({ coatings, setCoatings, onClose }) {
             return (
               <View key={c.id} style={[styles.card, {backgroundColor: getCoatingBg(c.name), borderLeftColor: getCoatingBorder(c.name)}]}>
                 <View style={styles.orderBtns}>
-                  <TouchableOpacity onPress={() => moveCoating(sortedIdx, -1)} disabled={sortedIdx === 0}>
-                    <Text style={[styles.orderBtn, sortedIdx === 0 && {opacity:0.2}]}>▲</Text>
+                  <TouchableOpacity onPress={() => moveCoating(sortedIdx, -1)} disabled={!canMoveCoatingInGroup(sorted, sortedIdx, -1)}>
+                    <Text style={[styles.orderBtn, !canMoveCoatingInGroup(sorted, sortedIdx, -1) && {opacity:0.2}]}>▲</Text>
                   </TouchableOpacity>
-                  <TouchableOpacity onPress={() => moveCoating(sortedIdx, 1)} disabled={sortedIdx === sorted.length - 1}>
-                    <Text style={[styles.orderBtn, sortedIdx === sorted.length - 1 && {opacity:0.2}]}>▼</Text>
+                  <TouchableOpacity onPress={() => moveCoating(sortedIdx, 1)} disabled={!canMoveCoatingInGroup(sorted, sortedIdx, 1)}>
+                    <Text style={[styles.orderBtn, !canMoveCoatingInGroup(sorted, sortedIdx, 1) && {opacity:0.2}]}>▼</Text>
                   </TouchableOpacity>
                 </View>
                 <Text style={[styles.cardName, getFormatStyle(c, 14)]}>{c.name}</Text>

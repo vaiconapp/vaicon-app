@@ -13,29 +13,15 @@ const FIREBASE_URL = 'https://vaicon-eidikes-default-rtdb.europe-west1.firebased
 const FIREBASE_API_KEY = 'AIzaSyDTAyLh1-Jrdpz_TRUFbpQhqZHNhfPg47U';
 const USER_DOMAIN = '@vaicon.local';
 
-const ask = (q, hide = false) => new Promise(resolve => {
+const ask = (q) => new Promise(resolve => {
   const rl = readline.createInterface({ input: process.stdin, output: process.stdout });
-  if (!hide) { rl.question(q, a => { rl.close(); resolve(a); }); return; }
-  // Κρυφή πληκτρολόγηση κωδικού
-  process.stdout.write(q);
-  const stdin = process.stdin;
-  let pwd = '';
-  const onData = ch => {
-    ch = String(ch);
-    if (ch === '\n' || ch === '\r' || ch === '\u0004') {
-      stdin.setRawMode(false); stdin.pause(); stdin.removeListener('data', onData);
-      process.stdout.write('\n'); rl.close(); resolve(pwd);
-    } else if (ch === '\u0003') { process.exit(1); }
-    else if (ch === '\u0008' || ch === '\u007f') { pwd = pwd.slice(0, -1); }
-    else { pwd += ch; }
-  };
-  stdin.setRawMode(true); stdin.resume(); stdin.on('data', onData);
+  rl.question(q, a => { rl.close(); resolve(a); });
 });
 
 (async () => {
   console.log('=== VAICON EIDIKES - FIREBASE BACKUP ===\n');
   const username = (await ask('Όνομα χρήστη: ')).trim().toLowerCase().replace(/\s+/g, '');
-  const password = await ask('Κωδικός: ', true);
+  const password = await ask('Κωδικός (θα φαίνεται καθώς γράφεις): ');
   if (!username || !password) { console.error('Λείπει όνομα ή κωδικός.'); process.exit(1); }
 
   const email = username + USER_DOMAIN;

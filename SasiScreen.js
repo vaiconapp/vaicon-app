@@ -55,7 +55,7 @@ function QtyModal({ visible, title, onConfirm, onCancel }) {
   );
 }
 
-export default function SasiScreen({ sasiStock={}, setSasiStock, stockHighlight=null, onClearSearchHighlight }) {
+export default function SasiScreen({ sasiStock={}, setSasiStock, stockHighlight=null, onClearSearchHighlight, locked=false }) {
   const stockMap = { ...initStockMap(), ...sasiStock };
   const [qtyModal, setQtyModal] = useState({ visible:false, key:'', mode:'add', label:'' });
   const [choiceModal, setChoiceModal] = useState({ visible:false, key:'', label:'', action:'add', pending:0, available:0 });
@@ -71,15 +71,18 @@ export default function SasiScreen({ sasiStock={}, setSasiStock, stockHighlight=
   };
 
   const handleAdd = (key, label, pending, available) => {
+    if (locked) return;
     setChoiceModal({ visible:true, key, label, action:'add', pending, available });
   };
 
   const handlePendingIn = (key, label, pendingQty) => {
+    if (locked) return;
     if (pendingQty <= 0) return Alert.alert('Προσοχή','Δεν υπάρχει ποσότητα σε PENDING.');
     setQtyModal({ visible:true, key, mode:'pendingIn', label:`📦 Παραλαβή από PENDING\n${label}\n(έως ${pendingQty} τεμ.)` });
   };
 
   const handleSubtract = (key, label, available, pending) => {
+    if (locked) return;
     if (available <= 0 && pending <= 0) return Alert.alert('Προσοχή','Δεν υπάρχει διαθέσιμη ποσότητα για αφαίρεση.');
     setChoiceModal({ visible:true, key, label, action:'sub', pending, available });
   };
@@ -107,6 +110,7 @@ export default function SasiScreen({ sasiStock={}, setSasiStock, stockHighlight=
   };
 
   const handleQtyConfirm = async (n) => {
+    if (locked) return;
     const { key, mode } = qtyModal;
     setQtyModal(m => ({...m, visible:false}));
     const entry = {...(stockMap[key] || { qty:0, reservations:[], pending:0 })};
@@ -182,18 +186,19 @@ export default function SasiScreen({ sasiStock={}, setSasiStock, stockHighlight=
             <View key={key} style={[styles.tableRow, available<0&&{backgroundColor:'#fff5f5'}, rowHL && { backgroundColor: '#fff8e1', borderWidth: 2, borderColor: '#FFC107' }]}>
               {/* ΕΝΕΡΓΕΙΕΣ — μόνο το - */}
               <View style={[styles.tdWrap, {width:34, justifyContent:'center', alignItems:'center'}]}>
-                <TouchableOpacity style={[styles.subBtn, (available<=0&&pending<=0)&&{opacity:0.35}]}
+                {!locked&&<TouchableOpacity style={[styles.subBtn, (available<=0&&pending<=0)&&{opacity:0.35}]}
                   disabled={available<=0&&pending<=0}
                   onPress={()=>handleSubtract(key, label, available, pending)}>
                   <Text style={styles.btnTxt}>-</Text>
-                </TouchableOpacity>
+                </TouchableOpacity>}
               </View>
               {/* PENDING */}
               <TouchableOpacity
                 style={[styles.tdWrap, {width:60, alignItems:'center', backgroundColor: pending>0?'#fff8e1':'transparent'}]}
-                onPress={()=>handleAdd(key, label, pending, available)}
-                onLongPress={()=>pending>0&&handlePendingIn(key, label, pending)}>
-                <Text style={{fontSize:16, fontWeight:'900', color: pending>0?'#e65100':'#ccc'}}>{pending>0?pending:'+'}</Text>
+                disabled={locked}
+                onPress={locked?undefined:()=>handleAdd(key, label, pending, available)}
+                onLongPress={locked?undefined:()=>pending>0&&handlePendingIn(key, label, pending)}>
+                <Text style={{fontSize:16, fontWeight:'900', color: pending>0?'#e65100':'#ccc'}}>{pending>0?pending:(locked?'':'+')}</Text>
                 {pending>0&&<Text style={{fontSize:8, color:'#e65100', fontWeight:'bold'}}>PENDING</Text>}
                 {pending>0&&<Text style={{fontSize:8, color:'#888'}}>πάτα παρ/βή</Text>}
               </TouchableOpacity>
@@ -324,7 +329,6 @@ export default function SasiScreen({ sasiStock={}, setSasiStock, stockHighlight=
         onScrollBeginDrag={onClearSearchHighlight}
         onTouchStart={onClearSearchHighlight}
       >
-
         {/* ΑΡΙΣΤΕΡΗ */}
         <View style={styles.sectionHeader}>
           <Text style={styles.sectionTitle}>◄ ΑΡΙΣΤΕΡΗ</Text>
@@ -341,18 +345,18 @@ export default function SasiScreen({ sasiStock={}, setSasiStock, stockHighlight=
       </ScrollView>
 
       {/* ΣΤΑΘΕΡΗ ΔΕΞΙΑ ΜΠΑΡΑ - ΚΟΥΜΠΙΑ ΕΚΤΥΠΩΣΗΣ */}
-      <View style={{width:110, backgroundColor:'#2c2c2c', padding:10, gap:10, justifyContent:'flex-start', alignItems:'center'}}>
+      <View style={{width:200, backgroundColor:'#2c2c2c', padding:12, gap:12, justifyContent:'flex-start', alignItems:'center'}}>
         <TouchableOpacity
-          style={{backgroundColor:'#e65100', paddingHorizontal:12, paddingVertical:14, borderRadius:8, width:'100%', alignItems:'center'}}
+          style={{backgroundColor:'#e65100', paddingHorizontal:12, paddingVertical:18, borderRadius:8, width:'100%', alignItems:'center'}}
           onPress={handlePrintProd}>
-          <Text style={{color:'white', fontWeight:'bold', fontSize:11, textAlign:'center'}}>🖨️</Text>
-          <Text style={{color:'white', fontWeight:'bold', fontSize:10, marginTop:4, textAlign:'center'}}>ΠΑΡΑΓΩΓΗ</Text>
+          <Text style={{color:'white', fontWeight:'bold', fontSize:18, textAlign:'center'}}>🖨️</Text>
+          <Text style={{color:'white', fontWeight:'bold', fontSize:14, marginTop:4, textAlign:'center'}}>ΠΑΡΑΓΩΓΗ</Text>
         </TouchableOpacity>
         <TouchableOpacity
-          style={{backgroundColor:'white', paddingHorizontal:12, paddingVertical:14, borderRadius:8, width:'100%', alignItems:'center'}}
+          style={{backgroundColor:'white', paddingHorizontal:12, paddingVertical:18, borderRadius:8, width:'100%', alignItems:'center'}}
           onPress={handlePrint}>
-          <Text style={{color:'#1a1a1a', fontWeight:'bold', fontSize:11, textAlign:'center'}}>🖨️</Text>
-          <Text style={{color:'#1a1a1a', fontWeight:'bold', fontSize:10, marginTop:4, textAlign:'center'}}>ΑΠΟΘΗΚΗ</Text>
+          <Text style={{color:'#1a1a1a', fontWeight:'bold', fontSize:18, textAlign:'center'}}>🖨️</Text>
+          <Text style={{color:'#1a1a1a', fontWeight:'bold', fontSize:14, marginTop:4, textAlign:'center'}}>ΑΠΟΘΗΚΗ</Text>
         </TouchableOpacity>
       </View>
 

@@ -8,6 +8,12 @@
   publish = "dist"
   functions = "netlify/functions"
 
+# Τα δύο κλειδιά Firebase είναι δημόσια (client keys) — τα εξαιρούμε από τον σαρωτή μυστικών.
+# Η προστασία παραμένει ενεργή για τα πραγματικά μυστικά (π.χ. FIREBASE_SERVICE_ACCOUNT).
+[build.environment]
+  SECRETS_SCAN_OMIT_KEYS = "EXPO_PUBLIC_FIREBASE_API_KEY"
+  SECRETS_SCAN_SMART_DETECTION_OMIT_VALUES = "AIzaSyC2p46fX-FD5sszWHnkJB2hEJBN1bTkHWI,AIzaSyDTAyLh1-Jrdpz_TRUFbpQhqZHNhfPg47U"
+
 # Ειδοποιήσεις πελατών (Viber/SMS μέσω Yuboto) — ίδιο σύστημα με vaicon-eidikes.
 # Υποχρεωτικά env vars στο Netlify για live αποστολή:
 #   YUBOTO_API_KEY, YUBOTO_SENDER, YUBOTO_VIBER_SENDER, YUBOTO_TEST_MODE,
