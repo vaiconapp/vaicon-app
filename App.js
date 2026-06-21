@@ -283,6 +283,15 @@ const TABS = ['customNew', 'customMoni', 'customDipli', 'sasi', 'cases', 'delive
 const TAB_LABELS = { customNew: 'ΚΑΤΑΧΩΡΗΣΗ', customMoni: 'ΤΥΠΟΠΟΙΗΜΕΝΕΣ\nΜΟΝΗ ΘΩΡΑΚΙΣΗ', customDipli: 'ΤΥΠΟΠΟΙΗΜΕΝΕΣ\nΔΙΠΛΗ ΘΩΡΑΚΙΣΗ', sasi: 'STOCK ΣΑΣΙ', cases: 'STOCK ΚΑΣΑ', stats: 'ΣΤΑΤΙΣΤΙΚΑ' };
 const TAB_ICONS  = { customNew: '✏️', customMoni: '🛡️', customDipli: '🔰', sasi: '🔧', cases: '🚪', stats: '📊' };
 const NAV_TABS = ['customNew', 'customMoni', 'customDipli', 'sasi', 'cases'];
+// Καρτέλες με ελεγχόμενα δικαιώματα ανά χρήστη (view = hide, edit = readonly)
+const RIGHT_TABS = [
+  { key: 'customNew', label: 'Καταχώρηση', edit: false },
+  { key: 'customMoni', label: 'Μονή θωράκιση', edit: true },
+  { key: 'customDipli', label: 'Διπλή θωράκιση', edit: true },
+  { key: 'sasi', label: 'Stock Σασί', edit: true },
+  { key: 'cases', label: 'Stock Κάσα', edit: true },
+  { key: 'deliveries', label: 'Παραδόσεις', edit: false },
+];
 
 export default function App() {
   // Με Firebase Auth, η αλήθεια έρχεται από το watchAuth (παρακάτω). Αλλιώς, από το localStorage.
@@ -314,8 +323,13 @@ export default function App() {
   const [inbox, setInbox] = useState([]);
   const [unreadPrompt, setUnreadPrompt] = useState(0);
   const nextPromptAtRef = useRef(0);
+  const tabRightsDirty = useRef(0); // παράθυρο προστασίας: το polling δεν πατάει πρόσφατες αλλαγές
   const [userLabels, setUserLabels] = useState({});
   const [lockedUsers, setLockedUsers] = useState({}); // app_lock: κλείδωμα συσκευής ανά χρήστη
+  const [tabRights, setTabRights] = useState({}); // tab_rights: περιορισμοί καρτελών ανά χρήστη
+  const [showTabRights, setShowTabRights] = useState(false);
+  const [tabRightsUser, setTabRightsUser] = useState(null);
+  const [tabRightsProg, setTabRightsProg] = useState('std');
   const [labelDrafts, setLabelDrafts] = useState({});
   const [adminAuthOpen, setAdminAuthOpen] = useState(false);
   const [adminAuthPwd, setAdminAuthPwd] = useState('');
@@ -343,6 +357,8 @@ export default function App() {
   const [dipliSasiStock, setDipliSasiStock] = useState([]);
   const [sasiStock, setSasiStock] = useState({});
   const [caseStock, setCaseStock] = useState({});
+  const [sasiOps, setSasiOps] = useState([]); // καλάθι εκκρεμοτήτων stock — μένει ανοιχτό σε αλλαγή καρτέλας
+  const [caseOps, setCaseOps] = useState([]);
   const [activityRefreshKey, setActivityRefreshKey] = useState(0);
   const [paradoseisSearchOrderName, setParadoseisSearchOrderName] = useState('');
   const [paradoseisSearchOther, setParadoseisSearchOther] = useState('');
@@ -688,6 +704,31 @@ export default function App() {
     setLockedUsers(prev => { const n = { ...prev }; if (val) n[key] = true; else delete n[key]; return n; });
     try { await fetch(`${FIREBASE_URL}/app_lock/${key}.json`, val ? { method: 'PUT', body: 'true' } : { method: 'DELETE' }); } catch {}
   };
+
+  // Δικαιώματα καρτελών ανά χρήστη (tab_rights). Polling — χωρίς εγγραφή = πλήρης πρόσβαση.
+  useEffect(() => {
+    if (!isLoggedIn) return;
+    const load = async () => { if (Date.now() < tabRightsDirty.current) return; try { const r = await fetch(`${FIREBASE_URL}/tab_rights.json`); setTabRights((await r.json()) || {}); } catch {} };
+    load();
+    const iv = setInterval(load, 6000);
+    return () => clearInterval(iv);
+  }, [isLoggedIn]);
+
+  const writeTabRight = async (userKey, dim, tab, restricted) => {
+    tabRightsDirty.current = Date.now() + 8000;
+    const n = { ...tabRights }; const u = { ...(n[userKey] || {}) }; const d = { ...(u[dim] || {}) };
+    if (restricted) d[tab] = true; else delete d[tab];
+    if (Object.keys(d).length) u[dim] = d; else delete u[dim];
+    const nextUser = Object.keys(u).length ? u : null;
+    if (nextUser) n[userKey] = u; else delete n[userKey];
+    setTabRights(n);
+    try {
+      const res = await fetch(`${FIREBASE_URL}/tab_rights/${userKey}.json`,
+        nextUser ? { method: 'PUT', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(nextUser) }
+                 : { method: 'DELETE' });
+      if (!res.ok) throw new Error();
+    } catch { if (Platform.OS === 'web') window.alert('Η αλλαγή δεν αποθηκεύτηκε. Δοκίμασε ξανά.'); }
+  };
   const lockAllUsers = async () => {
     const obj = {}; APP_USERS.filter(u => u !== 'GUEST' && u !== 'ADMIN').forEach(u => { obj[lockKey(u)] = true; });
     setLockedUsers(prev => ({ ...prev, ...obj }));
@@ -732,7 +773,7 @@ export default function App() {
     document.body.appendChild(a); a.click(); document.body.removeChild(a);
     setTimeout(() => URL.revokeObjectURL(url), 1000);
   };
-  const BACKUP_NODES = ['std_orders', 'sasi_orders', 'case_orders', 'sasi_stock', 'case_stock', 'dipli_sasi_stock', 'customers', 'coatings', 'locks', 'user_labels', 'activity_log', 'messages', 'app_lock', 'order_files', 'upload_tokens', 'order_seq', 'seller_submissions', 'approval_log', 'approval_rights'];
+  const BACKUP_NODES = ['std_orders', 'sasi_orders', 'case_orders', 'sasi_stock', 'case_stock', 'dipli_sasi_stock', 'customers', 'coatings', 'locks', 'user_labels', 'activity_log', 'messages', 'app_lock', 'order_files', 'upload_tokens', 'order_seq', 'seller_submissions', 'approval_log', 'approval_rights', 'tab_rights'];
   const doBackup = async () => {
     if (Platform.OS !== 'web') { Alert.alert('Μη διαθέσιμο', 'Το backup είναι διαθέσιμο μόνο από browser.'); return; }
     setBackupRunning(true);
@@ -971,6 +1012,11 @@ export default function App() {
   const amLocked = !!(myLockKey && currentUser?.role === 'user' && lockedUsers[myLockKey]);
   const GUEST_TABS = ['customMoni', 'customDipli'];
   const SELLER_TABS = ['customNew', 'customMoni', 'customDipli'];
+  // Δικαιώματα καρτελών — ισχύουν μόνο για κανονικούς χρήστες (όχι admin/guest/seller).
+  const myTabRights = (currentUser?.role === 'user' && !isSeller && myLockKey) ? (tabRights[myLockKey] || {}) : {};
+  const tabHidden = (tab) => !!(myTabRights.hide && myTabRights.hide[tab]);
+  const tabReadonly = (tab) => !!(myTabRights.readonly && myTabRights.readonly[tab]);
+  const allowedNavTabs = NAV_TABS.filter(t => !tabHidden(t));
   // Ο guest βλέπει μόνο ΜΟΝΗ/ΔΙΠΛΗ — αν βρεθεί αλλού, τον γυρνάμε στη ΜΟΝΗ.
   useEffect(() => {
     if (isGuest && !GUEST_TABS.includes(TABS[tabIndex])) setTabIndex(TABS.indexOf('customMoni'));
@@ -979,6 +1025,11 @@ export default function App() {
   useEffect(() => {
     if (isSeller && !SELLER_TABS.includes(TABS[tabIndex])) setTabIndex(TABS.indexOf('customMoni'));
   }, [isSeller, tabIndex]);
+  // Κανονικός χρήστης σε κρυμμένη καρτέλα → πρώτη επιτρεπτή.
+  useEffect(() => {
+    if (currentUser?.role !== 'user' || isSeller) return;
+    if (tabHidden(TABS[tabIndex])) setTabIndex(TABS.indexOf(allowedNavTabs[0] || 'customMoni'));
+  }, [tabRights, tabIndex, isSeller, currentUser]);
 
   // Αυτόματο κλείδωμα: μόλις φύγεις από την ξεκλείδωτη καρτέλα, ξανακλειδώνει.
   useEffect(() => {
@@ -1000,8 +1051,8 @@ export default function App() {
     </View>
   );
 
-  const view = (isGuest && !GUEST_TABS.includes(TABS[tabIndex])) || (isSeller && !SELLER_TABS.includes(TABS[tabIndex])) ? 'customMoni' : TABS[tabIndex];
-  const navTabs = isGuest ? GUEST_TABS : isSeller ? SELLER_TABS : NAV_TABS;
+  const view = (isGuest && !GUEST_TABS.includes(TABS[tabIndex])) || (isSeller && !SELLER_TABS.includes(TABS[tabIndex])) || (currentUser?.role === 'user' && !isSeller && tabHidden(TABS[tabIndex])) ? (allowedNavTabs[0] || 'customMoni') : TABS[tabIndex];
+  const navTabs = isGuest ? GUEST_TABS : isSeller ? SELLER_TABS : allowedNavTabs;
 
   return (
     <View style={{ flex: 1, backgroundColor: '#f5f5f5', position: 'relative' }}>
@@ -1048,7 +1099,7 @@ export default function App() {
           <View style={{ flex: 1 }}>
             {navTabs.map((tab) => {
               const isActive = TABS[tabIndex] === tab;
-              const lockable = !isGuest && ['customMoni','customDipli','sasi','cases'].includes(tab);
+              const lockable = !isGuest && !tabReadonly(tab) && ['customMoni','customDipli','sasi','cases'].includes(tab);
               const unlocked = unlockedTab === tab;
               return (
                 <View key={tab} style={{ flexDirection:'row', alignItems:'stretch' }}>
@@ -1085,7 +1136,7 @@ export default function App() {
                 <Text style={[styles.sidebarLabel, { color: 'white' }]}>ΟΙ ΥΠΟΒΟΛΕΣ{'\n'}ΜΟΥ</Text>
               </TouchableOpacity>
             )}
-            {!isGuest && !isSeller && <TouchableOpacity
+            {!isGuest && !isSeller && !tabHidden('deliveries') && <TouchableOpacity
               style={[styles.sidebarBtn, TABS[tabIndex] === 'deliveries' && styles.sidebarBtnActive]}
               onPress={() => {
                 clearSearchNavigationHighlight();
@@ -1225,8 +1276,8 @@ export default function App() {
           <View style={{ flex: 1, display: (view === 'customMoni' || view === 'customDipli' || view === 'customNew') ? 'flex' : 'none' }}>
             <CustomScreen customOrders={customOrders} setCustomOrders={setCustomOrders} soldOrders={soldOrders} setSoldOrders={setSoldOrders} customers={customers} onRequestAddCustomer={(name, cb)=>{ setPendingCustomer(name); setPendingCustomerCallback(()=>cb); setShowCustomers(true); }} sasiStock={sasiStock} setSasiStock={setSasiStock} caseStock={caseStock} setCaseStock={setCaseStock} sasiOrders={sasiOrders} setSasiOrders={setSasiOrders} caseOrders={caseOrders} setCaseOrders={setCaseOrders} coatings={coatings} dipliSasiStock={dipliSasiStock} setDipliSasiStock={setDipliSasiStock} locks={locks} isGuest={isGuest || (view !== 'customNew' && unlockedTab !== view)} locked={!isGuest && view !== 'customNew' && unlockedTab !== view} formOnly={view === 'customNew'} forcedTab={view === 'customMoni' ? 'ΜΟΝΗ' : view === 'customDipli' ? 'ΔΙΠΛΗ' : null} setTabIndex={setTabIndex} highlightOrderId={globalSearchHighlightOrderId} onClearSearchHighlight={clearSearchNavigationHighlight} currentUserName={currentUser?.username ? (userLabels[lockKey(currentUser.username)] || currentUser.username) : ''} showCustomerLookup={showCustomerLookup} setShowCustomerLookup={setShowCustomerLookup} isSeller={isSeller} sellerKey={sellerKey} filterSellerKey={sellerFilter || null} editSubmission={editSubmission} onEditSubmissionDone={() => setEditSubmission(null)} />
           </View>
-          {view === 'sasi'   && <SasiScreen sasiStock={sasiStock} setSasiStock={setSasiStock} stockHighlight={globalSearchStockMeta} onClearSearchHighlight={clearSearchNavigationHighlight} locked={isGuest || unlockedTab !== 'sasi'} />}
-          {view === 'cases'  && <CaseScreen caseStock={caseStock} setCaseStock={setCaseStock} stockHighlight={globalSearchStockMeta} onClearSearchHighlight={clearSearchNavigationHighlight} locked={isGuest || unlockedTab !== 'cases'} />}
+          {view === 'sasi'   && <SasiScreen sasiStock={sasiStock} setSasiStock={setSasiStock} opsBasket={sasiOps} setOpsBasket={setSasiOps} stockHighlight={globalSearchStockMeta} onClearSearchHighlight={clearSearchNavigationHighlight} locked={isGuest || unlockedTab !== 'sasi'} />}
+          {view === 'cases'  && <CaseScreen caseStock={caseStock} setCaseStock={setCaseStock} opsBasket={caseOps} setOpsBasket={setCaseOps} stockHighlight={globalSearchStockMeta} onClearSearchHighlight={clearSearchNavigationHighlight} locked={isGuest || unlockedTab !== 'cases'} />}
           {view === 'deliveries' && <ParadoseisScreen customOrders={customOrders} highlightOrderId={globalSearchHighlightOrderId} onClearSearchHighlight={clearSearchNavigationHighlight} />}
           {view === 'stats'  && <StatsScreen customOrders={customOrders} soldOrders={soldOrders} setSoldOrders={setSoldOrders} sasiOrders={sasiOrders} soldSasiOrders={soldSasiOrders} FIREBASE_URL={FIREBASE_URL} onClearSearchHighlight={clearSearchNavigationHighlight} />}
         </View>
@@ -1483,7 +1534,10 @@ export default function App() {
                 </TouchableOpacity>
               </View>
               <View style={{ height: 1, backgroundColor: '#eee', marginTop: 14, marginBottom: 10 }} />
-              <TouchableOpacity style={[statsAuthStyles.btn, { backgroundColor: '#1976d2' }]} onPress={() => { setAdminPanelOpen(false); setTabIndex(TABS.indexOf('stats')); }}>
+              <TouchableOpacity style={[statsAuthStyles.btn, { backgroundColor: '#6a1b9a' }]} onPress={() => { setAdminPanelOpen(false); setTabRightsProg('std'); setTabRightsUser(null); setShowTabRights(true); }}>
+                <Text style={statsAuthStyles.btnTxt}>🔑 ΔΙΚΑΙΩΜΑΤΑ</Text>
+              </TouchableOpacity>
+              <TouchableOpacity style={[statsAuthStyles.btn, { backgroundColor: '#1976d2', marginTop: 8 }]} onPress={() => { setAdminPanelOpen(false); setTabIndex(TABS.indexOf('stats')); }}>
                 <Text style={statsAuthStyles.btnTxt}>📊 ΣΤΑΤΙΣΤΙΚΑ</Text>
               </TouchableOpacity>
               <TouchableOpacity style={[statsAuthStyles.btn, { backgroundColor: '#2e7d32', marginTop: 8 }]} onPress={() => { setAdminPanelOpen(false); doBackup(); }}>
@@ -1497,6 +1551,85 @@ export default function App() {
                 <Text style={statsAuthStyles.btnTxt}>🔐 ΚΛΕΙΔΩΜΑ ΠΡΟΣΒΑΣΗΣ (απαιτεί κωδικό ξανά)</Text>
               </TouchableOpacity>
               <TouchableOpacity style={[statsAuthStyles.btn, { backgroundColor: '#666', marginTop: 10 }]} onPress={() => setAdminPanelOpen(false)}>
+                <Text style={statsAuthStyles.btnTxt}>ΚΛΕΙΣΙΜΟ</Text>
+              </TouchableOpacity>
+            </View>
+          </View>
+        </Modal>
+
+        {/* ΔΙΚΑΙΩΜΑΤΑ ΧΡΗΣΤΩΝ — admin */}
+        <Modal visible={showTabRights} transparent animationType="fade" onRequestClose={() => setShowTabRights(false)}>
+          <View style={statsAuthStyles.overlay}>
+            <View style={[statsAuthStyles.box, { maxWidth: 540 }]}>
+              <Text style={[statsAuthStyles.title, { color: '#6a1b9a' }]}>🔑 Δικαιώματα Χρηστών</Text>
+              <Text style={statsAuthStyles.subtitle}>👁 Βλέπει = εμφανίζεται η καρτέλα · ✏️ Επεξεργάζεται = μπορεί να την αλλάξει.</Text>
+              <ScrollView style={{ maxHeight: 460 }} contentContainerStyle={{ paddingBottom: 6 }}>
+                {[{ key: 'std', label: 'Τυποποιημένες' }, { key: 'eid', label: 'Ειδικές' }, { key: 'inst', label: 'Τοποθετήσεις' }].map(prog => {
+                  const open = tabRightsProg === prog.key;
+                  return (
+                    <View key={prog.key} style={{ marginBottom: 8, borderWidth: 1, borderColor: '#e0d4ee', borderRadius: 10, overflow: 'hidden' }}>
+                      <TouchableOpacity onPress={() => { setTabRightsProg(open ? null : prog.key); setTabRightsUser(null); }}
+                        style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', backgroundColor: open ? '#6a1b9a' : '#f3e9fb', paddingHorizontal: 14, paddingVertical: 12 }}>
+                        <Text style={{ fontSize: 15, fontWeight: 'bold', color: open ? '#fff' : '#4a148c' }}>{prog.label}</Text>
+                        <Text style={{ fontSize: 16, color: open ? '#fff' : '#4a148c' }}>{open ? '▾' : '▸'}</Text>
+                      </TouchableOpacity>
+                      {open && prog.key !== 'std' && (
+                        <Text style={{ textAlign: 'center', color: '#999', padding: 16, fontStyle: 'italic' }}>Σύντομα</Text>
+                      )}
+                      {open && prog.key === 'std' && (
+                        <View style={{ padding: 8 }}>
+                          {APP_USERS.filter(u => u !== 'GUEST' && u !== 'ADMIN' && !SELLERS.includes(u)).map(u => {
+                            const k = lockKey(u);
+                            const uOpen = tabRightsUser === k;
+                            const r = tabRights[k] || {};
+                            const restricted = !!((r.hide && Object.keys(r.hide).length) || (r.readonly && Object.keys(r.readonly).length));
+                            return (
+                              <View key={k} style={{ marginBottom: 6, borderWidth: 1, borderColor: '#eee', borderRadius: 8, overflow: 'hidden' }}>
+                                <TouchableOpacity onPress={() => setTabRightsUser(uOpen ? null : k)}
+                                  style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', backgroundColor: uOpen ? '#ede7f6' : '#fafafa', paddingHorizontal: 12, paddingVertical: 10 }}>
+                                  <Text style={{ fontSize: 14, fontWeight: 'bold', color: '#333' }}>{userLabels[k] ? `${userLabels[k]} (${u})` : u}</Text>
+                                  <Text style={{ fontSize: 12, color: restricted ? '#c62828' : '#2e7d32', fontWeight: 'bold' }}>{restricted ? 'Περιορισμένος' : 'Πλήρης'}</Text>
+                                </TouchableOpacity>
+                                {uOpen && (
+                                  <View style={{ padding: 8 }}>
+                                    <View style={{ flexDirection: 'row', paddingVertical: 4, paddingHorizontal: 6 }}>
+                                      <View style={{ flex: 1 }} />
+                                      <Text style={{ width: 70, textAlign: 'center', fontSize: 11, fontWeight: 'bold', color: '#666' }}>👁</Text>
+                                      <Text style={{ width: 70, textAlign: 'center', fontSize: 11, fontWeight: 'bold', color: '#666' }}>✏️</Text>
+                                    </View>
+                                    {RIGHT_TABS.map(t => {
+                                      const hidden = !!(r.hide && r.hide[t.key]);
+                                      const readonly = !!(r.readonly && r.readonly[t.key]);
+                                      return (
+                                        <View key={t.key} style={{ flexDirection: 'row', alignItems: 'center', paddingVertical: 5, paddingHorizontal: 6, borderTopWidth: 1, borderTopColor: '#f3f3f3' }}>
+                                          <Text style={{ flex: 1, fontSize: 13, color: '#333' }}>{t.label}</Text>
+                                          <TouchableOpacity onPress={() => writeTabRight(k, 'hide', t.key, !hidden)} style={{ width: 70, alignItems: 'center' }}>
+                                            <Text style={{ fontSize: 20 }}>{hidden ? '⬜' : '✅'}</Text>
+                                          </TouchableOpacity>
+                                          <View style={{ width: 70, alignItems: 'center' }}>
+                                            {t.edit ? (
+                                              <TouchableOpacity disabled={hidden} onPress={() => writeTabRight(k, 'readonly', t.key, !readonly)}>
+                                                <Text style={{ fontSize: 20, opacity: hidden ? 0.25 : 1 }}>{(readonly || hidden) ? '⬜' : '✅'}</Text>
+                                              </TouchableOpacity>
+                                            ) : (
+                                              <Text style={{ fontSize: 15, color: '#bbb' }}>—</Text>
+                                            )}
+                                          </View>
+                                        </View>
+                                      );
+                                    })}
+                                  </View>
+                                )}
+                              </View>
+                            );
+                          })}
+                        </View>
+                      )}
+                    </View>
+                  );
+                })}
+              </ScrollView>
+              <TouchableOpacity style={[statsAuthStyles.btn, { backgroundColor: '#666', marginTop: 12 }]} onPress={() => { if (tabRightsUser) setTabRightsUser(null); else setShowTabRights(false); }}>
                 <Text style={statsAuthStyles.btnTxt}>ΚΛΕΙΣΙΜΟ</Text>
               </TouchableOpacity>
             </View>

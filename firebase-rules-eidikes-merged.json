@@ -93,6 +93,10 @@
       ".read":  "auth != null",
       ".write": "auth != null && auth.token.email != null && auth.token.email.beginsWith('admin@')"
     },
+    "tab_rights": {
+      ".read":  "auth != null",
+      ".write": "auth != null && auth.token.email != null && auth.token.email.beginsWith('admin@')"
+    },
     "installers": {
       ".read":  "auth != null && (auth.token.email.beginsWith('admin@') || root.child('install_lock').child(auth.token.email.replace('@vaicon.local','').toUpperCase()).val() != true)",
       ".write": "auth != null && auth.token.email != null && !auth.token.email.beginsWith('guest@') && (auth.token.email.beginsWith('admin@') || root.child('install_lock').child(auth.token.email.replace('@vaicon.local','').toUpperCase()).val() != true)"

@@ -21,16 +21,35 @@ const initStockMap = () => {
   return map;
 };
 
+// ── Καλάθι εκκρεμοτήτων: εφαρμογή μιας πράξης σε entry (καθαρή συνάρτηση) ──
+const applyOpToEntry = (e0, op) => {
+  const e = { ...e0, qty: e0.qty||0, pending: e0.pending||0, reservations: e0.reservations||[] };
+  if (op.mode === 'pending') e.pending += op.n;
+  else if (op.mode === 'add') e.qty += op.n;
+  else if (op.mode === 'pendingIn') { e.qty += op.n; e.pending = Math.max(0, e.pending - op.n); }
+  else if (op.mode === 'subPending') e.pending = Math.max(0, e.pending - op.n);
+  else if (op.mode === 'sub') e.qty = Math.max(0, e.qty - op.n);
+  return e;
+};
+const foldOps = (base, ops) => {
+  if (!ops.length) return base;
+  const out = { ...base };
+  ops.forEach(o => { out[o.key] = applyOpToEntry(out[o.key] || { qty:0, pending:0, reservations:[] }, o); });
+  return out;
+};
+const OP_LABEL = { pending:'➕ Παραγωγή', add:'➕ Αποθήκη', pendingIn:'📦 Παραλαβή (→Αποθήκη)', subPending:'➖ Παραγωγή', sub:'➖ Αποθήκη' };
+const OP_LOG   = { pending:'PENDING', add:'Προσθήκη', pendingIn:'Παραλαβή από PENDING', subPending:'Αφαίρεση από ΠΑΡΑΓΩΓΗ', sub:'Αφαίρεση από ΑΠΟΘΗΚΗ' };
+
 function QtyModal({ visible, title, onConfirm, onCancel }) {
   const [val, setVal] = useState('');
   useEffect(() => { if (visible) setVal(''); }, [visible]);
   return (
     <Modal visible={visible} transparent animationType="fade">
       <View style={styles.overlay}>
-        <View style={styles.modalBox}>
-          <Text style={styles.modalTitle}>{title}</Text>
+        <View style={[styles.modalBox, {width:'72%', maxWidth:260}]}>
+          <Text style={[styles.modalTitle, {fontSize:21, lineHeight:28}]}>{title}</Text>
           <TextInput
-            style={styles.modalInput}
+            style={[styles.modalInput, {width:'80%'}]}
             keyboardType="numeric"
             value={val}
             onChangeText={setVal}
@@ -55,11 +74,14 @@ function QtyModal({ visible, title, onConfirm, onCancel }) {
   );
 }
 
-export default function SasiScreen({ sasiStock={}, setSasiStock, stockHighlight=null, onClearSearchHighlight, locked=false }) {
-  const stockMap = { ...initStockMap(), ...sasiStock };
-  const [qtyModal, setQtyModal] = useState({ visible:false, key:'', mode:'add', label:'' });
+export default function SasiScreen({ sasiStock={}, setSasiStock, opsBasket=[], setOpsBasket, stockHighlight=null, onClearSearchHighlight, locked=false }) {
+  const baseMap = { ...initStockMap(), ...sasiStock };
+  const [qtyModal, setQtyModal] = useState({ visible:false, key:'', mode:'add', label:'', dim:'' });
   const [choiceModal, setChoiceModal] = useState({ visible:false, key:'', label:'', action:'add', pending:0, available:0 });
   const [showReservations, setShowReservations] = useState(null);
+  const [confirmApply, setConfirmApply] = useState(false);
+  const stockMap = foldOps(baseMap, opsBasket);
+  const pendingKeys = new Set(opsBasket.map(o => o.key));
 
   const syncKey = async (key, entry) => {
     try {
@@ -78,7 +100,7 @@ export default function SasiScreen({ sasiStock={}, setSasiStock, stockHighlight=
   const handlePendingIn = (key, label, pendingQty) => {
     if (locked) return;
     if (pendingQty <= 0) return Alert.alert('Προσοχή','Δεν υπάρχει ποσότητα σε PENDING.');
-    setQtyModal({ visible:true, key, mode:'pendingIn', label:`📦 Παραλαβή από PENDING\n${label}\n(έως ${pendingQty} τεμ.)` });
+    setQtyModal({ visible:true, key, mode:'pendingIn', label:`📦 Παραλαβή από PENDING\n\n${label}\n(έως ${pendingQty} τεμ.)`, dim: label });
   };
 
   const handleSubtract = (key, label, available, pending) => {
@@ -109,54 +131,34 @@ export default function SasiScreen({ sasiStock={}, setSasiStock, stockHighlight=
     return finalEntry;
   };
 
-  const handleQtyConfirm = async (n) => {
+  // Δεν εφαρμόζεται αμέσως: η πράξη μπαίνει στο καλάθι εκκρεμοτήτων (έλεγχος ορίων στην προβολή = base + καλάθι).
+  const handleQtyConfirm = (n) => {
     if (locked) return;
-    const { key, mode } = qtyModal;
+    const { key, mode, dim } = qtyModal;
     setQtyModal(m => ({...m, visible:false}));
-    const entry = {...(stockMap[key] || { qty:0, reservations:[], pending:0 })};
-    if (mode === 'pending') {
-      entry.pending = (entry.pending || 0) + n;
-    } else if (mode === 'add') {
-      entry.qty = (entry.qty || 0) + n;
-      // Αυτόματη αναπλήρωση δανεισμένων δεσμεύσεων
-      const replenished = await replenishPriorityReservations(key, entry);
-      setSasiStock(prev => ({...prev, [key]: replenished}));
-      await fetch(`${FIREBASE_URL}/sasi_stock/${key}.json`, {method:'PUT', body:JSON.stringify(replenished)});
-      await logActivity('ΣΑΣΙ ΣΤΟΚ', 'Προσθήκη', { size: key.replace(/_/g,'x'), qty: String(n) });
-      return;
-    } else if (mode === 'pendingIn') {
-      // Διαβάζω φρέσκο από Firebase για να έχω το σωστό pending
-      try {
-        const res = await fetch(`${FIREBASE_URL}/sasi_stock/${key}.json`);
-        const fresh = await res.json();
-        if (fresh) {
-          const maxPending = fresh.pending || 0;
-          if (n > maxPending) return Alert.alert('Προσοχή',`Μπορείτε να παραλάβετε έως ${maxPending} τεμάχια.`);
-          const updEntry = {...fresh, qty: (fresh.qty||0) + n, pending: maxPending - n};
-          setSasiStock(prev => ({...prev, [key]: updEntry}));
-          await fetch(`${FIREBASE_URL}/sasi_stock/${key}.json`, {method:'PUT', body:JSON.stringify(updEntry)});
-          await logActivity('ΣΑΣΙ ΣΤΟΚ', 'Παραλαβή από PENDING', { size: key.replace(/_/g,'x'), qty: String(n) });
-          return;
-        }
-      } catch(e) { console.error('pendingIn sasi:', e); }
-      // Fallback αν αποτύχει το Firebase
-      const maxPending = entry.pending || 0;
-      if (n > maxPending) return Alert.alert('Προσοχή',`Μπορείτε να παραλάβετε έως ${maxPending} τεμάχια.`);
-      entry.qty = (entry.qty || 0) + n;
-      entry.pending = maxPending - n;
-    } else if (mode === 'subPending') {
-      const maxPending = entry.pending || 0;
-      if (n > maxPending) return Alert.alert('Προσοχή',`Μπορείτε να αφαιρέσετε έως ${maxPending} τεμάχια από ΠΑΡΑΓΩΓΗ.`);
-      entry.pending = Math.max(0, maxPending - n);
-    } else {
-      const available = (entry.qty || 0) - (entry.reservations||[]).reduce((s,r)=>s+(parseInt(r.qty)||1),0);
-      if (n > available) return Alert.alert('Προσοχή',`Μπορείτε να αφαιρέσετε έως ${available} τεμάχια.`);
-      entry.qty = Math.max(0, (entry.qty||0) - n);
+    const e = stockMap[key] || { qty:0, pending:0, reservations:[] };
+    const reserved = (e.reservations||[]).reduce((s,r)=>s+(parseInt(r.qty)||1),0);
+    const available = (e.qty||0) - reserved;
+    const maxPending = e.pending || 0;
+    if (mode === 'subPending' && n > maxPending) return Alert.alert('Προσοχή',`Μπορείτε να αφαιρέσετε έως ${maxPending} τεμάχια από ΠΑΡΑΓΩΓΗ.`);
+    if (mode === 'pendingIn' && n > maxPending) return Alert.alert('Προσοχή',`Μπορείτε να παραλάβετε έως ${maxPending} τεμάχια.`);
+    if (mode === 'sub' && n > available) return Alert.alert('Προσοχή',`Μπορείτε να αφαιρέσετε έως ${available} τεμάχια.`);
+    setOpsBasket(prev => [...prev, { id: Date.now()+'_'+Math.random(), key, mode, n, dim: dim || key.replace(/_/g,'x') }]);
+  };
+
+  const commitOps = async () => {
+    const ops = opsBasket;
+    const keys = [...new Set(ops.map(o => o.key))];
+    const updates = {};
+    for (const key of keys) {
+      let entry = { ...(baseMap[key] || { qty:0, pending:0, reservations:[] }) };
+      ops.filter(o => o.key === key).forEach(o => { entry = applyOpToEntry(entry, o); });
+      updates[key] = await replenishPriorityReservations(key, entry);
     }
-    setSasiStock(prev => ({...prev, [key]: entry}));
-    await syncKey(key, entry);
-    const modeLabel = mode==='pending'?'PENDING':mode==='pendingIn'?'Παραλαβή από PENDING':mode==='subPending'?'Αφαίρεση από ΠΑΡΑΓΩΓΗ':'Αφαίρεση από ΑΠΟΘΗΚΗ';
-    await logActivity('ΣΑΣΙ ΣΤΟΚ', modeLabel, { size: key.replace(/_/g,'x'), qty: String(n) });
+    setSasiStock(prev => ({ ...prev, ...updates }));
+    setOpsBasket([]);
+    for (const key of keys) await syncKey(key, updates[key]);
+    for (const o of ops) await logActivity('ΣΑΣΙ ΣΤΟΚ', OP_LOG[o.mode] || o.mode, { size: o.key.replace(/_/g,'x'), qty: String(o.n) });
   };
 
   const renderTable = (side) => {
@@ -183,7 +185,7 @@ export default function SasiScreen({ sasiStock={}, setSasiStock, stockHighlight=
           const rowHL = stockHighlight?.kind === 'sasi' && stockHighlight.stockKey === key;
 
           return (
-            <View key={key} style={[styles.tableRow, available<0&&{backgroundColor:'#fff5f5'}, rowHL && { backgroundColor: '#fff8e1', borderWidth: 2, borderColor: '#FFC107' }]}>
+            <View key={key} style={[styles.tableRow, available<0&&{backgroundColor:'#fff5f5'}, rowHL && { backgroundColor: '#fff8e1', borderWidth: 2, borderColor: '#FFC107' }, pendingKeys.has(key) && { backgroundColor:'#e3f2fd', borderWidth:2, borderColor:'#1976d2' }]}>
               {/* ΕΝΕΡΓΕΙΕΣ — μόνο το - */}
               <View style={[styles.tdWrap, {width:34, justifyContent:'center', alignItems:'center'}]}>
                 {!locked&&<TouchableOpacity style={[styles.subBtn, (available<=0&&pending<=0)&&{opacity:0.35}]}
@@ -363,36 +365,34 @@ export default function SasiScreen({ sasiStock={}, setSasiStock, stockHighlight=
       {/* Modal επιλογής ΠΑΡΑΓΩΓΗ / ΑΠΟΘΗΚΗ (add ή sub) */}
       <Modal visible={choiceModal.visible} transparent animationType="fade">
         <View style={styles.overlay}>
-          <View style={[styles.modalBox, {width:'80%'}]}>
-            <Text style={styles.modalTitle}>{choiceModal.action==='sub'?'Από πού αφαιρείς;':'Πού προσθέτεις;'}</Text>
-            <Text style={{fontSize:13, color:'#555', marginBottom:16, textAlign:'center'}}>{choiceModal.label}</Text>
-            <View style={{flexDirection:'row', gap:10, width:'100%'}}>
-              {(() => {
-                const isSub = choiceModal.action === 'sub';
-                const prodDisabled = isSub && choiceModal.pending <= 0;
-                const stockDisabled = isSub && choiceModal.available <= 0;
-                const prodMode = isSub ? 'subPending' : 'pending';
-                const stockMode = isSub ? 'sub' : 'pendingIn';
-                const prodLabel = isSub ? `🏭 ΠΑΡΑΓΩΓΗ\n${choiceModal.label}\n(έως ${choiceModal.pending} τεμ.)` : `🏭 ΠΑΡΑΓΩΓΗ\n${choiceModal.label}`;
-                const stockLabel = isSub ? `📦 ΑΠΟΘΗΚΗ\n${choiceModal.label}\n(έως ${choiceModal.available} τεμ.)` : `📦 ΑΠΟΘΗΚΗ\n${choiceModal.label}`;
-                return <>
-                  <TouchableOpacity
-                    disabled={prodDisabled}
-                    style={{flex:1, padding:14, borderRadius:8, alignItems:'center', backgroundColor:'#e65100', opacity:prodDisabled?0.4:1}}
-                    onPress={()=>{ setChoiceModal(m=>({...m,visible:false})); setQtyModal({visible:true, key:choiceModal.key, mode:prodMode, label:prodLabel}); }}>
-                    <Text style={{color:'white', fontWeight:'bold', fontSize:13}}>🏭 ΠΑΡΑΓΩΓΗ</Text>
-                  </TouchableOpacity>
-                  <TouchableOpacity
-                    disabled={stockDisabled}
-                    style={{flex:1, padding:14, borderRadius:8, alignItems:'center', backgroundColor:'#2e7d32', opacity:stockDisabled?0.4:1}}
-                    onPress={()=>{ setChoiceModal(m=>({...m,visible:false})); setQtyModal({visible:true, key:choiceModal.key, mode:stockMode, label:stockLabel}); }}>
-                    <Text style={{color:'white', fontWeight:'bold', fontSize:13}}>📦 ΑΠΟΘΗΚΗ</Text>
-                  </TouchableOpacity>
-                </>;
-              })()}
-            </View>
-            <TouchableOpacity style={{marginTop:10}} onPress={()=>setChoiceModal(m=>({...m,visible:false}))}>
-              <Text style={{color:'#aaa', fontSize:13}}>ΑΚΥΡΟ</Text>
+          <View style={[styles.modalBox, {width:'72%', maxWidth:260}]}>
+            <Text style={[styles.modalTitle, {fontSize:21, marginBottom:8}]}>{choiceModal.action==='sub'?'Από πού αφαιρείς;':'Πού προσθέτεις;'}</Text>
+            <Text style={{fontSize:23, fontWeight:'bold', color:'#1a1a1a', marginBottom:18, textAlign:'center'}}>{choiceModal.label}</Text>
+            {(() => {
+              const isSub = choiceModal.action === 'sub';
+              const prodDisabled = isSub && choiceModal.pending <= 0;
+              const stockDisabled = isSub && choiceModal.available <= 0;
+              const prodMode = isSub ? 'subPending' : 'pending';
+              const stockMode = isSub ? 'sub' : 'pendingIn';
+              const prodLabel = isSub ? `🏭 ΠΑΡΑΓΩΓΗ\n\n${choiceModal.label}\n(έως ${choiceModal.pending} τεμ.)` : `🏭 ΠΑΡΑΓΩΓΗ\n\n${choiceModal.label}`;
+              const stockLabel = isSub ? `📦 ΑΠΟΘΗΚΗ\n\n${choiceModal.label}\n(έως ${choiceModal.available} τεμ.)` : `📦 ΑΠΟΘΗΚΗ\n\n${choiceModal.label}`;
+              return <>
+                <TouchableOpacity
+                  disabled={prodDisabled}
+                  style={{width:'100%', paddingVertical:12, borderRadius:8, alignItems:'center', backgroundColor:'#e65100', opacity:prodDisabled?0.4:1, marginBottom:8}}
+                  onPress={()=>{ setChoiceModal(m=>({...m,visible:false})); setQtyModal({visible:true, key:choiceModal.key, mode:prodMode, label:prodLabel, dim:choiceModal.label}); }}>
+                  <Text style={{color:'white', fontWeight:'bold', fontSize:15}}>🏭 ΠΑΡΑΓΩΓΗ</Text>
+                </TouchableOpacity>
+                <TouchableOpacity
+                  disabled={stockDisabled}
+                  style={{width:'100%', paddingVertical:12, borderRadius:8, alignItems:'center', backgroundColor:'#2e7d32', opacity:stockDisabled?0.4:1}}
+                  onPress={()=>{ setChoiceModal(m=>({...m,visible:false})); setQtyModal({visible:true, key:choiceModal.key, mode:stockMode, label:stockLabel, dim:choiceModal.label}); }}>
+                  <Text style={{color:'white', fontWeight:'bold', fontSize:15}}>📦 ΑΠΟΘΗΚΗ</Text>
+                </TouchableOpacity>
+              </>;
+            })()}
+            <TouchableOpacity style={{marginTop:14, paddingVertical:6, width:'100%', alignItems:'center'}} onPress={()=>setChoiceModal(m=>({...m,visible:false}))}>
+              <Text style={{color:'#999', fontSize:14, fontWeight:'bold'}}>ΑΚΥΡΟ</Text>
             </TouchableOpacity>
           </View>
         </View>
@@ -446,6 +446,50 @@ export default function SasiScreen({ sasiStock={}, setSasiStock, stockHighlight=
               style={[styles.modalBtn, {backgroundColor:'#8B0000', marginTop:16, width:'100%'}]}
               onPress={()=>setShowReservations(null)}>
               <Text style={{color:'white', fontWeight:'bold'}}>ΚΛΕΙΣΙΜΟ</Text>
+            </TouchableOpacity>
+          </View>
+        </View>
+      </Modal>
+
+      {/* Καλάθι εκκρεμοτήτων */}
+      {opsBasket.length > 0 && (
+        <View style={[{backgroundColor:'#fff', borderRadius:12, borderWidth:2, borderColor:'#1976d2', padding:14, width:360, maxHeight:'90%', elevation:24, shadowColor:'#000', shadowOffset:{width:0,height:6}, shadowOpacity:0.3, shadowRadius:12, zIndex:9999}, Platform.OS==='web'?{position:'fixed', right:20, bottom:20}:{position:'absolute', right:20, bottom:20}]}>
+          <Text style={{fontSize:19, fontWeight:'bold', color:'#0d47a1', marginBottom:2}}>Αλλαγές προς εφαρμογή ({opsBasket.length})</Text>
+          <Text style={{fontSize:13, color:'#666', marginBottom:8}}>Έλεγξε τις αλλαγές. Πάτα ✕ για ακύρωση μίας.</Text>
+          <ScrollView style={{maxHeight:300}}>
+            {opsBasket.map(o => (
+              <View key={o.id} style={{flexDirection:'row', alignItems:'center', justifyContent:'space-between', paddingVertical:5, borderBottomWidth:1, borderBottomColor:'#eee'}}>
+                <Text style={{fontSize:15, fontWeight:'bold', color:'#1a1a1a', flex:1}}>{o.dim}</Text>
+                <Text style={{fontSize:14, fontWeight:'bold', color: o.mode==='subPending'||o.mode==='sub'?'#c62828':'#2e7d32', marginRight:8}}>{OP_LABEL[o.mode]} {o.n}</Text>
+                <TouchableOpacity onPress={()=>setOpsBasket(prev=>prev.filter(x=>x.id!==o.id))} style={{width:28, height:28, borderRadius:14, backgroundColor:'#ffeaea', alignItems:'center', justifyContent:'center'}}>
+                  <Text style={{color:'#ff4444', fontWeight:'bold', fontSize:16}}>✕</Text>
+                </TouchableOpacity>
+              </View>
+            ))}
+          </ScrollView>
+          <View style={{flexDirection:'row', gap:8, marginTop:10}}>
+            <TouchableOpacity onPress={()=>setOpsBasket([])} style={{flex:1, paddingVertical:11, borderRadius:8, backgroundColor:'#f0f0f0', alignItems:'center'}}>
+              <Text style={{fontWeight:'bold', color:'#666', fontSize:16}}>Άκυρο</Text>
+            </TouchableOpacity>
+            <TouchableOpacity onPress={()=>setConfirmApply(true)} style={{flex:1, paddingVertical:11, borderRadius:8, backgroundColor:'#1976d2', alignItems:'center'}}>
+              <Text style={{fontWeight:'bold', color:'#fff', fontSize:16}}>ΟΚ</Text>
+            </TouchableOpacity>
+          </View>
+        </View>
+      )}
+
+      {/* Δεύτερη επιβεβαίωση */}
+      <Modal visible={confirmApply} transparent animationType="fade" onRequestClose={()=>setConfirmApply(false)}>
+        <View style={styles.overlay}>
+          <View style={[styles.modalBox, {width:'72%', maxWidth:300}]}>
+            <Text style={[styles.modalTitle, {fontSize:19}]}>Επιβεβαίωση</Text>
+            <Text style={{fontSize:15, color:'#444', marginBottom:18, textAlign:'center'}}>Να εφαρμοστούν {opsBasket.length} αλλαγές;</Text>
+            <TouchableOpacity style={{width:'100%', paddingVertical:12, borderRadius:8, alignItems:'center', backgroundColor:'#2e7d32', marginBottom:8}}
+              onPress={()=>{ setConfirmApply(false); commitOps(); }}>
+              <Text style={{color:'white', fontWeight:'bold', fontSize:15}}>ΝΑΙ, ΕΦΑΡΜΟΓΗ</Text>
+            </TouchableOpacity>
+            <TouchableOpacity style={{width:'100%', paddingVertical:10, alignItems:'center'}} onPress={()=>setConfirmApply(false)}>
+              <Text style={{color:'#999', fontWeight:'bold', fontSize:14}}>ΑΚΥΡΟ</Text>
             </TouchableOpacity>
           </View>
         </View>
