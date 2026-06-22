@@ -117,7 +117,8 @@ exports.handler = async (event) => {
       const listRes = await fbFetch(`${db}/order_files/${orderId}.json`);
       const list = await listRes.json();
       const count = list ? Object.keys(list).length : 1;
-      await fbFetch(`${db}/std_orders/${orderId}.json`, { method: 'PATCH', body: JSON.stringify({ docCount: count }) });
+      const node = ['std_quotes', 'seller_submissions'].includes(tok.node) ? tok.node : 'std_orders';
+      await fbFetch(`${db}/${node}/${orderId}.json`, { method: 'PATCH', body: JSON.stringify({ docCount: count }) });
       await fbFetch(`${db}/upload_tokens/${encodeURIComponent(t)}.json`, { method: 'DELETE' });
       return json(200, { success: true, count });
     } catch (e) {

@@ -279,10 +279,10 @@ if (Platform.OS === 'android' && UIManager.setLayoutAnimationEnabledExperimental
   UIManager.setLayoutAnimationEnabledExperimental(true);
 }
 
-const TABS = ['customNew', 'customMoni', 'customDipli', 'sasi', 'cases', 'deliveries', 'stats'];
-const TAB_LABELS = { customNew: 'ΚΑΤΑΧΩΡΗΣΗ', customMoni: 'ΤΥΠΟΠΟΙΗΜΕΝΕΣ\nΜΟΝΗ ΘΩΡΑΚΙΣΗ', customDipli: 'ΤΥΠΟΠΟΙΗΜΕΝΕΣ\nΔΙΠΛΗ ΘΩΡΑΚΙΣΗ', sasi: 'STOCK ΣΑΣΙ', cases: 'STOCK ΚΑΣΑ', stats: 'ΣΤΑΤΙΣΤΙΚΑ' };
-const TAB_ICONS  = { customNew: '✏️', customMoni: '🛡️', customDipli: '🔰', sasi: '🔧', cases: '🚪', stats: '📊' };
-const NAV_TABS = ['customNew', 'customMoni', 'customDipli', 'sasi', 'cases'];
+const TABS = ['customNew', 'customQuotes', 'customMoni', 'customDipli', 'sasi', 'cases', 'deliveries', 'stats'];
+const TAB_LABELS = { customNew: 'ΚΑΤΑΧΩΡΗΣΗ', customQuotes: 'ΠΡΟΣΦΟΡΕΣ', customMoni: 'ΤΥΠΟΠΟΙΗΜΕΝΕΣ\nΜΟΝΗ ΘΩΡΑΚΙΣΗ', customDipli: 'ΤΥΠΟΠΟΙΗΜΕΝΕΣ\nΔΙΠΛΗ ΘΩΡΑΚΙΣΗ', sasi: 'STOCK ΣΑΣΙ', cases: 'STOCK ΚΑΣΑ', stats: 'ΣΤΑΤΙΣΤΙΚΑ' };
+const TAB_ICONS  = { customNew: '✏️', customQuotes: '💼', customMoni: '🛡️', customDipli: '🔰', sasi: '🔧', cases: '🚪', stats: '📊' };
+const NAV_TABS = ['customNew', 'customQuotes', 'customMoni', 'customDipli', 'sasi', 'cases'];
 // Καρτέλες με ελεγχόμενα δικαιώματα ανά χρήστη (view = hide, edit = readonly)
 const RIGHT_TABS = [
   { key: 'customNew', label: 'Καταχώρηση', edit: false },
@@ -346,6 +346,7 @@ export default function App() {
   const [pendingCustomerCallback, setPendingCustomerCallback] = useState(null);
 
   const [customOrders, setCustomOrders] = useState([]);
+  const [quotes, setQuotes] = useState([]);
   const [soldOrders, setSoldOrders] = useState([]);
   const [sasiOrders, setSasiOrders] = useState([]);
   const [soldSasiOrders, setSoldSasiOrders] = useState([]);
@@ -773,7 +774,7 @@ export default function App() {
     document.body.appendChild(a); a.click(); document.body.removeChild(a);
     setTimeout(() => URL.revokeObjectURL(url), 1000);
   };
-  const BACKUP_NODES = ['std_orders', 'sasi_orders', 'case_orders', 'sasi_stock', 'case_stock', 'dipli_sasi_stock', 'customers', 'coatings', 'locks', 'user_labels', 'activity_log', 'messages', 'app_lock', 'order_files', 'upload_tokens', 'order_seq', 'seller_submissions', 'approval_log', 'approval_rights', 'tab_rights'];
+  const BACKUP_NODES = ['std_orders', 'std_quotes', 'sasi_orders', 'case_orders', 'sasi_stock', 'case_stock', 'dipli_sasi_stock', 'customers', 'coatings', 'locks', 'user_labels', 'activity_log', 'messages', 'app_lock', 'order_files', 'upload_tokens', 'order_seq', 'seller_submissions', 'approval_log', 'approval_rights', 'tab_rights'];
   const doBackup = async () => {
     if (Platform.OS !== 'web') { Alert.alert('Μη διαθέσιμο', 'Το backup είναι διαθέσιμο μόνο από browser.'); return; }
     setBackupRunning(true);
@@ -901,7 +902,7 @@ export default function App() {
         return subscribeFirebaseRealtime({
           setCustomOrders, setSoldOrders, setSasiOrders, setSoldSasiOrders,
           setCaseOrders, setSoldCaseOrders, setCustomers, setCoatings,
-          setDipliSasiStock, setLocks, setSasiStock, setCaseStock,
+          setDipliSasiStock, setLocks, setSasiStock, setCaseStock, setQuotes,
           setLoading, setActivityRefreshKey,
         });
       } catch (e) {
@@ -954,7 +955,7 @@ export default function App() {
     });
     try {
       const [
-        dataStd, data2, data3, data4, data5, data6, data7, dataSasiStock, dataCaseStock
+        dataStd, data2, data3, data4, data5, data6, data7, dataSasiStock, dataCaseStock, dataQuotes
       ] = await Promise.all([
         fetchJSON(`${FIREBASE_URL}/std_orders.json`),
         fetchJSON(`${FIREBASE_URL}/sasi_orders.json`),
@@ -965,16 +966,17 @@ export default function App() {
         fetchJSON(`${FIREBASE_URL}/locks.json`),
         fetchJSON(`${FIREBASE_URL}/sasi_stock.json`),
         fetchJSON(`${FIREBASE_URL}/case_stock.json`),
+        fetchJSON(`${FIREBASE_URL}/std_quotes.json`),
       ]);
 
       applyFetchedBundle(
         {
           setCustomOrders, setSoldOrders, setSasiOrders, setSoldSasiOrders,
           setCaseOrders, setSoldCaseOrders, setCustomers, setCoatings,
-          setDipliSasiStock, setLocks, setSasiStock, setCaseStock,
+          setDipliSasiStock, setLocks, setSasiStock, setCaseStock, setQuotes,
         },
         {
-          dataStd, data2, data3, data4, data5, data6, data7, dataSasiStock, dataCaseStock,
+          dataStd, data2, data3, data4, data5, data6, data7, dataSasiStock, dataCaseStock, dataQuotes,
         }
       );
       setActivityRefreshKey(k => k + 1);
@@ -1011,7 +1013,7 @@ export default function App() {
   const myLockKey = currentUser?.username ? lockKey(currentUser.username) : null;
   const amLocked = !!(myLockKey && currentUser?.role === 'user' && lockedUsers[myLockKey]);
   const GUEST_TABS = ['customMoni', 'customDipli'];
-  const SELLER_TABS = ['customNew', 'customMoni', 'customDipli'];
+  const SELLER_TABS = ['customNew', 'customQuotes', 'customMoni', 'customDipli'];
   // Δικαιώματα καρτελών — ισχύουν μόνο για κανονικούς χρήστες (όχι admin/guest/seller).
   const myTabRights = (currentUser?.role === 'user' && !isSeller && myLockKey) ? (tabRights[myLockKey] || {}) : {};
   const tabHidden = (tab) => !!(myTabRights.hide && myTabRights.hide[tab]);
@@ -1099,7 +1101,7 @@ export default function App() {
           <View style={{ flex: 1 }}>
             {navTabs.map((tab) => {
               const isActive = TABS[tabIndex] === tab;
-              const lockable = !isGuest && !tabReadonly(tab) && ['customMoni','customDipli','sasi','cases'].includes(tab);
+              const lockable = !isGuest && !isSeller && !tabReadonly(tab) && ['customMoni','customDipli','sasi','cases'].includes(tab);
               const unlocked = unlockedTab === tab;
               return (
                 <View key={tab} style={{ flexDirection:'row', alignItems:'stretch' }}>
@@ -1189,7 +1191,7 @@ export default function App() {
           <TouchableOpacity
             style={[styles.sidebarLookupBtn, showCustomerLookup && styles.sidebarLookupBtnActive]}
             onPress={() => {
-              if (!['customNew','customMoni','customDipli'].includes(TABS[tabIndex])) setTabIndex(TABS.indexOf('customMoni'));
+              if (!['customNew','customQuotes','customMoni','customDipli'].includes(TABS[tabIndex])) setTabIndex(TABS.indexOf('customMoni'));
               setShowCustomerLookup(v => !v);
             }}>
             <Text style={styles.sidebarLookupBtnText}>🔍 ΠΕΛΑΤΕΣ</Text>
@@ -1273,8 +1275,8 @@ export default function App() {
 
         {/* ═══ ΚΥΡΙΟ ΠΕΡΙΕΧΟΜΕΝΟ δεξιά ═══ */}
         <View style={{ flex: 1 }} {...panResponder.panHandlers}>
-          <View style={{ flex: 1, display: (view === 'customMoni' || view === 'customDipli' || view === 'customNew') ? 'flex' : 'none' }}>
-            <CustomScreen customOrders={customOrders} setCustomOrders={setCustomOrders} soldOrders={soldOrders} setSoldOrders={setSoldOrders} customers={customers} onRequestAddCustomer={(name, cb)=>{ setPendingCustomer(name); setPendingCustomerCallback(()=>cb); setShowCustomers(true); }} sasiStock={sasiStock} setSasiStock={setSasiStock} caseStock={caseStock} setCaseStock={setCaseStock} sasiOrders={sasiOrders} setSasiOrders={setSasiOrders} caseOrders={caseOrders} setCaseOrders={setCaseOrders} coatings={coatings} dipliSasiStock={dipliSasiStock} setDipliSasiStock={setDipliSasiStock} locks={locks} isGuest={isGuest || (view !== 'customNew' && unlockedTab !== view)} locked={!isGuest && view !== 'customNew' && unlockedTab !== view} formOnly={view === 'customNew'} forcedTab={view === 'customMoni' ? 'ΜΟΝΗ' : view === 'customDipli' ? 'ΔΙΠΛΗ' : null} setTabIndex={setTabIndex} highlightOrderId={globalSearchHighlightOrderId} onClearSearchHighlight={clearSearchNavigationHighlight} currentUserName={currentUser?.username ? (userLabels[lockKey(currentUser.username)] || currentUser.username) : ''} showCustomerLookup={showCustomerLookup} setShowCustomerLookup={setShowCustomerLookup} isSeller={isSeller} sellerKey={sellerKey} filterSellerKey={sellerFilter || null} editSubmission={editSubmission} onEditSubmissionDone={() => setEditSubmission(null)} />
+          <View style={{ flex: 1, display: (view === 'customMoni' || view === 'customDipli' || view === 'customNew' || view === 'customQuotes') ? 'flex' : 'none' }}>
+            <CustomScreen quotes={quotes} setQuotes={setQuotes} quotesOnly={view === 'customQuotes'} customOrders={customOrders} setCustomOrders={setCustomOrders} soldOrders={soldOrders} setSoldOrders={setSoldOrders} customers={customers} onRequestAddCustomer={(name, cb)=>{ setPendingCustomer(name); setPendingCustomerCallback(()=>cb); setShowCustomers(true); }} sasiStock={sasiStock} setSasiStock={setSasiStock} caseStock={caseStock} setCaseStock={setCaseStock} sasiOrders={sasiOrders} setSasiOrders={setSasiOrders} caseOrders={caseOrders} setCaseOrders={setCaseOrders} coatings={coatings} dipliSasiStock={dipliSasiStock} setDipliSasiStock={setDipliSasiStock} locks={locks} isGuest={isGuest || (view !== 'customNew' && unlockedTab !== view)} locked={!isGuest && view !== 'customNew' && unlockedTab !== view} formOnly={view === 'customNew'} forcedTab={view === 'customMoni' ? 'ΜΟΝΗ' : view === 'customDipli' ? 'ΔΙΠΛΗ' : null} setTabIndex={setTabIndex} highlightOrderId={globalSearchHighlightOrderId} onClearSearchHighlight={clearSearchNavigationHighlight} currentUserName={currentUser?.username ? (userLabels[lockKey(currentUser.username)] || currentUser.username) : ''} isAdmin={isAdmin} resolveName={(u) => userLabels[lockKey(u)] || u} showCustomerLookup={showCustomerLookup} setShowCustomerLookup={setShowCustomerLookup} isSeller={isSeller} sellerKey={sellerKey} filterSellerKey={sellerFilter || null} editSubmission={editSubmission} onEditSubmissionDone={() => setEditSubmission(null)} />
           </View>
           {view === 'sasi'   && <SasiScreen sasiStock={sasiStock} setSasiStock={setSasiStock} opsBasket={sasiOps} setOpsBasket={setSasiOps} stockHighlight={globalSearchStockMeta} onClearSearchHighlight={clearSearchNavigationHighlight} locked={isGuest || unlockedTab !== 'sasi'} />}
           {view === 'cases'  && <CaseScreen caseStock={caseStock} setCaseStock={setCaseStock} opsBasket={caseOps} setOpsBasket={setCaseOps} stockHighlight={globalSearchStockMeta} onClearSearchHighlight={clearSearchNavigationHighlight} locked={isGuest || unlockedTab !== 'cases'} />}

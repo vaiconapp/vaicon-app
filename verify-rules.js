@@ -116,6 +116,13 @@ function firstBadFbKey(val) {
   }
   return null;
 }
+// ΑΝΤΙΓΡΑΦΟ από CustomScreen.js — καθαρισμός στοιχείων επένδυσης (μόνο επιλεγμένες επενδύσεις)
+function pruneCoatingDetails(coatings, cd) {
+  const keep = new Set((coatings || []).filter(n => n && String(n).trim()));
+  const out = {};
+  Object.keys(cd || {}).forEach(k => { if (keep.has(k)) out[k] = cd[k]; });
+  return out;
+}
 const FBASE = 'https://x-default-rtdb.europe-west1.firebasedatabase.app';
 function badKeyInWrite(url, body) {
   const path = String(url).split('?')[0].replace(FBASE, '').replace(/\.json$/, '').replace(/^\//, '');
@@ -449,6 +456,15 @@ group('φύλακας ετικετών Firebase — firstBadFbKey/badKeyInWrite'
   test('διαδρομή order_seq/8149.2 → εντοπίζεται', badKeyInWrite(`${FBASE}/order_seq/8149.2.json`, null), '8149.2');
   test('διαδρομή καθαρή + body με bad key → εντοπίζεται', badKeyInWrite(`${FBASE}/special_orders/123.json?auth=t`, JSON.stringify({ coatingDetails: { 'PVC. ΕΞΩ': {} } })), 'PVC. ΕΞΩ');
   test('διαδρομή+body καθαρά → null', badKeyInWrite(`${FBASE}/special_orders/123.json`, JSON.stringify({ orderNo: '8149' })), null);
+});
+
+group('pruneCoatingDetails — κρατά μόνο επιλεγμένες επενδύσεις', () => {
+  test('αφαιρεί παλιό «PVC.  ΕΞΩ» όταν μένει μόνο laminate',
+    pruneCoatingDetails(['LAMINATE ΜΕΣΑ', 'LAMINATE ΕΞΩ'], { 'PVC.  ΕΞΩ': { dim: '1' }, 'LAMINATE ΜΕΣΑ': { dim: '2' }, 'LAMINATE ΕΞΩ': { dim: '3' } }),
+    { 'LAMINATE ΜΕΣΑ': { dim: '2' }, 'LAMINATE ΕΞΩ': { dim: '3' } });
+  test('χωρίς επενδύσεις → άδειο', pruneCoatingDetails([], { 'PVC. ΕΞΩ': {} }), {});
+  test('καθαρό αποτέλεσμα δεν έχει bad key', firstBadFbKey(pruneCoatingDetails(['LAMINATE ΕΞΩ'], { 'PVC.  ΕΞΩ': {}, 'LAMINATE ΕΞΩ': {} })), null);
+  test('κενά/whitespace ονόματα αγνοούνται', pruneCoatingDetails(['  ', 'LAMINATE'], { 'LAMINATE': { dim: '1' } }), { 'LAMINATE': { dim: '1' } });
 });
 
 group('findDuplicateCustomers — έλεγχος διπλότυπου πελάτη', () => {

@@ -5,6 +5,7 @@ import { suggestNextOrderNo, groupOrderNo, groupSubmissions } from './formatHelp
 import { StdOrderPreview } from './OrderPreview';
 import { sasiKey, caseKey } from './stockUtils';
 import { buildTasksForMoniStdOrder } from './stdOrderMigration';
+import { fmtDateTime } from './utils';
 // Οθόνη εγκρίσεων παραγγελιών πωλητή (Τυποποιημένες).
 export default function ApprovalScreen({ onClose, currentUserName = '', resolveLabel = (u) => u, coatings = [] }) {
   const [subs, setSubs] = useState([]);
@@ -59,10 +60,25 @@ export default function ApprovalScreen({ onClose, currentUserName = '', resolveL
       const upd = { ...base, reservations: [...(base.reservations || []).filter(x => x.orderNo !== number), newRes] };
       await fetch(`${FIREBASE_URL}/case_stock/${ck}.json`, { method: 'PUT', body: JSON.stringify(upd) }).catch(() => {});
     }
-    await fetch(`${FIREBASE_URL}/approval_log.json`, { method: 'POST', body: JSON.stringify({ ts: Date.now(), section: 'ΤΥΠΟΠΟΙΗΜΕΝΗ', action: 'APPROVED', orderNo: number, customer: sub.customer || '', submittedBy: submittedBy || '', approvedBy: currentUserName || '' }) }).catch(() => {});
+    await fetch(`${FIREBASE_URL}/approval_log.json`, { method: 'POST', body: JSON.stringify({ ts: Date.now(), section: 'ΤΥΠΟΠΟΙΗΜΕΝΗ', action: 'APPROVED', orderNo: number, customer: sub.customer || '', submittedBy: submittedBy || '', submittedAt: sub.submittedAt || null, approvedBy: currentUserName || '' }) }).catch(() => {});
     // Η υποβολή μένει στον φάκελο του πωλητή ως εγκεκριμένη (καθαρίζεται αυτόματα μετά από λίγες μέρες).
     // Δεν «καταπίνουμε» αποτυχία εδώ: αλλιώς η παραγγελία υπάρχει αλλά η υποβολή μένει PENDING.
     const subRes = await fetch(`${FIREBASE_URL}/seller_submissions/${sub._sid}.json`, { method: 'PATCH', body: JSON.stringify({ status: 'APPROVED', approvedOrderNo: number, approvedBy: currentUserName || '', approvedAt: Date.now() }) });
+    if (!subRes.ok) throw new Error();
+  };
+
+  // Έγκριση ΠΡΟΣΦΟΡΑΣ πωλητή → δημιουργία στο std_quotes (χωρίς αριθμό/στοκ).
+  const persistApprovedQuote = async (sub) => {
+    const { status: _st, submittedBy, submittedAt, _sid, ...rest } = sub;
+    const quote = {
+      ...rest, id: sub._sid, orderNo: '', orderType: 'ΤΥΠΟΠΟΙΗΜΕΝΗ', isQuote: true, status: 'QUOTE',
+      quotedAt: Date.now(), createdAt: sub.createdAt || Date.now(), enteredBy: submittedBy,
+      approvedBy: currentUserName, approvedAt: Date.now(),
+    };
+    const r = await fetch(`${FIREBASE_URL}/std_quotes/${quote.id}.json`, { method: 'PUT', body: JSON.stringify(quote) });
+    if (!r.ok) throw new Error();
+    await fetch(`${FIREBASE_URL}/approval_log.json`, { method: 'POST', body: JSON.stringify({ ts: Date.now(), section: 'ΤΥΠΟΠΟΙΗΜΕΝΗ', action: 'APPROVED_QUOTE', customer: sub.customer || '', submittedBy: submittedBy || '', submittedAt: sub.submittedAt || null, approvedBy: currentUserName || '' }) }).catch(() => {});
+    const subRes = await fetch(`${FIREBASE_URL}/seller_submissions/${sub._sid}.json`, { method: 'PATCH', body: JSON.stringify({ status: 'APPROVED', approvedBy: currentUserName || '', approvedAt: Date.now() }) });
     if (!subRes.ok) throw new Error();
   };
 
@@ -101,6 +117,7 @@ export default function ApprovalScreen({ onClose, currentUserName = '', resolveL
       const st = checkApprovable(await freshSub(sub._sid), sub);
       if (st === 'gone') { notify('Ήδη διεκπεραιωμένη', 'Η παραγγελία έχει ήδη εγκριθεί ή απορριφθεί.'); await load(); setBusyId(null); return; }
       if (st === 'changed') { notify('Άλλαξε η παραγγελία', 'Ο πωλητής τη διόρθωσε στο μεταξύ — δες την ξανά πριν την εγκρίνεις.'); await load(); setBusyId(null); return; }
+      if (sub.isQuote) { await persistApprovedQuote(sub); await load(); setBusyId(null); return; }
       const number = await claimBaseNumber();
       await persistApproved(sub, number, sub._sid);
       await load();
@@ -115,6 +132,10 @@ export default function ApprovalScreen({ onClose, currentUserName = '', resolveL
       const states = fresh.map((f, idx) => checkApprovable(f, group.subs[idx]));
       if (states.some(s => s === 'gone')) { notify('Ήδη διεκπεραιωμένη', 'Κάποια πόρτα της ομάδας έχει ήδη εγκριθεί ή απορριφθεί.'); await load(); setBusyId(null); return; }
       if (states.some(s => s === 'changed')) { notify('Άλλαξε η παραγγελία', 'Ο πωλητής διόρθωσε κάποια πόρτα στο μεταξύ — δες την ξανά πριν την εγκρίνεις.'); await load(); setBusyId(null); return; }
+      if (group.subs[0]?.isQuote) {
+        for (const sub of group.subs) await persistApprovedQuote(sub);
+        await load(); setBusyId(null); return;
+      }
       const base = await claimBaseNumber();
       let i = 1;
       for (const sub of group.subs) {
@@ -141,7 +162,7 @@ export default function ApprovalScreen({ onClose, currentUserName = '', resolveL
         if (!res.ok) throw new Error();
       }
       const first = targets[0];
-      await fetch(`${FIREBASE_URL}/approval_log.json`, { method: 'POST', body: JSON.stringify({ ts: Date.now(), section: 'ΤΥΠΟΠΟΙΗΜΕΝΗ', action: 'REJECTED', customer: first.customer || '', submittedBy: first.submittedBy || '', approvedBy: currentUserName || '', rejectNote: rejectModal.note || '' }) }).catch(() => {});
+      await fetch(`${FIREBASE_URL}/approval_log.json`, { method: 'POST', body: JSON.stringify({ ts: Date.now(), section: 'ΤΥΠΟΠΟΙΗΜΕΝΗ', action: 'REJECTED', customer: first.customer || '', submittedBy: first.submittedBy || '', submittedAt: first.submittedAt || null, approvedBy: currentUserName || '', rejectNote: rejectModal.note || '' }) }).catch(() => {});
       setRejectModal({ visible: false, sub: null, group: null, note: '' });
       await load();
     } catch { notify('Σφάλμα', 'Η απόρριψη απέτυχε.'); }
@@ -160,8 +181,10 @@ export default function ApprovalScreen({ onClose, currentUserName = '', resolveL
             groupSubmissions(subs).map(entry => entry.type === 'group' ? (
               <View key={entry.groupId} style={[styles.card, { flexDirection: 'column', borderLeftColor: '#7b1fa2' }]}>
                 <View style={styles.sellerBadge}><Text style={styles.sellerBadgeTxt}>🧑‍💼 {resolveLabel(entry.subs[0].submittedBy) || entry.subs[0].submittedBy}</Text></View>
+                {entry.subs[0].submittedAt ? <Text style={styles.timeTag}>📤 Υποβολή: {fmtDateTime(entry.subs[0].submittedAt)}</Text> : null}
+                {entry.subs[0].isQuote && <View style={styles.quoteBadge}><Text style={styles.quoteBadgeTxt}>💼 ΠΡΟΣΦΟΡΑ</Text></View>}
                 <Text style={styles.customer}>{entry.subs[0].customer || '—'}</Text>
-                <Text style={styles.linkTag}>🔗 Συνδεδεμένη παραγγελία — {entry.subs.length} πόρτες</Text>
+                <Text style={styles.linkTag}>🔗 {entry.subs[0].isQuote ? 'Προσφορά' : 'Συνδεδεμένη παραγγελία'} — {entry.subs.length} πόρτες</Text>
                 {entry.subs.map((sub, i) => (
                   <View key={sub._sid} style={styles.doorRow}>
                     <Text style={styles.doorNum}>{i + 1}.</Text>
@@ -183,6 +206,8 @@ export default function ApprovalScreen({ onClose, currentUserName = '', resolveL
               <View key={entry.sub._sid} style={styles.card}>
                 <View style={{ flex: 1 }}>
                   <View style={styles.sellerBadge}><Text style={styles.sellerBadgeTxt}>🧑‍💼 {resolveLabel(entry.sub.submittedBy) || entry.sub.submittedBy}</Text></View>
+                  {entry.sub.submittedAt ? <Text style={styles.timeTag}>📤 Υποβολή: {fmtDateTime(entry.sub.submittedAt)}</Text> : null}
+                  {entry.sub.isQuote && <View style={styles.quoteBadge}><Text style={styles.quoteBadgeTxt}>💼 ΠΡΟΣΦΟΡΑ</Text></View>}
                   <StdOrderPreview order={entry.sub} coatings={coatings} />
                 </View>
                 <View style={{ gap: 8, justifyContent: 'center' }}>
@@ -225,6 +250,9 @@ const styles = StyleSheet.create({
   card: { flexDirection: 'row', backgroundColor: '#fff', borderRadius: 10, padding: 12, marginBottom: 8, borderLeftWidth: 5, borderLeftColor: '#1565C0', elevation: 2, gap: 8 },
   sellerBadge: { alignSelf: 'flex-start', backgroundColor: '#e3f2fd', borderColor: '#1565C0', borderWidth: 1, borderRadius: 6, paddingHorizontal: 8, paddingVertical: 2, marginBottom: 4 },
   sellerBadgeTxt: { color: '#1565C0', fontWeight: 'bold', fontSize: 12 },
+  timeTag: { fontSize: 12, color: '#555', marginBottom: 4 },
+  quoteBadge: { alignSelf: 'flex-start', backgroundColor: '#f3e5f5', borderColor: '#8e24aa', borderWidth: 1, borderRadius: 6, paddingHorizontal: 8, paddingVertical: 2, marginBottom: 4 },
+  quoteBadgeTxt: { color: '#6a1b9a', fontWeight: 'bold', fontSize: 12 },
   customer: { fontSize: 16, fontWeight: 'bold', color: '#1a1a1a' },
   detail: { fontSize: 13, color: '#555', marginTop: 2 },
   linkTag: { fontSize: 13, color: '#7b1fa2', fontWeight: 'bold', marginTop: 4 },

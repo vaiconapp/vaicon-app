@@ -18,12 +18,12 @@ async function persistMigratedMoniProdStdOrders(migrated) {
  */
 export function applyFetchedBundle(setters, bundle) {
   const {
-    dataStd, data2, data3, data4, data5, data6, data7, dataSasiStock, dataCaseStock,
+    dataStd, data2, data3, data4, data5, data6, data7, dataSasiStock, dataCaseStock, dataQuotes,
   } = bundle;
   const {
     setCustomOrders, setSoldOrders, setSasiOrders, setSoldSasiOrders,
     setCaseOrders, setSoldCaseOrders, setCustomers, setCoatings,
-    setDipliSasiStock, setLocks, setSasiStock, setCaseStock,
+    setDipliSasiStock, setLocks, setSasiStock, setCaseStock, setQuotes,
   } = setters;
 
   if (dataStd) {
@@ -76,6 +76,7 @@ export function applyFetchedBundle(setters, bundle) {
   else setSasiStock({});
   if (dataCaseStock) setCaseStock(dataCaseStock);
   else setCaseStock({});
+  if (setQuotes) setQuotes(dataQuotes ? Object.keys(dataQuotes).map(key => ({ id: key, ...dataQuotes[key] })) : []);
 }
 
 /**
@@ -91,7 +92,7 @@ export function subscribeFirebaseRealtime(setters) {
   const finish = () => { if (!done) { done = true; setLoading(false); } };
 
   let readyCount = 0;
-  const TOTAL_PATHS = 9;
+  const TOTAL_PATHS = 10;
   const onFirstSnapshot = () => {
     readyCount++;
     if (readyCount >= TOTAL_PATHS) finish();
@@ -155,6 +156,9 @@ export function subscribeFirebaseRealtime(setters) {
   });
   mk('sasi_stock', v => S.setSasiStock(v || {}));
   mk('case_stock', v => S.setCaseStock(v || {}));
+  mk('std_quotes', data => {
+    S.setQuotes(data ? Object.keys(data).map(key => ({ id: key, ...data[key] })) : []);
+  });
 
   unsubs.push(onValue(ref(db, 'activity_log'), () => {
     setActivityRefreshKey(k => k + 1);
