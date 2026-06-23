@@ -616,6 +616,7 @@ export default function App() {
           soldSasiOrders,
           caseOrders,
           soldCaseOrders,
+          quotes,
         },
         paradoseisSearchLogic
       );

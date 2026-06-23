@@ -151,6 +151,10 @@ function whereCase(o, isSold) {
   return { where: `Στοκ Κάσας › ${statusLabel(o.status)}`, tab: 'cases' };
 }
 
+function whereQuote(o) {
+  return { where: `Προσφορές${o.customer ? ` › ${o.customer}` : ''}`, tab: 'customQuotes' };
+}
+
 export function matchesOrderNameQuery(o, q) {
   const n = (q || '').trim().toLowerCase();
   if (!n) return true;
@@ -204,6 +208,7 @@ export function collectGlobalSearchHits(q1, otherQueries, pools, otherLogic = 'A
     soldSasiOrders = [],
     caseOrders = [],
     soldCaseOrders = [],
+    quotes = [],
   } = pools;
 
   const hits = [];
@@ -218,7 +223,8 @@ export function collectGlobalSearchHits(q1, otherQueries, pools, otherLogic = 'A
       let meta;
       if (type === 'std') meta = whereStd(o, isSold);
       else if (type === 'sasi') meta = whereSasi(o, isSold);
-      else meta = whereCase(o, isSold);
+      else if (type === 'case') meta = whereCase(o, isSold);
+      else meta = whereQuote(o);
 
       hits.push({
         id: String(o.id),
@@ -240,6 +246,7 @@ export function collectGlobalSearchHits(q1, otherQueries, pools, otherLogic = 'A
   pushHits(soldSasiOrders, true, 'sasi');
   pushHits(caseOrders, false, 'case');
   pushHits(soldCaseOrders, true, 'case');
+  pushHits(quotes, false, 'quote');
 
   return hits;
 }

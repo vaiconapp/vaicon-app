@@ -28,8 +28,9 @@ const INIT_FORM   = { customer:'', orderNo:'', h:'', w:'', hinges:'2', qty:'1', 
 const STD_TASK_LABELS_ICON  = { stavera:'📐 Σταθερό', lock:'🔒 Κλειδαριά', heightReduction:'📏 Μείωση', montage:'🪛 Μοντάρ.', sasi:'🔧 Σασί', kypri:'🪟 Κυπρί', case:'📦 Κάσα', oversize:'📦 223/83' };
 const STD_TASK_LABELS_PLAIN = { stavera:'Σταθερό', lock:'Κλειδαριά', heightReduction:'Μείωση', montage:'Μοντάρ.', sasi:'Σασί', kypri:'Κυπρί', case:'Κάσα', oversize:'223/83' };
 const stdCoatNames = (o) => (o.coatings||[]).filter(c=>c&&String(c).trim());
-// Παραγγελία «μόνο επενδύσεις»: STD_BUILD με buildTasks αποκλειστικά epend{i} — εμφανίζεται στις ΠΑΡΑΓΓΕΛΙΕΣ, όχι στα ΠΡΟΣ ΚΑΤΑΣΚΕΥΗ.
-const isCoatingsOnlyBuild = (o) => o.status==='STD_BUILD' && o.buildTasks && Object.keys(o.buildTasks).length>0 && Object.keys(o.buildTasks).every(k=>k.startsWith('epend'));
+const isOversizeOrder = (o) => (o.sasiType==='ΜΟΝΗ ΘΩΡΑΚΙΣΗ'||!o.sasiType) && (String(o.h)==='223' || String(o.w)==='83');
+// Παραγγελία «μόνο επενδύσεις ± μοντάρισμα»: STD_BUILD χωρίς κατασκευή σασί/223-83 — εμφανίζεται στις ΠΑΡΑΓΓΕΛΙΕΣ, όχι στα ΠΡΟΣ ΚΑΤΑΣΚΕΥΗ.
+const isCoatingsOnlyBuild = (o) => o.status==='STD_BUILD' && !isOversizeOrder(o) && o.buildTasks && Object.keys(o.buildTasks).length>0 && Object.keys(o.buildTasks).every(k=>k.startsWith('epend') || k==='montage');
 const stdTaskLabel = (key, o, icon=true) => {
   if (key.startsWith('epend')) { const n = stdCoatNames(o)[parseInt(key.slice(5))||0] || 'Επένδυση'; return icon ? `🎨 ${n}` : n; }
   return (icon ? STD_TASK_LABELS_ICON : STD_TASK_LABELS_PLAIN)[key] || key;
@@ -585,6 +586,7 @@ export default function CustomScreen({ customOrders, setCustomOrders, soldOrders
   useEffect(() => { if (forcedTab) setStdTab(forcedTab); }, [forcedTab]);
   const [customForm, setCustomForm] = useState(INIT_FORM);
   const [priceModal, setPriceModal] = useState({ visible:false, order:null });
+  const [quoteSearch, setQuoteSearch] = useState('');
   const [editingOrder, setEditingOrder] = useState(null); // η πόρτα που επεξεργαζόμαστε
   const [orderNoAuto, setOrderNoAuto] = useState(true); // true = το Ν/Π είναι αυτόματη πρόταση (όχι χειροκίνητο)
   const [crossOrderNos, setCrossOrderNos] = useState([]); // αριθμοί ειδικών παραγγελιών (κοινή αρίθμηση)
@@ -635,6 +637,7 @@ export default function CustomScreen({ customOrders, setCustomOrders, soldOrders
   const [lookupOrderModal, setLookupOrderModal] = useState({ visible:false, order:null });
   const [custPanPos, setCustPanPos] = useState({ x:0, y:0 });
   const [lookupSpecialOrders, setLookupSpecialOrders] = useState([]);
+  const [lookupSpecialQuotes, setLookupSpecialQuotes] = useState([]);
   const custIsDragging = useRef(false);
   const custDragStart = useRef({ mx:0, my:0, px:0, py:0 });
 
@@ -880,8 +883,12 @@ export default function CustomScreen({ customOrders, setCustomOrders, soldOrders
     if (!showCustomerLookup || lookupSpecialOrders.length) return;
     (async () => {
       try {
-        const data = await (await fetch(`${FIREBASE_URL}/special_orders.json`)).json();
-        if (data) setLookupSpecialOrders(Object.entries(data).map(([id,v])=>({ id: v?.id||id, ...v })));
+        const [od, qd] = await Promise.all([
+          fetch(`${FIREBASE_URL}/special_orders.json`).then(r=>r.json()),
+          fetch(`${FIREBASE_URL}/special_quotes.json`).then(r=>r.json()),
+        ]);
+        if (od) setLookupSpecialOrders(Object.entries(od).map(([id,v])=>({ id: v?.id||id, ...v })));
+        if (qd) setLookupSpecialQuotes(Object.entries(qd).map(([id,v])=>({ id: v?.id||id, ...v })));
       } catch {}
     })();
   }, [showCustomerLookup]);
@@ -937,8 +944,8 @@ export default function CustomScreen({ customOrders, setCustomOrders, soldOrders
       </body></html>`;
   };
   const printSingleOrderFull = async (o) => { if (o) await printHTML(buildSingleOrderHTML(o), `VAICON — Παραγγελία #${o.orderNo||''}`); };
-  const renderLookupOrderRow = (o, isSpecial) => {
-    const tab = getOrderTabInfo(o);
+  const renderLookupOrderRow = (o, isSpecial, isQuote=false) => {
+    const tab = isQuote ? { label:'💼 ΠΡΟΣΦΟΡΑ', color:'#8e24aa' } : getOrderTabInfo(o);
     const createdFmt = o.createdAt ? new Date(o.createdAt).toLocaleDateString('el-GR',{day:'2-digit',month:'2-digit',year:'2-digit'}) : '';
     return (
       <TouchableOpacity key={o.id} onPress={()=>setLookupOrderModal({ visible:true, order:{...o, _special:isSpecial} })}
@@ -1765,7 +1772,13 @@ export default function CustomScreen({ customOrders, setCustomOrders, soldOrders
     if (isSeller) return;
     const doors = q.groupId ? quotes.filter(x => x.groupId === q.groupId) : [q];
     const doDel = async () => {
-      for (const d of doors) await fetch(`${FIREBASE_URL}/std_quotes/${d.id}.json`, { method: 'DELETE' }).catch(() => {});
+      for (const d of doors) {
+        const r = await fetch(`${FIREBASE_URL}/std_quotes/${d.id}.json`, { method: 'DELETE' });
+        if (!r.ok) {
+          Alert.alert('Σφάλμα', 'Η διαγραφή ΔΕΝ έγινε στη βάση.\nΗ εγγραφή θα ξαναεμφανιστεί όταν κλείσεις το πρόγραμμα.\n(Πιθανό πρόβλημα δικαιωμάτων — std_quotes στο Firebase.)');
+          return;
+        }
+      }
       setQuotes(prev => prev.filter(x => q.groupId ? x.groupId !== q.groupId : x.id !== q.id));
     };
     if (Platform.OS === 'web') { if (window.confirm(doors.length > 1 ? `Διαγραφή προσφοράς (${doors.length} πόρτες);` : 'Διαγραφή προσφοράς;')) doDel(); }
@@ -3597,6 +3610,10 @@ export default function CustomScreen({ customOrders, setCustomOrders, soldOrders
           ? (lookupSpecialOrders||[]).filter(o=>notSold(o)&&nameMatch(o, selectedCust)).sort((a,b)=>(b.createdAt||0)-(a.createdAt||0))
           : [];
         const totalCustomerOrders = customerOrders.length + specialCustomerOrders.length;
+        const qSort = (a,b)=>(b.quotedAt||b.createdAt||0)-(a.quotedAt||a.createdAt||0);
+        const customerQuotes = selectedCust ? (quotes||[]).filter(o=>nameMatch(o, selectedCust)).sort(qSort) : [];
+        const specialCustomerQuotes = selectedCust ? (lookupSpecialQuotes||[]).filter(o=>nameMatch(o, selectedCust)).sort(qSort) : [];
+        const totalCustomerQuotes = customerQuotes.length + specialCustomerQuotes.length;
         return (
           <View style={{position:'absolute', top: 80 + custPanPos.y, left: `calc(50% - 220px + ${custPanPos.x}px)`, width:440, backgroundColor:'#fff', borderRadius:14, elevation:24, zIndex:1000, shadowColor:'#000', shadowOffset:{width:0,height:6}, shadowOpacity:0.35, shadowRadius:12, borderWidth:1, borderColor:'#ddd'}}>
             <View
@@ -3630,7 +3647,7 @@ export default function CustomScreen({ customOrders, setCustomOrders, soldOrders
                     <View style={{flex:1}}>
                       <Text style={{fontSize:15, fontWeight:'bold', color:'#0d47a1'}}>👤 {selectedCust.name}</Text>
                       {selectedCust.phone ? <Text style={{fontSize:12, color:'#555'}}>📞 {selectedCust.phone}</Text> : null}
-                      <Text style={{fontSize:11, color:'#777', marginTop:2}}>{totalCustomerOrders} παραγγελ{totalCustomerOrders===1?'ία':'ίες'} · 🛡️ {customerOrders.length} / ⭐ {specialCustomerOrders.length}</Text>
+                      <Text style={{fontSize:11, color:'#777', marginTop:2}}>{totalCustomerOrders} παραγγελ{totalCustomerOrders===1?'ία':'ίες'} · 🛡️ {customerOrders.length} / ⭐ {specialCustomerOrders.length}{totalCustomerQuotes>0?` · 💼 ${totalCustomerQuotes} προσφ.`:''}</Text>
                     </View>
                     <TouchableOpacity onPress={()=>setLookupCustInfo(true)} style={{backgroundColor:'#0d47a1', borderRadius:8, paddingHorizontal:10, paddingVertical:6}}>
                       <Text style={{color:'#fff', fontWeight:'bold', fontSize:12}}>ℹ ΣΤΟΙΧΕΙΑ</Text>
@@ -3672,7 +3689,7 @@ export default function CustomScreen({ customOrders, setCustomOrders, soldOrders
                       <Text style={{color:'#aaa', fontSize:12, textAlign:'center', padding:20}}>Δεν βρέθηκαν πελάτες.</Text>
                     )}
                     {filteredCustomers.map(c => {
-                      const orderCount = (customOrders||[]).filter(o=>notSold(o)&&nameMatch(o,c)).length + (lookupSpecialOrders||[]).filter(o=>notSold(o)&&nameMatch(o,c)).length;
+                      const orderCount = (customOrders||[]).filter(o=>notSold(o)&&nameMatch(o,c)).length + (lookupSpecialOrders||[]).filter(o=>notSold(o)&&nameMatch(o,c)).length + (quotes||[]).filter(o=>nameMatch(o,c)).length + (lookupSpecialQuotes||[]).filter(o=>nameMatch(o,c)).length;
                       return (
                         <TouchableOpacity key={c.id} onPress={()=>setLookupCustomerId(c.id)}
                           style={{padding:10, borderBottomWidth:1, borderBottomColor:'#eee', flexDirection:'row', alignItems:'center', justifyContent:'space-between'}}>
@@ -3691,8 +3708,8 @@ export default function CustomScreen({ customOrders, setCustomOrders, soldOrders
 
                 {selectedCust && (
                   <>
-                    {totalCustomerOrders===0 && (
-                      <Text style={{color:'#aaa', fontSize:12, textAlign:'center', padding:20}}>Ο πελάτης δεν έχει παραγγελίες.</Text>
+                    {totalCustomerOrders===0 && totalCustomerQuotes===0 && (
+                      <Text style={{color:'#aaa', fontSize:12, textAlign:'center', padding:20}}>Ο πελάτης δεν έχει παραγγελίες ή προσφορές.</Text>
                     )}
                     {customerOrders.length>0 && (
                       <>
@@ -3708,6 +3725,22 @@ export default function CustomScreen({ customOrders, setCustomOrders, soldOrders
                           <Text style={{color:'#fff', fontWeight:'bold', fontSize:12}}>⭐ ΕΙΔΙΚΕΣ ({specialCustomerOrders.length})</Text>
                         </View>
                         {specialCustomerOrders.map(o=>renderLookupOrderRow(o, true))}
+                      </>
+                    )}
+                    {customerQuotes.length>0 && (
+                      <>
+                        <View style={{backgroundColor:'#8e24aa', borderRadius:6, paddingHorizontal:8, paddingVertical:4, marginTop:10, marginBottom:2}}>
+                          <Text style={{color:'#fff', fontWeight:'bold', fontSize:12}}>💼 ΠΡΟΣΦΟΡΕΣ ΤΥΠΟΠΟΙΗΜΕΝΩΝ ({customerQuotes.length})</Text>
+                        </View>
+                        {customerQuotes.map(o=>renderLookupOrderRow(o, false, true))}
+                      </>
+                    )}
+                    {specialCustomerQuotes.length>0 && (
+                      <>
+                        <View style={{backgroundColor:'#6a1b9a', borderRadius:6, paddingHorizontal:8, paddingVertical:4, marginTop:10, marginBottom:2}}>
+                          <Text style={{color:'#fff', fontWeight:'bold', fontSize:12}}>💼 ΠΡΟΣΦΟΡΕΣ ΕΙΔΙΚΩΝ ({specialCustomerQuotes.length})</Text>
+                        </View>
+                        {specialCustomerQuotes.map(o=>renderLookupOrderRow(o, true, true))}
                       </>
                     )}
                   </>
@@ -4878,8 +4911,11 @@ export default function CustomScreen({ customOrders, setCustomOrders, soldOrders
           {/* ═══ ΠΡΟΣΦΟΡΕΣ ═══ */}
           {quotesOnly && (<>
             <Text style={styles.sectionTitle}>💼 ΠΡΟΣΦΟΡΕΣ{isSeller ? ' (οι δικές μου)' : ''}</Text>
+            <TextInput style={styles.quoteSearch} placeholder="🔍 Αναζήτηση πελάτη..." placeholderTextColor="#999" value={quoteSearch} onChangeText={setQuoteSearch} />
             {(() => {
-              const mine = effSellerKey ? quotes.filter(sellerOwnsOrder) : quotes;
+              const base = effSellerKey ? quotes.filter(sellerOwnsOrder) : quotes;
+              const q = stripAccentsTxt(quoteSearch.trim().toLowerCase());
+              const mine = q ? base.filter(x => stripAccentsTxt(String(x.customer||'').toLowerCase()).includes(q)) : base;
               if (mine.length === 0) return <Text style={{textAlign:'center', color:'#999', marginTop:30}}>Δεν υπάρχουν προσφορές.</Text>;
               const groupsMap = {}; const singles = [];
               mine.forEach(q => { if (q.groupId) (groupsMap[q.groupId] = groupsMap[q.groupId] || []).push(q); else singles.push(q); });
@@ -4913,7 +4949,7 @@ export default function CustomScreen({ customOrders, setCustomOrders, soldOrders
                 </View>
               );
               return entries.map(entry => entry.type==='single' ? (
-                <View key={entry.q.id} style={{backgroundColor:'#fff', borderRadius:10, padding:12, marginBottom:8, borderLeftWidth:5, borderLeftColor:'#8e24aa', elevation:2}}>
+                <View key={entry.q.id} style={[{backgroundColor:'#fff', borderRadius:10, padding:12, marginBottom:8, borderLeftWidth:5, borderLeftColor:'#8e24aa', elevation:2}, searchHL(entry.q.id)]}>
                   <View style={{flexDirection:'row', justifyContent:'space-between', alignItems:'flex-start', gap:8}}>
                     <Text style={{fontSize:16, fontWeight:'bold', color:'#1a1a1a', flex:1}}>{entry.q.customer || '—'}</Text>
                     {dayBadge(entry.q)}
@@ -4923,7 +4959,7 @@ export default function CustomScreen({ customOrders, setCustomOrders, soldOrders
                   {actions(entry)}
                 </View>
               ) : (
-                <View key={entry.gid} style={{backgroundColor:'#fff', borderRadius:10, padding:12, marginBottom:8, borderLeftWidth:5, borderLeftColor:'#6a1b9a', elevation:2}}>
+                <View key={entry.gid} style={[{backgroundColor:'#fff', borderRadius:10, padding:12, marginBottom:8, borderLeftWidth:5, borderLeftColor:'#6a1b9a', elevation:2}, searchHL(entry.doors[0]?.id)]}>
                   <View style={{flexDirection:'row', justifyContent:'space-between', alignItems:'flex-start', gap:8}}>
                     <Text style={{fontSize:16, fontWeight:'bold', color:'#1a1a1a', flex:1}}>{entry.q.customer || '—'}</Text>
                     {dayBadge(entry.q)}
@@ -6299,6 +6335,7 @@ const vstyles = StyleSheet.create({
 
 const styles = StyleSheet.create({
   sectionTitle: { fontWeight:'bold', marginBottom:10, fontSize:15 },
+  quoteSearch: { alignSelf:'flex-start', width:'33%', minWidth:200, backgroundColor:'#fff', borderWidth:1, borderColor:'#ccc', borderRadius:8, paddingHorizontal:12, paddingVertical:7, fontSize:14, marginBottom:10 },
   smallLabel: { fontSize:12, marginBottom:4, fontWeight:'bold', color:'#555' },
   row: { flexDirection:'row', justifyContent:'space-between', marginBottom:8 },
   input: { backgroundColor:'#fff', padding:12, borderRadius:5, marginBottom:8, borderWidth:1, borderColor:'#ddd' },

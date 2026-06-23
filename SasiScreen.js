@@ -103,10 +103,10 @@ export default function SasiScreen({ sasiStock={}, setSasiStock, opsBasket=[], s
     setQtyModal({ visible:true, key, mode:'pendingIn', label:`📦 Παραλαβή από PENDING\n\n${label}\n(έως ${pendingQty} τεμ.)`, dim: label });
   };
 
-  const handleSubtract = (key, label, available, pending) => {
+  const handleSubtract = (key, label, stockMax, pending) => {
     if (locked) return;
-    if (available <= 0 && pending <= 0) return Alert.alert('Προσοχή','Δεν υπάρχει διαθέσιμη ποσότητα για αφαίρεση.');
-    setChoiceModal({ visible:true, key, label, action:'sub', pending, available });
+    if (stockMax <= 0 && pending <= 0) return Alert.alert('Προσοχή','Δεν υπάρχει ποσότητα για αφαίρεση.');
+    setChoiceModal({ visible:true, key, label, action:'sub', pending, available: stockMax });
   };
 
   // ── Αυτόματη αναπλήρωση δανεισμένων δεσμεύσεων με προτεραιότητα ──
@@ -137,12 +137,11 @@ export default function SasiScreen({ sasiStock={}, setSasiStock, opsBasket=[], s
     const { key, mode, dim } = qtyModal;
     setQtyModal(m => ({...m, visible:false}));
     const e = stockMap[key] || { qty:0, pending:0, reservations:[] };
-    const reserved = (e.reservations||[]).reduce((s,r)=>s+(parseInt(r.qty)||1),0);
-    const available = (e.qty||0) - reserved;
+    const total = e.qty || 0;
     const maxPending = e.pending || 0;
     if (mode === 'subPending' && n > maxPending) return Alert.alert('Προσοχή',`Μπορείτε να αφαιρέσετε έως ${maxPending} τεμάχια από ΠΑΡΑΓΩΓΗ.`);
     if (mode === 'pendingIn' && n > maxPending) return Alert.alert('Προσοχή',`Μπορείτε να παραλάβετε έως ${maxPending} τεμάχια.`);
-    if (mode === 'sub' && n > available) return Alert.alert('Προσοχή',`Μπορείτε να αφαιρέσετε έως ${available} τεμάχια.`);
+    if (mode === 'sub' && n > total) return Alert.alert('Προσοχή',`Μπορείτε να αφαιρέσετε έως ${total} τεμάχια.`);
     setOpsBasket(prev => [...prev, { id: Date.now()+'_'+Math.random(), key, mode, n, dim: dim || key.replace(/_/g,'x') }]);
   };
 
@@ -188,9 +187,9 @@ export default function SasiScreen({ sasiStock={}, setSasiStock, opsBasket=[], s
             <View key={key} style={[styles.tableRow, available<0&&{backgroundColor:'#fff5f5'}, rowHL && { backgroundColor: '#fff8e1', borderWidth: 2, borderColor: '#FFC107' }, pendingKeys.has(key) && { backgroundColor:'#e3f2fd', borderWidth:2, borderColor:'#1976d2' }]}>
               {/* ΕΝΕΡΓΕΙΕΣ — μόνο το - */}
               <View style={[styles.tdWrap, {width:34, justifyContent:'center', alignItems:'center'}]}>
-                {!locked&&<TouchableOpacity style={[styles.subBtn, (available<=0&&pending<=0)&&{opacity:0.35}]}
-                  disabled={available<=0&&pending<=0}
-                  onPress={()=>handleSubtract(key, label, available, pending)}>
+                {!locked&&<TouchableOpacity style={[styles.subBtn, ((entry.qty||0)<=0&&pending<=0)&&{opacity:0.35}]}
+                  disabled={(entry.qty||0)<=0&&pending<=0}
+                  onPress={()=>handleSubtract(key, label, entry.qty||0, pending)}>
                   <Text style={styles.btnTxt}>-</Text>
                 </TouchableOpacity>}
               </View>
