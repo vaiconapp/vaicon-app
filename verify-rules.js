@@ -116,11 +116,12 @@ function firstBadFbKey(val) {
   }
   return null;
 }
-// ΑΝΤΙΓΡΑΦΟ από CustomScreen.js — καθαρισμός στοιχείων επένδυσης (μόνο επιλεγμένες επενδύσεις)
+// ΑΝΤΙΓΡΑΦΟ από CustomScreen.js — καθαρισμός στοιχείων επένδυσης (μόνο επιλεγμένες) + ονομάτων-κλειδιών
+function sanitizeFbName(s) { return String(s == null ? '' : s).replace(/[.#$/\[\]]/g, ' ').replace(/\s+/g, ' ').trim(); }
 function pruneCoatingDetails(coatings, cd) {
-  const keep = new Set((coatings || []).filter(n => n && String(n).trim()));
+  const keep = new Set((coatings || []).map(sanitizeFbName).filter(Boolean));
   const out = {};
-  Object.keys(cd || {}).forEach(k => { if (keep.has(k)) out[k] = cd[k]; });
+  Object.keys(cd || {}).forEach(k => { const ck = sanitizeFbName(k); if (keep.has(ck)) out[ck] = cd[k]; });
   return out;
 }
 const FBASE = 'https://x-default-rtdb.europe-west1.firebasedatabase.app';
@@ -465,6 +466,17 @@ group('pruneCoatingDetails — κρατά μόνο επιλεγμένες επε
   test('χωρίς επενδύσεις → άδειο', pruneCoatingDetails([], { 'PVC. ΕΞΩ': {} }), {});
   test('καθαρό αποτέλεσμα δεν έχει bad key', firstBadFbKey(pruneCoatingDetails(['LAMINATE ΕΞΩ'], { 'PVC.  ΕΞΩ': {}, 'LAMINATE ΕΞΩ': {} })), null);
   test('κενά/whitespace ονόματα αγνοούνται', pruneCoatingDetails(['  ', 'LAMINATE'], { 'LAMINATE': { dim: '1' } }), { 'LAMINATE': { dim: '1' } });
+});
+
+group('sanitizeFbName — καθαρισμός χαρακτήρων που δεν δέχεται η Firebase', () => {
+  test('τελεία → κενό', sanitizeFbName('PVC. ΕΞΩ'), 'PVC ΕΞΩ');
+  test('κάθετος (χρώμα) → κενό', sanitizeFbName('RAL 7016/9010 ΕΞΩ'), 'RAL 7016 9010 ΕΞΩ');
+  test('# $ [ ] → κενό & σύμπτυξη κενών', sanitizeFbName('a#b$c[d]'), 'a b c d');
+  test('καθαρό όνομα μένει ίδιο', sanitizeFbName('LAMINATE ΕΞΩ'), 'LAMINATE ΕΞΩ');
+  test('coatings με κάθετο → κλειδί χωρίς bad key',
+    firstBadFbKey(pruneCoatingDetails(['PVC 7016/9010'], { 'PVC 7016/9010': { dim: '1' } })), null);
+  test('coatings με κάθετο → κλειδί συγχρονισμένο',
+    pruneCoatingDetails(['PVC 7016/9010'], { 'PVC 7016/9010': { dim: '1' } }), { 'PVC 7016 9010': { dim: '1' } });
 });
 
 group('findDuplicateCustomers — έλεγχος διπλότυπου πελάτη', () => {

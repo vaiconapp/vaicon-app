@@ -157,12 +157,20 @@ const computeCoatingDim = (h, w, type, pihaki) => {
   return `${fmtNum(dh)} × ${fmtNum(dw)}`;
 };
 
-// Κρατά στοιχεία μόνο για τις επιλεγμένες επενδύσεις (αφαιρεί παλιά «σκουπίδια» από προηγούμενες επιλογές).
+// Αφαιρεί χαρακτήρες που δεν δέχεται η Firebase σε ΟΝΟΜΑΤΑ πεδίων ( . / # $ [ ] ).
+const sanitizeFbName = (s) => String(s ?? '').replace(/[.#$/\[\]]/g, ' ').replace(/\s+/g, ' ').trim();
+// Κρατά στοιχεία μόνο για τις επιλεγμένες επενδύσεις & καθαρίζει τα ονόματα-κλειδιά.
 const pruneCoatingDetails = (coatings, cd) => {
-  const keep = new Set((coatings || []).filter(n => n && String(n).trim()));
+  const keep = new Set((coatings || []).map(sanitizeFbName).filter(Boolean));
   const out = {};
-  Object.keys(cd || {}).forEach(k => { if (keep.has(k)) out[k] = cd[k]; });
+  Object.keys(cd || {}).forEach(k => { const ck = sanitizeFbName(k); if (keep.has(ck)) out[ck] = cd[k]; });
   return out;
+};
+// Καθαρίζει coatings[] + coatingDetails μαζί ώστε ονόματα & κλειδιά να ταιριάζουν πριν τη γραφή.
+const sanitizeCoatingFields = (o) => {
+  o.coatings = (o.coatings || []).map(sanitizeFbName).filter(Boolean);
+  o.coatingDetails = pruneCoatingDetails(o.coatings, o.coatingDetails);
+  return o;
 };
 
 const recomputeCoatingDetails = (form) => {
@@ -717,13 +725,16 @@ export default function CustomScreen({ customOrders, setCustomOrders, soldOrders
   };
 
   const syncToCloud = async (o) => {
-    try {
-      const res = await fetch(`${FIREBASE_URL}/std_orders/${o.id}.json`,{method:'PUT',body:JSON.stringify(o)});
-      if (!res.ok) throw new Error(`HTTP ${res.status}`);
-    } catch (e) {
-      if (Platform.OS === 'web') window.alert(`Σφάλμα\n\nΗ παραγγελία ΔΕΝ αποθηκεύτηκε στο Cloud. (${e.message||e})`);
-      else Alert.alert("Σφάλμα","Δεν αποθηκεύτηκε.");
+    let lastErr;
+    for (let attempt = 0; attempt < 3; attempt++) {
+      try {
+        const res = await fetch(`${FIREBASE_URL}/std_orders/${o.id}.json`,{method:'PUT',body:JSON.stringify(o)});
+        if (!res.ok) throw new Error(`HTTP ${res.status}`);
+        return;
+      } catch (e) { lastErr = e; if (attempt < 2) await new Promise(r=>setTimeout(r,600)); }
     }
+    if (Platform.OS === 'web') window.alert(`Σφάλμα\n\nΗ παραγγελία ΔΕΝ αποθηκεύτηκε στο Cloud. (${lastErr?.message||lastErr})`);
+    else Alert.alert("Σφάλμα","Δεν αποθηκεύτηκε.");
   };
   const deleteFromCloud = async (id) => { try { await fetch(`${FIREBASE_URL}/std_orders/${id}.json`,{method:'DELETE'}); await fetch(`${FIREBASE_URL}/order_files/${id}.json`,{method:'DELETE'}); } catch(e){} };
 
@@ -1367,7 +1378,7 @@ export default function CustomScreen({ customOrders, setCustomOrders, soldOrders
       };
       delete submission._submissionId; delete submission._sid; delete submission.isQuote; delete submission.quotedAt;
       delete submission.rejectNote; delete submission.rejectedBy; delete submission.rejectedAt;
-      submission.coatingDetails = pruneCoatingDetails(submission.coatings, submission.coatingDetails);
+      sanitizeCoatingFields(submission);
       if (dc) submission.docCount = dc; else delete submission.docCount;
       if (editingOrder?._submissionId) {
         const cur = await fetch(`${FIREBASE_URL}/seller_submissions/${submissionId}.json`).then(r=>r.json()).catch(()=>undefined);
@@ -1507,7 +1518,7 @@ export default function CustomScreen({ customOrders, setCustomOrders, soldOrders
     };
     newOrder.priceTotal = priceFinalTotal(newOrder.priceList, newOrder.priceDiscount);
     newOrder.priceLog = appendPriceLog(newOrder.priceLog, newOrder.priceTotal, (newOrder.priceList||[]).length>0);
-    newOrder.coatingDetails = pruneCoatingDetails(newOrder.coatings, newOrder.coatingDetails);
+    sanitizeCoatingFields(newOrder);
     delete newOrder.isQuote; delete newOrder.quotedAt;
     setCustomOrders(prev => [newOrder, ...prev.filter(o => o.id !== newOrder.id)]);
     await syncToCloud(newOrder);
@@ -1627,7 +1638,7 @@ export default function CustomScreen({ customOrders, setCustomOrders, soldOrders
       };
       delete submission._submissionId; delete submission._sid;
       delete submission.rejectNote; delete submission.rejectedBy; delete submission.rejectedAt;
-      submission.coatingDetails = pruneCoatingDetails(submission.coatings, submission.coatingDetails);
+      sanitizeCoatingFields(submission);
       if (dc) submission.docCount = dc; else delete submission.docCount;
       if (editingOrder?._submissionId) {
         const cur = await fetch(`${FIREBASE_URL}/seller_submissions/${submissionId}.json`).then(r=>r.json()).catch(()=>undefined);
@@ -1671,7 +1682,7 @@ export default function CustomScreen({ customOrders, setCustomOrders, soldOrders
     };
     quote.priceTotal = priceFinalTotal(quote.priceList, quote.priceDiscount);
     quote.priceLog = appendPriceLog(quote.priceLog, quote.priceTotal, (quote.priceList || []).length > 0);
-    quote.coatingDetails = pruneCoatingDetails(quote.coatings, quote.coatingDetails);
+    sanitizeCoatingFields(quote);
     try {
       const r = await fetch(`${FIREBASE_URL}/std_quotes/${quote.id}.json`, { method: 'PUT', body: JSON.stringify(quote) });
       if (!r.ok) throw new Error();
@@ -1892,23 +1903,43 @@ export default function CustomScreen({ customOrders, setCustomOrders, soldOrders
     }
   };
 
-  const handleSellConfirm = async (sellQty) => {
-    if (isGuest) return;
-    const now=Date.now(); const {orderId,totalQty}=sellModal;
-    setSellModal({visible:false,orderId:null,totalQty:1});
-    const order=customOrders.find(o=>o.id===orderId); if(!order) return;
-    if (sellQty===totalQty) {
-      const upd={...order,status:'SOLD',soldAt:now};
-      setSoldOrders([upd,...soldOrders]); setCustomOrders(customOrders.filter(o=>o.id!==orderId)); await syncToCloud(upd);
-      await logActivity('ΤΥΠΟΠΟΙΗΜΕΝΗ', 'Πώληση', { orderNo: order.orderNo, customer: order.customer, size: `${order.h}x${order.w}`, qty: String(sellQty) });
+  const applyStdSale = async (order, sellQty) => {
+    if (isGuest || !order) return;
+    const now=Date.now();
+    const totalQty=parseInt(order.qty)||1;
+    const qty=Math.max(1,Math.min(parseInt(sellQty)||0,totalQty));
+    const partial=qty<totalQty;
+    const isMoni=(order.sasiType==='ΜΟΝΗ ΘΩΡΑΚΙΣΗ'||!order.sasiType)&&!order.lock;
+    const adjustStock=async(stockMap,setStock,key,path)=>{
+      const entry=stockMap?.[key]; if(!entry) return;
+      const newQty=Math.max(0,(parseInt(entry.qty)||0)-qty);
+      const reservations=partial
+        ? (entry.reservations||[]).map(r=>r.orderNo===order.orderNo?{...r,qty:totalQty-qty}:r)
+        : (entry.reservations||[]).filter(r=>r.orderNo!==order.orderNo);
+      const upd={...entry,qty:newQty,reservations};
+      setStock(prev=>({...prev,[key]:upd}));
+      await fetch(`${FIREBASE_URL}/${path}/${key}.json`,{method:'PUT',body:JSON.stringify(upd)});
+    };
+    const soldEntry={...order,id:partial?Date.now().toString():order.id,qty:String(qty),status:'STD_SOLD',soldAt:now,...(partial?{partialNote:`${qty} από ${totalQty}`}:{})};
+    if (partial) {
+      const remaining={...order,qty:String(totalQty-qty),remainingNote:`Υπόλοιπο: ${totalQty-qty} από ${totalQty}`};
+      setSoldOrders(prev=>[soldEntry,...prev]);
+      setCustomOrders(prev=>prev.map(o=>o.id===order.id?remaining:o));
+      await syncToCloud(remaining);
     } else {
-      const soldEntry={...order,id:Date.now().toString(),qty:String(sellQty),status:'SOLD',soldAt:now,partialNote:`${sellQty} από ${totalQty}`};
-      const remaining={...order,qty:String(totalQty-sellQty),remainingNote:`Υπόλοιπο: ${totalQty-sellQty} από ${totalQty}`};
-      setSoldOrders([soldEntry,...soldOrders]);
-      setCustomOrders(customOrders.map(o=>o.id===orderId?remaining:o));
-      await syncToCloud(soldEntry); await syncToCloud(remaining);
-      await logActivity('ΤΥΠΟΠΟΙΗΜΕΝΗ', 'Πώληση (μερική)', { orderNo: order.orderNo, customer: order.customer, size: `${order.h}x${order.w}`, qty: `${sellQty}/${totalQty}` });
+      setCustomOrders(prev=>prev.filter(o=>o.id!==order.id));
+      setSoldOrders(prev=>[soldEntry,...prev]);
     }
+    await syncToCloud(soldEntry);
+    if (isMoni) await adjustStock(sasiStock,setSasiStock,sasiKey(String(order.h),String(order.w),order.side),'sasi_stock');
+    await adjustStock(caseStock,setCaseStock,caseKey(String(order.h),String(order.w),order.side,order.caseType),'case_stock');
+    await logActivity('ΤΥΠΟΠΟΙΗΜΕΝΗ', partial?'Πώληση (μερική)':'Πώληση', { orderNo: order.orderNo, customer: order.customer, size: `${order.h}x${order.w}`, qty: partial?`${qty}/${totalQty}`:String(qty) });
+  };
+
+  const handleSellConfirm = async (sellQty) => {
+    const {orderId}=sellModal;
+    setSellModal({visible:false,orderId:null,totalQty:1});
+    await applyStdSale(customOrders.find(o=>o.id===orderId), sellQty);
   };
 
   const moveBack = async (id, cur) => {
@@ -5160,6 +5191,7 @@ export default function CustomScreen({ customOrders, setCustomOrders, soldOrders
                         <Text style={{fontWeight:'900', fontSize:16, color:'#1a1a1a'}}>#{o.orderNo}</Text>
                         {o.customer?<Text style={{fontSize:14, fontWeight:'bold', color:'#333'}}>{o.customer}</Text>:null}
                         {o.qty&&parseInt(o.qty)>1?<Text style={{fontSize:16,fontWeight:'900',color:'#cc0000'}}>{o.qty}τεμ</Text>:null}
+                        {o.remainingNote?<Text style={{fontSize:12,fontWeight:'bold',color:'#e65100'}}>({o.remainingNote})</Text>:null}
                       </View>
                       {/* ΓΡΑΜΜΗ 2: διάσταση — φορά — τύπος σασί — χρώμα εξαρτημάτων */}
                       <View style={{flexDirection:'row', alignItems:'center', gap:8, marginTop:3, flexWrap:'wrap'}}>
@@ -5233,38 +5265,12 @@ export default function CustomScreen({ customOrders, setCustomOrders, soldOrders
                       <TouchableOpacity
                         style={{backgroundColor:'#555', paddingHorizontal:8, paddingVertical:5, borderRadius:5, alignItems:'center'}}
                         onPress={async()=>{
-                          const doSell = async()=>{
-                            const now = Date.now();
-                            const soldOrder = {...o, status:'STD_SOLD', soldAt:now};
-                            setCustomOrders(customOrders.filter(x=>x.id!==o.id));
-                            setSoldOrders(prev=>[soldOrder,...prev]);
-                            await syncToCloud(soldOrder);
-                            // Αφαίρεση δέσμευσης + qty από νέο stock
-                            const isMoni = (o.sasiType==='ΜΟΝΗ ΘΩΡΑΚΙΣΗ'||!o.sasiType) && !o.lock;
-                            const orderQty = parseInt(o.qty)||1;
-                            const sk = sasiKey(String(o.h), String(o.w), o.side);
-                            const ck = caseKey(String(o.h), String(o.w), o.side, o.caseType);
-                            if (isMoni && setSasiStock && sasiStock[sk]) {
-                              const entry = sasiStock[sk];
-                              const newRes = (entry.reservations||[]).filter(r=>r.orderNo!==o.orderNo);
-                              const newQty = Math.max(0, (parseInt(entry.qty)||0) - orderQty);
-                              const upd = {...entry, qty: newQty, reservations: newRes};
-                              setSasiStock(prev=>({...prev, [sk]: upd}));
-                              await fetch(`${FIREBASE_URL}/sasi_stock/${sk}.json`,{method:'PUT',body:JSON.stringify(upd)});
-                            }
-                            if (setCaseStock && caseStock[ck]) {
-                              const entry = caseStock[ck];
-                              const newRes = (entry.reservations||[]).filter(r=>r.orderNo!==o.orderNo);
-                              const newQty = Math.max(0, (parseInt(entry.qty)||0) - orderQty);
-                              const upd = {...entry, qty: newQty, reservations: newRes};
-                              setCaseStock(prev=>({...prev, [ck]: upd}));
-                              await fetch(`${FIREBASE_URL}/case_stock/${ck}.json`,{method:'PUT',body:JSON.stringify(upd)});
-                            }
-                          };
+                          const totalQty = parseInt(o.qty)||1;
+                          if (totalQty>1) { setSellModal({visible:true, orderId:o.id, totalQty}); return; }
                           if(Platform.OS==='web'){
-                            if(window.confirm(`ΠΩΛΗΣΗ\nΠαραγγελία #${o.orderNo}${o.customer?' - '+o.customer:''}\nΕπιβεβαίωση;`)) await doSell();
+                            if(window.confirm(`ΠΩΛΗΣΗ\nΠαραγγελία #${o.orderNo}${o.customer?' - '+o.customer:''}\nΕπιβεβαίωση;`)) await applyStdSale(o, totalQty);
                           } else {
-                            Alert.alert('📦 Πώληση',`Παραγγελία #${o.orderNo} πωλήθηκε;`,[{text:'ΑΚΥΡΟ',style:'cancel'},{text:'ΝΑΙ',onPress:doSell}]);
+                            Alert.alert('📦 Πώληση',`Παραγγελία #${o.orderNo} πωλήθηκε;`,[{text:'ΑΚΥΡΟ',style:'cancel'},{text:'ΝΑΙ',onPress:()=>applyStdSale(o, totalQty)}]);
                           }
                         }}>
                         <Text style={{color:'white', fontSize:10, fontWeight:'bold'}}>💰 ΠΩΛΗΣΗ</Text>
