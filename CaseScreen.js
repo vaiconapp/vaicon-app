@@ -266,18 +266,16 @@ export default function CaseScreen({ caseStock={}, setCaseStock, opsBasket=[], s
     const today = new Date();
     const dateStr = `${String(today.getDate()).padStart(2,'0')}/${String(today.getMonth()+1).padStart(2,'0')}/${today.getFullYear()} ${String(today.getHours()).padStart(2,'0')}:${String(today.getMinutes()).padStart(2,'0')}`;
     const label = caseType==='ΚΑΣΑ ΚΛΕΙΣΤΗ'?'ΚΛΕΙΣΤΗ':'ΑΝΟΙΧΤΗ';
-    const buildRows = (side) => HEIGHTS.flatMap(h => WIDTHS.map(w => {
-      const key = stockKey(h, w, side, caseType);
-      const entry = stockMap[key] || { qty:0, reservations:[], pending:0 };
-      const pending = entry.pending || 0;
-      return `<tr>
-        <td class="pend" style="color:${pending>0?'#e65100':'#aaa'}">${pending>0?pending:'—'}</td>
-        <td class="dim">${h}x${w}</td>
-        <td></td>
-      </tr>`;
-    })).join('');
-    const colHeader = `<tr style="background:#1a1a1a"><th style="color:white;padding:4px 6px;width:55px;text-align:center">PEND.</th><th style="color:white;padding:4px 6px;width:90px">ΔΙΑΣΤΑΣΗ</th><th style="color:white;padding:4px 6px">ΠΑΡΑΤΗΡΗΣΕΙΣ</th></tr>`;
-    const html = `<!DOCTYPE html><html><head><meta charset="utf-8"><style>body{font-family:Arial,sans-serif;margin:4mm;color:#000;}h1{font-size:14px;margin:0 0 1px 0;font-weight:bold;}h2{font-size:10px;color:#555;margin:0 0 4px 0;}.wrapper{display:flex;gap:6mm;}.half{flex:1;}.half h3{font-size:22px;font-weight:900;color:#000;padding:4px 8px;margin:0;letter-spacing:1px;border-bottom:3px solid #000;-webkit-text-stroke:0.5px #000}table{width:100%;border-collapse:collapse;font-size:11px;table-layout:fixed;}th{padding:3px 5px;text-align:left;border-bottom:2px solid #000;}td{padding:4px 5px;border-bottom:1px solid #ccc;}td.pend{width:55px;text-align:center;font-weight:900;font-size:18px}td.dim{width:90px;font-weight:900;font-size:18px;letter-spacing:0.5px}@media print{@page{size:A4 landscape;margin:4mm;}html,body{height:auto;}table{page-break-inside:avoid;}}</style></head><body><h1>ΠΑΡΑΓΩΓΗ ΚΑΣΑ ${label}</h1><h2>📅 ${dateStr}</h2><div class="wrapper"><div class="half"><h3>◄ ΑΡΙΣΤΕΡΗ</h3><table><thead>${colHeader}</thead><tbody>${buildRows('ΑΡΙΣΤΕΡΗ')}</tbody></table></div><div class="half"><h3>ΔΕΞΙΑ ►</h3><table><thead>${colHeader}</thead><tbody>${buildRows('ΔΕΞΙΑ')}</tbody></table></div></div></body></html>`;
+    const buildSide = (side) => {
+      const abbr = side === 'ΑΡΙΣΤΕΡΗ' ? 'ΑΡ' : 'ΔΕ';
+      const rows = HEIGHTS.flatMap(h => WIDTHS.map(w => {
+        const pending = (stockMap[stockKey(h, w, side, caseType)] || {}).pending || 0;
+        return pending > 0 ? `<div class="prow"><span class="qty">${pending}</span><span class="dim">- ${h}x${w} ${abbr}</span></div>` : '';
+      })).join('');
+      return rows;
+    };
+    const sideBlock = (title, side) => { const rows = buildSide(side); return rows ? `<div class="side"><h3>${title}</h3>${rows}</div>` : ''; };
+    const html = `<!DOCTYPE html><html><head><meta charset="utf-8"><style>@page{size:A4 portrait;margin:8mm;}body{font-family:Arial,sans-serif;margin:0;color:#000;}h1{font-size:18px;margin:0 0 2px;font-weight:bold;}h2{font-size:11px;color:#555;margin:0 0 10px;}.side{margin-bottom:14mm;page-break-inside:avoid;}.side h3{font-size:24px;font-weight:900;border-bottom:3px solid #000;padding:4px 2px;margin:0 0 2px;letter-spacing:1px;-webkit-text-stroke:0.5px #000}.prow{display:flex;justify-content:flex-start;align-items:center;gap:8px;border-bottom:1px solid #999;min-height:62px;padding:4px 8px;}.prow .qty{font-size:26px;font-weight:900;color:#cc0000;min-width:40px;text-align:right}.prow .dim{font-size:26px;font-weight:900;letter-spacing:0.5px}</style></head><body><h1>ΠΑΡΑΓΩΓΗ ΚΑΣΑ ${label}</h1><h2>📅 ${dateStr}</h2>${sideBlock('◄ ΑΡΙΣΤΕΡΗ','ΑΡΙΣΤΕΡΗ')}${sideBlock('ΔΕΞΙΑ ►','ΔΕΞΙΑ')}</body></html>`;
     if (Platform.OS === 'web') {
       const iframe = document.createElement('iframe');
       iframe.style.position = 'absolute';
@@ -333,6 +331,13 @@ export default function CaseScreen({ caseStock={}, setCaseStock, opsBasket=[], s
     }
   };
 
+  const sumNeg = (side) => HEIGHTS.reduce((t,h)=>t+WIDTHS.reduce((s,w)=>{
+    const e=stockMap[stockKey(h,w,side,activeCaseType)]||{qty:0,reservations:[]};
+    const av=(e.qty||0)-(e.reservations||[]).reduce((a,r)=>a+(parseInt(r.qty)||1),0);
+    return s+(av<0?av:0);
+  },0),0);
+  const negLeft=sumNeg('ΑΡΙΣΤΕΡΗ'), negRight=sumNeg('ΔΕΞΙΑ');
+
   return (
     <View style={{flex:1, backgroundColor:'#f5f5f5', flexDirection:'column'}}>
       {/* Tab ΚΛΕΙΣΤΗ / ΑΝΟΙΧΤΗ */}
@@ -386,6 +391,19 @@ export default function CaseScreen({ caseStock={}, setCaseStock, opsBasket=[], s
             <Text style={{color:'#1a1a1a', fontWeight:'bold', fontSize:18, textAlign:'center'}}>🖨️</Text>
             <Text style={{color:'#1a1a1a', fontWeight:'bold', fontSize:14, marginTop:4, textAlign:'center'}}>ΑΠΟΘΗΚΗ</Text>
           </TouchableOpacity>
+          <View style={styles.negBox}>
+            <Text style={styles.negTitle}>ΕΛΛΕΙΨΕΙΣ</Text>
+            <View style={{flexDirection:'row', justifyContent:'space-around'}}>
+              <View style={{alignItems:'center', flex:1}}>
+                <Text style={styles.negLabel}>ΑΡΙΣΤΕΡΕΣ</Text>
+                <Text style={[styles.negNum, {color: negLeft<0?'#ff1744':'#2e7d32'}]}>{negLeft}</Text>
+              </View>
+              <View style={{alignItems:'center', flex:1}}>
+                <Text style={styles.negLabel}>ΔΕΞΙΕΣ</Text>
+                <Text style={[styles.negNum, {color: negRight<0?'#ff1744':'#2e7d32'}]}>{negRight}</Text>
+              </View>
+            </View>
+          </View>
         </View>
       </View>
 
@@ -542,4 +560,8 @@ const styles = StyleSheet.create({
   modalTitle: { fontSize:15, fontWeight:'bold', color:'#1a1a1a', marginBottom:16, textAlign:'center' },
   modalInput: { borderWidth:2, borderColor:'#E65100', borderRadius:8, padding:12, fontSize:28, fontWeight:'bold', textAlign:'center', color:'#E65100', width:'60%', marginBottom:20 },
   modalBtn: { flex:1, padding:14, borderRadius:8, alignItems:'center' },
+  negBox: { width:'100%', backgroundColor:'#fff', borderRadius:8, padding:10, marginTop:'auto', borderWidth:3, borderColor:'#ff1744' },
+  negTitle: { color:'#888', fontSize:11, fontWeight:'bold', textAlign:'center', marginBottom:6, letterSpacing:1 },
+  negLabel: { color:'#888', fontSize:11, fontWeight:'bold' },
+  negNum: { fontSize:34, fontWeight:'900' },
 });

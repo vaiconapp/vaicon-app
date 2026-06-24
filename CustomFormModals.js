@@ -87,7 +87,7 @@ export function DuplicateModal({ visible, base, suggested, onUse, onKeep, onCanc
 
 const styles = StyleSheet.create({
   modalOverlay: { flex:1, backgroundColor:'rgba(0,0,0,0.6)', justifyContent:'center', alignItems:'center' },
-  modalBox: { backgroundColor:'#fff', borderRadius:16, padding:24, width:'80%', alignItems:'center' },
+  modalBox: { backgroundColor:'#fff', borderRadius:16, padding:24, width:'90%', maxWidth:320, alignItems:'center' },
   modalTitle: { fontSize:18, fontWeight:'bold', color:'#8B0000', marginBottom:6 },
   modalSub: { fontSize:14, color:'#444', marginBottom:4, textAlign:'center' },
   modalTotal: { fontSize:13, color:'#888', marginBottom:16 },
