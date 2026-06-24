@@ -2558,7 +2558,7 @@ export default function CustomScreen({ customOrders, setCustomOrders, soldOrders
 
   // Πίνακας εκτύπωσης μόνο των παραγγελιών για τοποθέτηση (ενότητα ΠΑΡΑΓΓΕΛΙΕΣ)
   const renderPlacePrintPanel = () => {
-    const placeOrders = moniOrders.filter(o => o.placement==='ΝΑΙ');
+    const placeOrders = moniOrders.filter(o => o.installation==='ΝΑΙ');
     const selected = placeOrders.filter(o => placeSelected[o.id]);
     const allSelected = placeOrders.length>0 && placeOrders.every(o => placeSelected[o.id]);
     const applySel = (matchFn) => setPlaceSelected(prev => { const n={...prev}; placeOrders.forEach(o=>{ n[o.id]=matchFn(o); }); return n; });
@@ -2571,14 +2571,14 @@ export default function CustomScreen({ customOrders, setCustomOrders, soldOrders
     return (
       <View style={{position:'absolute', top:60, right:14, width:340, backgroundColor:'#f3f4ff', borderWidth:1, borderColor:'#5c6bc0', borderRadius:8, zIndex:2000, elevation:24, shadowColor:'#000', shadowOffset:{width:0,height:6}, shadowOpacity:0.3, shadowRadius:12}}>
         <View style={{flexDirection:'row', justifyContent:'space-between', alignItems:'center', paddingHorizontal:10, paddingVertical:8, backgroundColor:'#5c6bc0', borderTopLeftRadius:8, borderTopRightRadius:8}}>
-          <Text style={{color:'#fff', fontWeight:'bold', fontSize:13}}>📍 🖨️ ΕΚΤΥΠΩΣΗ ΤΟΠΟΘΕΤΗΣΕΩΝ</Text>
+          <Text style={{color:'#fff', fontWeight:'bold', fontSize:13}}>🪛 🖨️ ΕΚΤΥΠΩΣΗ ΜΟΝΤΑΡΙΣΜΑΤΟΣ</Text>
           <TouchableOpacity onPress={()=>setPlacePrintOpen(false)}>
             <Text style={{color:'#fff', fontSize:18, fontWeight:'bold', paddingHorizontal:4}}>✕</Text>
           </TouchableOpacity>
         </View>
         <View style={{padding:10}}>
           {placeOrders.length===0 ? (
-            <Text style={{textAlign:'center', color:'#999', paddingVertical:8}}>Δεν υπάρχουν παραγγελίες για τοποθέτηση.</Text>
+            <Text style={{textAlign:'center', color:'#999', paddingVertical:8}}>Δεν υπάρχουν παραγγελίες για μοντάρισμα.</Text>
           ) : (<>
             <View style={{flexDirection:'row', alignItems:'center', flexWrap:'wrap', gap:8, marginBottom:8}}>
               <TouchableOpacity style={{flexDirection:'row', alignItems:'center', gap:6}} onPress={toggleAll}>
@@ -2607,7 +2607,7 @@ export default function CustomScreen({ customOrders, setCustomOrders, soldOrders
               <Text style={{fontWeight:'bold', color:'#5c6bc0', fontSize:13}}>Επιλεγμένες: {selected.length}</Text>
               <TouchableOpacity disabled={!selected.length}
                 style={{backgroundColor: selected.length?'#1a1a2e':'#ccc', paddingHorizontal:12, paddingVertical:6, borderRadius:6}}
-                onPress={async()=>{ const list=[...selected].sort((a,b)=>(parseInt(a.orderNo)||0)-(parseInt(b.orderNo)||0)); await handleStdPrint(list,'ΜΟΝΗ ΘΩΡΑΚΙΣΗ — ΤΟΠΟΘΕΤΗΣΕΙΣ',caseReady,sasiReady); }}>
+                onPress={async()=>{ const list=[...selected].sort((a,b)=>(parseInt(a.orderNo)||0)-(parseInt(b.orderNo)||0)); await handleStdPrint(list,'ΜΟΝΗ ΘΩΡΑΚΙΣΗ — ΜΟΝΤΑΡΙΣΜΑΤΑ',caseReady,sasiReady); }}>
                 <Text style={{color:'#FFD600', fontWeight:'bold', fontSize:12}}>🖨️ ΕΚΤΥΠΩΣΗ</Text>
               </TouchableOpacity>
             </View>
@@ -5725,7 +5725,7 @@ export default function CustomScreen({ customOrders, setCustomOrders, soldOrders
                     {!isSeller && <View style={{flexDirection:'row', gap:6, alignItems:'center'}}>
                       <TouchableOpacity style={{backgroundColor:'white', paddingHorizontal:10, paddingVertical:5, borderRadius:20}}
                         onPress={()=>{setCoatPrintOpen(false); setPlacePrintOpen(v=>!v);}}>
-                        <Text style={{color:'#5c6bc0', fontSize:11, fontWeight:'bold'}}>📍 ΤΟΠΟΘΕΤΗΣΗ</Text>
+                        <Text style={{color:'#5c6bc0', fontSize:11, fontWeight:'bold'}}>🪛 ΜΟΝΤΑΡΙΣΜΑ</Text>
                       </TouchableOpacity>
                       <TouchableOpacity style={{backgroundColor:'white', paddingHorizontal:10, paddingVertical:5, borderRadius:20}}
                         onPress={()=>{setPlacePrintOpen(false); setCoatPrintOpen(v=>!v);}}>
