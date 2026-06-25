@@ -582,7 +582,7 @@ export function ParadoseisScreen({ customOrders = [], highlightOrderId = null, o
   );
 }
 
-export default function CustomScreen({ customOrders, setCustomOrders, soldOrders, setSoldOrders, customers, onRequestAddCustomer, sasiStock={}, setSasiStock, caseStock={}, setCaseStock, sasiOrders=[], setSasiOrders, caseOrders=[], setCaseOrders, coatings=[], dipliSasiStock=[], setDipliSasiStock, locks=[], isGuest=false, locked=false, formOnly=false, forcedTab=null, setTabIndex, highlightOrderId = null, onClearSearchHighlight, currentUserName='', isAdmin=false, resolveName=(u)=>u, showCustomerLookup=false, setShowCustomerLookup=()=>{}, isSeller=false, sellerKey=null, filterSellerKey=null, editSubmission=null, onEditSubmissionDone=()=>{}, quotes=[], setQuotes=()=>{}, quotesOnly=false }) {
+export default function CustomScreen({ customOrders, setCustomOrders, soldOrders, setSoldOrders, customers, onRequestAddCustomer, sasiStock={}, setSasiStock, caseStock={}, setCaseStock, sasiOrders=[], setSasiOrders, caseOrders=[], setCaseOrders, coatings=[], dipliSasiStock=[], setDipliSasiStock, locks=[], isGuest=false, locked=false, formOnly=false, forcedTab=null, setTabIndex, highlightOrderId = null, onClearSearchHighlight, currentUserName='', isAdmin=false, resolveName=(u)=>u, showCustomerLookup=false, setShowCustomerLookup=()=>{}, isSeller=false, sellerKey=null, filterSellerKey=null, editSubmission=null, onEditSubmissionDone=()=>{}, quotes=[], setQuotes=()=>{}, quotesOnly=false, isForeman=false }) {
   const [expanded, setExpanded] = useState({ pending:false, prod:false, ready:false, archive:false, stdList:true, stdMoni:true, stdDipli:true, stdReady:true, stdSold:true, stdReadyD:true, stdSoldD:true, stdMoniOpen:true, stdDipliOpen:true, dipliProd:true, dipliSasiStock:true, moniSasiStock:true, stdBuildMoni:true, stdBuildDipli:true });
   const [showHardwarePicker, setShowHardwarePicker] = useState(false);
   const [showLockPicker, setShowLockPicker] = useState(false);
@@ -1032,7 +1032,7 @@ export default function CustomScreen({ customOrders, setCustomOrders, soldOrders
   // Κάθετη στήλη κουμπιών ειδοποίησης (Viber/Email/SMS) — τέρμα δεξιά της κάρτας,
   // όπως στο vaicon-eidikes.
   const renderNotifyColumn = (order) => {
-    if (isGuest) return null;
+    if (isGuest || isForeman) return null;
     const cust = findCustomerOf(order);
     const viberBlocked = !!pickViberPhone(cust) && !!cust?.viberOptOut;
     const viberOk = !!pickViberPhone(cust) && !cust?.viberOptOut;
@@ -1128,6 +1128,7 @@ export default function CustomScreen({ customOrders, setCustomOrders, soldOrders
           </TouchableOpacity>
         ))}
         {(() => {
+          if (isForeman) return null;
           const priceRO = ro || isSeller;
           if ((order.priceList||[]).length) {
             return priceRO ? (
@@ -1799,7 +1800,7 @@ export default function CustomScreen({ customOrders, setCustomOrders, soldOrders
     else Alert.alert('Διαγραφή', 'Διαγραφή προσφοράς;', [{ text: 'Όχι' }, { text: 'Ναι', style: 'destructive', onPress: doDel }]);
   };
   const editQuote = (q) => {
-    if (isSeller) return;
+    if (isSeller || isForeman) return;
     const { id, isQuote, status, createdAt, quotedAt, groupId, groupSeq, approvedBy, approvedAt, docCount, ...formData } = q;
     setOrderNoAuto(false);
     setCustomForm({ ...INIT_FORM, ...formData, orderNo: '', kypri: q.kypri || 'ΟΧΙ', placement: q.placement || 'ΟΧΙ', coatingDetails: q.coatingDetails || {} });
@@ -1850,7 +1851,7 @@ export default function CustomScreen({ customOrders, setCustomOrders, soldOrders
   };
 
   const editOrder = (order) => {
-    if (isGuest) return;
+    if (isGuest || isForeman) return;
     setOrderNoAuto(false);
     setCustomForm({...order, kypri: order.kypri || 'ΟΧΙ', placement: order.placement || 'ΟΧΙ', coatingDetails: order.coatingDetails || {}});
     setCustomerSearch(order.customer||'');
@@ -2925,7 +2926,7 @@ export default function CustomScreen({ customOrders, setCustomOrders, soldOrders
                 </TouchableOpacity>
               )}
             </View>
-            {!locked&&<TouchableOpacity
+            {!locked&&!isForeman&&<TouchableOpacity
               style={{backgroundColor:'#ff9800', paddingHorizontal:8, paddingVertical:3, borderRadius:5, alignItems:'center'}}
               onPress={()=>{
                 if(Platform.OS==='web') {
@@ -3977,7 +3978,7 @@ export default function CustomScreen({ customOrders, setCustomOrders, soldOrders
       <View style={{flex:1}}>
       <SellModal visible={sellModal.visible} totalQty={sellModal.totalQty} onConfirm={handleSellConfirm} onCancel={()=>setSellModal({visible:false,orderId:null,totalQty:1})} />
       <PriceListModal
-        visible={priceModal.visible}
+        visible={priceModal.visible && !isForeman}
         title={priceModal.order ? (priceModal.order.isQuote ? 'Τιμές προσφοράς' : `Τιμές #${priceModal.order.orderNo}`) : 'Καταχώρηση τιμών'}
         startLocked={!!(priceModal.order && (priceModal.order.priceList||[]).length)}
         readOnly={!!(priceModal.order && !priceModal.order.isQuote && (priceModal.order.status==='SOLD' || soldOrders.some(o=>o.id===priceModal.order.id)))}
@@ -5026,7 +5027,13 @@ export default function CustomScreen({ customOrders, setCustomOrders, soldOrders
               const dayBadge = (q) => { const d = quoteDays(q); return (<View style={{backgroundColor: d>=30?'#c62828':d>=7?'#ef6c00':'#2e7d32', borderRadius:6, paddingHorizontal:8, paddingVertical:3, alignSelf:'flex-start'}}><Text style={{color:'#fff', fontSize:12, fontWeight:'bold'}}>⏱ {quoteDaysLabel(q)}</Text></View>); };
               const qBtn = (bg) => ({ backgroundColor:bg, borderRadius:8, paddingHorizontal:12, paddingVertical:8 });
               const qBtnTxt = { color:'#fff', fontWeight:'bold', fontSize:13 };
-              const itemBtns = (q) => isSeller ? (
+              const itemBtns = (q) => isForeman ? (
+                q.docCount>0 ? (
+                  <View style={{flexDirection:'row', gap:8, marginTop:6, flexWrap:'wrap'}}>
+                    <TouchableOpacity onPress={()=>openDocViewer(q)} style={qBtn('#6a1b9a')}><Text style={qBtnTxt}>📎 ΕΓΓΡΑΦΟ ({q.docCount})</Text></TouchableOpacity>
+                  </View>
+                ) : null
+              ) : isSeller ? (
                 ((q.priceList||[]).length || q.docCount>0) ? (
                   <View style={{flexDirection:'row', gap:10, marginTop:6, flexWrap:'wrap', alignItems:'center'}}>
                     {(q.priceList||[]).length ? <Text style={{fontSize:15, fontWeight:'bold', color:'#2e7d32'}}>💶 {priceFinalTotal(q.priceList, q.priceDiscount).toFixed(2).replace('.', ',')}€</Text> : null}
@@ -5072,7 +5079,7 @@ export default function CustomScreen({ customOrders, setCustomOrders, soldOrders
                       {itemBtns(d)}
                     </View>
                   ))}
-                  {(() => { const tot = entry.doors.reduce((s,d)=>s+priceFinalTotal(d.priceList, d.priceDiscount),0); return tot ? <Text style={{fontSize:14, fontWeight:'bold', color:'#2e7d32', marginTop:4}}>💶 Σύνολο: {tot.toFixed(2).replace('.', ',')}€</Text> : null; })()}
+                  {(() => { if (isForeman) return null; const tot = entry.doors.reduce((s,d)=>s+priceFinalTotal(d.priceList, d.priceDiscount),0); return tot ? <Text style={{fontSize:14, fontWeight:'bold', color:'#2e7d32', marginTop:4}}>💶 Σύνολο: {tot.toFixed(2).replace('.', ',')}€</Text> : null; })()}
                   {actions(entry)}
                 </View>
               ));
@@ -5152,7 +5159,7 @@ export default function CustomScreen({ customOrders, setCustomOrders, soldOrders
                         </View>
 
                         {/* ΕΠΙΣΤΡΟΦΗ */}
-                        {!locked&&<TouchableOpacity
+                        {!locked&&!isForeman&&<TouchableOpacity
                           style={{backgroundColor:'#ff9800', paddingHorizontal:8, paddingVertical:3, borderRadius:5, alignSelf:'stretch', alignItems:'center'}}
                           onPress={()=>{
                             // Αποθηκεύω scroll position
@@ -6007,7 +6014,7 @@ export default function CustomScreen({ customOrders, setCustomOrders, soldOrders
                                 )}
 
                                 {/* ΕΠΙΣΤΡΟΦΗ */}
-                                {!locked&&<TouchableOpacity
+                                {!locked&&!isForeman&&<TouchableOpacity
                                   style={{backgroundColor:'#ff9800', paddingHorizontal:8, paddingVertical:3, borderRadius:5, alignItems:'center'}}
                                   onPress={()=>{
                                     // Αποθηκεύω scroll position
