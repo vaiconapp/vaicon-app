@@ -5963,6 +5963,8 @@ export default function CustomScreen({ customOrders, setCustomOrders, soldOrders
                                 )}
                                 {/* ΓΡΑΜΜΗ 5: παρατηρήσεις */}
                                 {renderNotesWithWarning(o.notes, {fontSize:11, color:'#888', marginTop:2})}
+                                {o.installation==='ΝΑΙ'&&<View style={{flexDirection:'row',marginTop:2}}><View style={{backgroundColor:'#1565C0',borderRadius:5,paddingHorizontal:8,paddingVertical:2,alignSelf:'flex-start'}}><Text style={{color:'white',fontWeight:'bold',fontSize:16}}>🪛 ΜΟΝΤΑΡΙΣΜΑ</Text></View></View>}
+                                {o.placement==='ΝΑΙ'&&<View style={{flexDirection:'row',marginTop:2}}><View style={{backgroundColor:'#E65100',borderRadius:5,paddingHorizontal:8,paddingVertical:2,alignSelf:'flex-start'}}><Text style={{color:'white',fontWeight:'bold',fontSize:16}}>📍 ΤΟΠΟΘΕΤΗΣΗ</Text></View></View>}
                                 {/* CHECKBOXES ΟΡΙΖΟΝΤΙΑ */}
                                 <View style={{marginTop:6, flexDirection:'row', flexWrap:'wrap', gap:6, alignItems:'center'}}>
                                   {(() => {
