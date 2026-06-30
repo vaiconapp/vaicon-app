@@ -2,8 +2,9 @@ import React, { useState } from 'react';
 import { StyleSheet, Text, View, ScrollView, TouchableOpacity, TextInput, Alert } from 'react-native';
 import { FIREBASE_URL } from './firebaseConfig';
 import { SIZE_OPTIONS, COLOR_OPTIONS, COLOR_MAP, getFormatStyle, sortCoatingsGrouped, canMoveCoatingInGroup } from './formatHelpers';
+import { printHTML } from './printUtils';
 
-export default function CoatingsScreen({ coatings, setCoatings, onClose }) {
+export default function CoatingsScreen({ coatings, setCoatings, isAdmin = false, onClose }) {
   const [form, setForm] = useState('');
   const [fmtBold, setFmtBold] = useState(false);
   const [fmtSize, setFmtSize] = useState('M');
@@ -109,6 +110,27 @@ export default function CoatingsScreen({ coatings, setCoatings, onClose }) {
   const sorted = sortCoatingsGrouped(coatings);
   const filtered = sorted.filter(c => c.name.toLowerCase().includes(search.toLowerCase()));
 
+  const printCoatings = () => {
+    const esc = s => String(s || '').replace(/[&<>]/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;' }[c]));
+    const cat = (name) => { const n = String(name || '').toUpperCase(); if (n.includes('ΜΕΣΑ') || n.includes('ΕΣΩΤ')) return 0; if (n.includes('ΕΞΩ')) return 1; return 2; };
+    const buckets = [[], [], []];
+    sorted.forEach(c => buckets[cat(c.name)].push(c.name));
+    const titles = ['ΕΣΩΤΕΡΙΚΕΣ', 'ΕΞΩΤΕΡΙΚΕΣ', 'ΛΟΙΠΕΣ'];
+    const colors = ['#1565C0', '#e65100', '#444'];
+    const sections = buckets.map((arr, i) => arr.length
+      ? `<div class="grp"><h2 style="color:${colors[i]}">${titles[i]} (${arr.length})</h2><ol>${arr.map(n => `<li>${esc(n)}</li>`).join('')}</ol></div>` : '').join('');
+    const html = `<!doctype html><html><head><meta charset="utf-8"><title>ΕΠΕΝΔΥΣΕΙΣ</title><style>
+      body{font-family:Arial,sans-serif;margin:12mm;color:#000}
+      h1{font-size:22px;margin:0 0 12px}
+      .grp{margin-bottom:18px}
+      h2{font-size:15px;margin:0 0 6px;border-bottom:2px solid #ccc;padding-bottom:3px}
+      ol{margin:0;padding-left:26px}
+      li{font-size:13px;padding:2px 0}
+      @media print{@page{size:A4 portrait;margin:12mm}}
+    </style></head><body><h1>🎨 ΕΠΕΝΔΥΣΕΙΣ — ΛΙΣΤΑ</h1>${sections || '<p>Καμία επένδυση.</p>'}</body></html>`;
+    printHTML(html, 'VAICON — ΕΠΕΝΔΥΣΕΙΣ');
+  };
+
   return (
     <View style={styles.container}>
       <View style={styles.header}>
@@ -178,7 +200,14 @@ export default function CoatingsScreen({ coatings, setCoatings, onClose }) {
           </TouchableOpacity>
         )}
 
-        <TextInput style={styles.search} placeholder="🔍 Αναζήτηση..." value={search} onChangeText={setSearch} />
+        <View style={styles.toolbar}>
+          {isAdmin && (
+            <TouchableOpacity style={styles.printBtn} onPress={printCoatings}>
+              <Text style={styles.printTxt}>🖨️ ΕΚΤΥΠΩΣΗ</Text>
+            </TouchableOpacity>
+          )}
+          <TextInput style={styles.search} placeholder="🔍 Αναζήτηση..." value={search} onChangeText={setSearch} />
+        </View>
 
         <Text style={styles.count}>Σύνολο: {coatings.length} επενδύσεις</Text>
 
@@ -228,7 +257,10 @@ const styles = StyleSheet.create({
   saveTxt: { color: 'white', fontSize: 22, fontWeight: 'bold' },
   cancelEdit: { alignSelf: 'flex-start', marginBottom: 8 },
   cancelTxt: { color: '#ff4444', fontSize: 12, fontWeight: 'bold' },
-  search: { backgroundColor: 'white', borderRadius: 8, padding: 10, borderWidth: 1, borderColor: '#ddd', marginBottom: 8 },
+  toolbar: { flexDirection: 'row', alignItems: 'center', gap: 8, marginBottom: 8 },
+  printBtn: { backgroundColor: '#1565C0', borderRadius: 8, paddingHorizontal: 14, paddingVertical: 11, justifyContent: 'center' },
+  printTxt: { color: 'white', fontWeight: 'bold', fontSize: 13 },
+  search: { flex: 1, maxWidth: 260, backgroundColor: 'white', borderRadius: 8, padding: 10, borderWidth: 1, borderColor: '#ddd' },
   count: { fontSize: 11, color: '#999', marginBottom: 8 },
   card: { backgroundColor: 'white', borderRadius: 8, padding: 14, marginBottom: 6, flexDirection: 'row', alignItems: 'center', elevation: 1, borderLeftWidth: 4, borderLeftColor: '#007AFF' },
   orderBtns: { flexDirection: 'column', marginRight: 8, gap: 2 },

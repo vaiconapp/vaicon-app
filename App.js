@@ -1441,6 +1441,7 @@ export default function App() {
           <CoatingsScreen
             coatings={coatings}
             setCoatings={setCoatings}
+            isAdmin={isAdmin}
             onClose={() => setShowCoatings(false)}
           />
         </Modal>
@@ -1454,6 +1455,7 @@ export default function App() {
           <CustomersScreen
             customers={customers}
             setCustomers={setCustomers}
+            isAdmin={isAdmin}
             allOrders={[...customOrders, ...soldOrders]}
             setCustomOrders={setCustomOrders}
             setSoldOrders={setSoldOrders}

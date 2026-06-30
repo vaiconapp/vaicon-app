@@ -2,11 +2,12 @@ import React, { useState, useRef, useMemo } from 'react';
 import { StyleSheet, Text, View, ScrollView, TouchableOpacity, TextInput, Alert, Modal } from 'react-native';
 import { FIREBASE_URL } from './firebaseConfig';
 import { fmtDate } from './utils';
+import { printHTML } from './printUtils';
 import { phoneKey, normTxt, custSortKey, findDuplicateCustomers } from './formatHelpers';
 
 const INIT = { name: '', phone: '', phone2: '', phone3: '', phoneViber: '', email: '', identifier: '', city: '', profession: '', seller: '' };
 
-export default function CustomersScreen({ customers, setCustomers, onClose, prefillName, onCustomerAdded, allOrders=[], setCustomOrders, setSoldOrders, sellers=[], currentUserName='', resolveLabel=(u)=>u }) {
+export default function CustomersScreen({ customers, setCustomers, isAdmin=false, onClose, prefillName, onCustomerAdded, allOrders=[], setCustomOrders, setSoldOrders, sellers=[], currentUserName='', resolveLabel=(u)=>u }) {
   const [form, setForm] = useState(prefillName ? { ...INIT, name: prefillName } : INIT);
   const [editingId, setEditingId] = useState(null);
   const [search, setSearch] = useState('');
@@ -209,6 +210,21 @@ export default function CustomersScreen({ customers, setCustomers, onClose, pref
     )
     .sort((a, b) => custSortKey(a).localeCompare(custSortKey(b), 'el'));
 
+  const printCustomers = () => {
+    const esc = s => String(s || '').replace(/[&<>]/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;' }[c]));
+    const rows = filtered.map(c => `<tr><td>${esc(c.name)}</td><td>${esc(c.phone || c.phone2 || c.phone3 || '')}</td><td>${esc(c.city || '')}</td><td>${esc(c.profession || '')}</td><td>${esc(resolveLabel(c.seller) || c.seller || '')}</td></tr>`).join('');
+    const html = `<!doctype html><html><head><meta charset="utf-8"><title>ΠΕΛΑΤΕΣ</title><style>
+      body{font-family:Arial,sans-serif;margin:10mm;color:#000}
+      h1{font-size:22px;margin:0 0 12px}
+      table{width:100%;border-collapse:collapse}
+      th{font-size:11px;text-align:left;border-bottom:2px solid #000;padding:5px 4px}
+      td{font-size:12px;border-bottom:1px solid #ccc;padding:5px 4px}
+      @media print{@page{size:A4 portrait;margin:10mm}}
+    </style></head><body><h1>👥 ΠΕΛΑΤΕΣ (${filtered.length})</h1>
+    <table><thead><tr><th>Όνομα</th><th>Τηλέφωνο</th><th>Πόλη</th><th>Επάγγελμα</th><th>Πωλητής</th></tr></thead><tbody>${rows || '<tr><td colspan="5">—</td></tr>'}</tbody></table></body></html>`;
+    printHTML(html, 'VAICON — ΠΕΛΑΤΕΣ');
+  };
+
   return (
     <View style={{ flex: 1, backgroundColor: '#f5f5f5' }}>
       <View style={styles.header}>
@@ -314,6 +330,11 @@ export default function CustomersScreen({ customers, setCustomers, onClose, pref
           <Text style={[styles.sectionTitle, { marginTop:24 }]}>ΛΙΣΤΑ ΠΕΛΑΤΩΝ ({customers.length})</Text>
           <Text style={styles.hint}>💡 Κράτα 3 δευτ. για επεξεργασία • Κράτα το ✕ 2 δευτ. για διαγραφή</Text>
           <View style={{ flexDirection:'row', gap:8, alignItems:'flex-start', zIndex:15, marginBottom:8 }}>
+            {isAdmin && (
+              <TouchableOpacity onPress={printCustomers} style={{ backgroundColor:'#1565C0', borderRadius:8, paddingHorizontal:16, paddingVertical:12, alignItems:'center', justifyContent:'center' }}>
+                <Text style={{ color:'#fff', fontWeight:'bold', fontSize:14 }}>🖨️ ΕΚΤΥΠΩΣΗ</Text>
+              </TouchableOpacity>
+            )}
             <TextInput style={[styles.input, { backgroundColor:'#fff', flex:3, marginBottom:0 }]} placeholder="🔍 Αναζήτηση" value={search} onChangeText={setSearch} />
             {sellers.length > 0 && (
               <View style={{ flex:1 }}>
