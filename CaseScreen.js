@@ -30,7 +30,7 @@ const applyOpToEntry = (e0, op) => {
   else if (op.mode === 'add') e.qty += op.n;
   else if (op.mode === 'pendingIn') { e.qty += op.n; e.pending = Math.max(0, e.pending - op.n); }
   else if (op.mode === 'subPending') e.pending = Math.max(0, e.pending - op.n);
-  else if (op.mode === 'sub') e.qty = Math.max(0, e.qty - op.n);
+  else if (op.mode === 'sub') e.qty = op.allowNeg ? (e.qty - op.n) : Math.max(0, e.qty - op.n);
   return e;
 };
 const foldOps = (base, ops) => {
@@ -76,7 +76,7 @@ function QtyModal({ visible, title, onConfirm, onCancel }) {
   );
 }
 
-export default function CaseScreen({ caseStock={}, setCaseStock, opsBasket=[], setOpsBasket, stockHighlight=null, onClearSearchHighlight, locked=false }) {
+export default function CaseScreen({ caseStock={}, setCaseStock, opsBasket=[], setOpsBasket, stockHighlight=null, onClearSearchHighlight, locked=false, isAdmin=false }) {
   // Χρησιμοποιούμε απευθείας το κεντρικό state από App.js
   const baseMap = { ...initStockMap(), ...caseStock };
   const [qtyModal, setQtyModal] = useState({ visible:false, key:'', mode:'add', label:'', dim:'' });
@@ -115,7 +115,7 @@ export default function CaseScreen({ caseStock={}, setCaseStock, opsBasket=[], s
 
   const handleSubtract = (key, label, available, pending) => {
     if (locked) return;
-    if (available <= 0 && pending <= 0) return Alert.alert('Προσοχή','Δεν υπάρχει διαθέσιμη ποσότητα για αφαίρεση.');
+    if (available <= 0 && pending <= 0 && !isAdmin) return Alert.alert('Προσοχή','Δεν υπάρχει διαθέσιμη ποσότητα για αφαίρεση.');
     setChoiceModal({ visible:true, key, label, action:'sub', pending, available });
   };
 
@@ -152,8 +152,8 @@ export default function CaseScreen({ caseStock={}, setCaseStock, opsBasket=[], s
     const maxPending = e.pending || 0;
     if (mode === 'subPending' && n > maxPending) return Alert.alert('Προσοχή',`Μπορείτε να αφαιρέσετε έως ${maxPending} τεμάχια από ΠΑΡΑΓΩΓΗ.`);
     if (mode === 'pendingIn' && n > maxPending) return Alert.alert('Προσοχή',`Μπορείτε να παραλάβετε έως ${maxPending} τεμάχια.`);
-    if (mode === 'sub' && n > available) return Alert.alert('Προσοχή',`Μπορείτε να αφαιρέσετε έως ${available} τεμάχια.`);
-    setOpsBasket(prev => [...prev, { id: Date.now()+'_'+Math.random(), key, mode, n, dim: dim || key }]);
+    if (mode === 'sub' && n > available && !isAdmin) return Alert.alert('Προσοχή',`Μπορείτε να αφαιρέσετε έως ${available} τεμάχια.`);
+    setOpsBasket(prev => [...prev, { id: Date.now()+'_'+Math.random(), key, mode, n, dim: dim || key, allowNeg: isAdmin && mode==='sub' }]);
   };
 
   const commitOps = async () => {
@@ -197,7 +197,7 @@ export default function CaseScreen({ caseStock={}, setCaseStock, opsBasket=[], s
               {/* ΕΝΕΡΓΕΙΕΣ — μόνο το - */}
               <View style={[styles.tdWrap, {width:34, justifyContent:'center', alignItems:'center'}]}>
                 {!locked&&<TouchableOpacity style={[styles.subBtn, (available<=0&&pending<=0)&&{opacity:0.35}]}
-                  disabled={available<=0&&pending<=0}
+                  disabled={!isAdmin&&available<=0&&pending<=0}
                   onPress={()=>handleSubtract(key, label, available, pending)}>
                   <Text style={styles.btnTxt}>-</Text>
                 </TouchableOpacity>}
@@ -416,11 +416,19 @@ export default function CaseScreen({ caseStock={}, setCaseStock, opsBasket=[], s
             {(() => {
               const isSub = choiceModal.action === 'sub';
               const prodDisabled = isSub && choiceModal.pending <= 0;
-              const stockDisabled = isSub && choiceModal.available <= 0;
+              const stockDisabled = isSub && choiceModal.available <= 0 && !isAdmin;
+              const adminNeg = isSub && isAdmin && choiceModal.available <= 0;
               const prodMode = isSub ? 'subPending' : 'pending';
               const stockMode = isSub ? 'sub' : 'pendingIn';
               const prodLabel = isSub ? `🏭 ΠΑΡΑΓΩΓΗ\n\n${choiceModal.label}\n(έως ${choiceModal.pending} τεμ.)` : `🏭 ΠΑΡΑΓΩΓΗ\n\n${choiceModal.label}`;
-              const stockLabel = isSub ? `📦 ΑΠΟΘΗΚΗ\n\n${choiceModal.label}\n(έως ${choiceModal.available} τεμ.)` : `📦 ΑΠΟΘΗΚΗ\n\n${choiceModal.label}`;
+              const stockLabel = isSub ? `📦 ΑΠΟΘΗΚΗ\n\n${choiceModal.label}${adminNeg ? '' : `\n(έως ${choiceModal.available} τεμ.)`}` : `📦 ΑΠΟΘΗΚΗ\n\n${choiceModal.label}`;
+              const openStockQty = () => { setChoiceModal(m=>({...m,visible:false})); setQtyModal({visible:true, key:choiceModal.key, mode:stockMode, label:stockLabel, dim:choiceModal.label}); };
+              const confirmStock = () => {
+                if (!adminNeg) return openStockQty();
+                const msg = `Η αποθήκη (${choiceModal.available}) θα γίνει αρνητική.\n\nΣίγουρα;`;
+                if (Platform.OS === 'web') { if (window.confirm(msg)) openStockQty(); }
+                else Alert.alert('Αφαίρεση κάτω από το μηδέν', msg, [{text:'ΑΚΥΡΟ',style:'cancel'},{text:'ΝΑΙ',onPress:openStockQty}]);
+              };
               return <>
                 <TouchableOpacity
                   disabled={prodDisabled}
@@ -430,8 +438,8 @@ export default function CaseScreen({ caseStock={}, setCaseStock, opsBasket=[], s
                 </TouchableOpacity>
                 <TouchableOpacity
                   disabled={stockDisabled}
-                  style={{width:'100%', paddingVertical:12, borderRadius:8, alignItems:'center', backgroundColor:'#2e7d32', opacity:stockDisabled?0.4:1}}
-                  onPress={()=>{ setChoiceModal(m=>({...m,visible:false})); setQtyModal({visible:true, key:choiceModal.key, mode:stockMode, label:stockLabel, dim:choiceModal.label}); }}>
+                  style={{width:'100%', paddingVertical:12, borderRadius:8, alignItems:'center', backgroundColor:'#2e7d32', opacity:(isSub&&choiceModal.available<=0)?0.4:1}}
+                  onPress={confirmStock}>
                   <Text style={{color:'white', fontWeight:'bold', fontSize:15}}>📦 ΑΠΟΘΗΚΗ</Text>
                 </TouchableOpacity>
               </>;
