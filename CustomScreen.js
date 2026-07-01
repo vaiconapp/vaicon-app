@@ -1301,6 +1301,7 @@ export default function CustomScreen({ customOrders, setCustomOrders, soldOrders
         const totalQty = parseInt(entry.qty) || 0;
         let cumulative = 0;
         for (const r of (entry.reservations || [])) {
+          if (r.oldCovered) { if (r.orderNo === orderNo) return true; continue; }
           cumulative += (parseInt(r.qty) || 1);
           if (r.orderNo === orderNo) return cumulative <= totalQty;
         }
@@ -1914,7 +1915,8 @@ export default function CustomScreen({ customOrders, setCustomOrders, soldOrders
     const isMoni=(order.sasiType==='ΜΟΝΗ ΘΩΡΑΚΙΣΗ'||!order.sasiType)&&!order.lock;
     const adjustStock=async(stockMap,setStock,key,path)=>{
       const entry=stockMap?.[key]; if(!entry) return;
-      const newQty=Math.max(0,(parseInt(entry.qty)||0)-qty);
+      const wasOld=(entry.reservations||[]).some(r=>r.orderNo===order.orderNo && r.oldCovered);
+      const newQty=wasOld?(parseInt(entry.qty)||0):Math.max(0,(parseInt(entry.qty)||0)-qty);
       const reservations=partial
         ? (entry.reservations||[]).map(r=>r.orderNo===order.orderNo?{...r,qty:totalQty-qty}:r)
         : (entry.reservations||[]).filter(r=>r.orderNo!==order.orderNo);
@@ -2253,6 +2255,7 @@ export default function CustomScreen({ customOrders, setCustomOrders, soldOrders
       const totalQty = parseInt(entry.qty)||0;
       let cum = 0;
       for (const r of (entry.reservations||[])) {
+        if (r.oldCovered) { if (r.orderNo===orderNo) return true; continue; }
         cum += (parseInt(r.qty)||1);
         if (r.orderNo===orderNo) return cum<=totalQty;
       }
@@ -2654,6 +2657,7 @@ export default function CustomScreen({ customOrders, setCustomOrders, soldOrders
       const totalQty = parseInt(entry.qty)||0;
       let cum = 0;
       for (const r of (entry.reservations||[])) {
+        if (r.oldCovered) { if (r.orderNo===order.orderNo) return true; continue; }
         cum += (parseInt(r.qty)||1);
         if (r.orderNo===order.orderNo) return cum<=totalQty;
       }
@@ -2823,6 +2827,7 @@ export default function CustomScreen({ customOrders, setCustomOrders, soldOrders
       const totalQty = parseInt(entry.qty)||0;
       let cum = 0;
       for (const r of (entry.reservations||[])) {
+        if (r.oldCovered) { if (r.orderNo===o.orderNo) return true; continue; }
         cum += (parseInt(r.qty)||1);
         if (r.orderNo===o.orderNo) return cum<=totalQty;
       }
@@ -2973,6 +2978,7 @@ export default function CustomScreen({ customOrders, setCustomOrders, soldOrders
     const totalQty = parseInt(entry.qty, 10) || 0;
     let cum = 0;
     for (const r of (entry.reservations || [])) {
+      if (r.oldCovered) { if (sameOrderNo(r.orderNo, orderNo)) return true; continue; }
       cum += (parseInt(r.qty, 10) || 1);
       if (sameOrderNo(r.orderNo, orderNo)) return cum <= totalQty;
     }
@@ -5640,6 +5646,7 @@ export default function CustomScreen({ customOrders, setCustomOrders, soldOrders
                   const totalQty = parseInt(entry.qty) || 0;
                   let cumulative = 0;
                   for (const r of (entry.reservations || [])) {
+                    if (r.oldCovered) { if (r.orderNo === orderNo) return true; continue; }
                     cumulative += (parseInt(r.qty) || 1);
                     if (r.orderNo === orderNo) return cumulative <= totalQty;
                   }
@@ -5660,6 +5667,7 @@ export default function CustomScreen({ customOrders, setCustomOrders, soldOrders
                   const totalQty = parseInt(entry.qty) || 0;
                   let cumulative = 0;
                   for (const r of (entry.reservations || [])) {
+                    if (r.oldCovered) { if (r.orderNo === orderNo) return true; continue; }
                     cumulative += (parseInt(r.qty) || 1);
                     if (r.orderNo === orderNo) return cumulative <= totalQty;
                   }
@@ -5931,6 +5939,7 @@ export default function CustomScreen({ customOrders, setCustomOrders, soldOrders
                           const totalQty = parseInt(entry.qty)||0;
                           let cum = 0;
                           for (const r of (entry.reservations||[])) {
+                            if (r.oldCovered) { if (r.orderNo===o.orderNo) return true; continue; }
                             cum += (parseInt(r.qty)||1);
                             if (r.orderNo===o.orderNo) return cum<=totalQty;
                           }

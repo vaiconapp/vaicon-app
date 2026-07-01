@@ -8,6 +8,7 @@ const HEIGHTS = ['208', '213', '218', '223'];
 const WIDTHS  = ['83', '88', '93', '98'];
 const SIDES   = ['ΑΡΙΣΤΕΡΗ', 'ΔΕΞΙΑ'];
 const CASE_TYPES = ['ΚΑΣΑ ΚΛΕΙΣΤΗ', 'ΚΑΣΑ ΑΝΟΙΧΤΗ'];
+const STATUS_LABEL = { STD_PENDING:'Καταχωρημένη', PENDING:'Καταχωρημένη', STD_BUILD:'Προς κατασκευή', DIPLI_PROD:'Σε παραγωγή', PROD:'Σε παραγωγή', STD_READY:'Έτοιμη', STD_SOLD:'Πουλημένη', SOLD:'Πουλημένη', QUOTE:'Προσφορά' };
 
 const initStockMap = () => {
   const map = {};
@@ -85,6 +86,9 @@ export default function CaseScreen({ caseStock={}, setCaseStock, opsBasket=[], s
   const [showReservations, setShowReservations] = useState(null);
   const [activeCaseType, setActiveCaseType] = useState('ΚΑΣΑ ΚΛΕΙΣΤΗ');
   const [confirmApply, setConfirmApply] = useState(false);
+  const [oldSel, setOldSel] = useState([]);
+  const [oldConfirm, setOldConfirm] = useState(false);
+  const [resDetail, setResDetail] = useState(null);
   const stockMap = foldOps(baseMap, opsBasket);
   const pendingKeys = new Set(opsBasket.map(o => o.key));
 
@@ -172,6 +176,32 @@ export default function CaseScreen({ caseStock={}, setCaseStock, opsBasket=[], s
     for (const o of ops) await logActivity('ΚΑΣΕΣ ΣΤΟΚ', OP_LOG[o.mode] || o.mode, { size: o.key, qty: String(o.n) });
   };
 
+  const applyOldCover = async (key) => {
+    const entry = baseMap[key];
+    if (!entry) { setOldConfirm(false); setOldSel([]); return; }
+    const sel = new Set(oldSel.map(String));
+    const reservations = (entry.reservations||[]).map(r => sel.has(String(r.orderNo)) ? {...r, oldCovered:true} : r);
+    const upd = { ...entry, reservations };
+    setCaseStock(prev => ({ ...prev, [key]: upd }));
+    setOldConfirm(false); setOldSel([]);
+    await syncKey(key, upd);
+    for (const no of oldSel) await logActivity('ΚΑΣΕΣ ΣΤΟΚ', 'Κάλυψη από παλιό στοκ', { size: key, qty: '#'+no });
+  };
+
+  const undoOldCover = (key, orderNo) => {
+    const doIt = async () => {
+      const entry = baseMap[key]; if (!entry) return;
+      const reservations = (entry.reservations||[]).map(r => String(r.orderNo)===String(orderNo) ? (({oldCovered, ...rest})=>rest)(r) : r);
+      const upd = { ...entry, reservations };
+      setCaseStock(prev => ({ ...prev, [key]: upd }));
+      await syncKey(key, upd);
+      await logActivity('ΚΑΣΕΣ ΣΤΟΚ', 'Αναίρεση κάλυψης παλιού στοκ', { size: key, qty: '#'+orderNo });
+    };
+    const msg = `Αναίρεση κάλυψης από παλιό στοκ για #${orderNo};`;
+    if (Platform.OS==='web') { if (window.confirm(msg)) doIt(); }
+    else Alert.alert('Αναίρεση', msg, [{text:'ΑΚΥΡΟ',style:'cancel'},{text:'ΝΑΙ',onPress:doIt}]);
+  };
+
   const renderTable = (side, caseType) => {
     return (
       <View style={styles.table}>
@@ -185,10 +215,10 @@ export default function CaseScreen({ caseStock={}, setCaseStock, opsBasket=[], s
         {HEIGHTS.map(h => WIDTHS.map(w => {
           const key = stockKey(h, w, side, caseType);
           const entry = stockMap[key] || { qty:0, reservations:[], pending:0 };
-          const reserved = (entry.reservations||[]).reduce((s,r)=>s+(parseInt(r.qty)||1),0);
+          const reserved = (entry.reservations||[]).reduce((s,r)=>r.oldCovered?s:s+(parseInt(r.qty)||1),0);
           const totalQ = parseInt(entry.qty)||0;
           let _cum=0, readyDoors=0, greenDoors=0, redDoors=0;
-          (entry.reservations||[]).forEach(r=>{ const q=parseInt(r.qty)||1; _cum+=q; const cov=_cum<=totalQ; if(readyNos.has(String(r.orderNo))) readyDoors+=q; else if(cov) greenDoors+=q; else redDoors+=q; });
+          (entry.reservations||[]).forEach(r=>{ const q=parseInt(r.qty)||1; if(r.oldCovered){greenDoors+=q; return;} _cum+=q; const cov=_cum<=totalQ; if(readyNos.has(String(r.orderNo))) readyDoors+=q; else if(cov) greenDoors+=q; else redDoors+=q; });
           const available = (entry.qty||0) - reserved;
           const pending = entry.pending || 0;
           const label = `${h}x${w} ${side==='ΑΡΙΣΤΕΡΗ'?'ΑΡ':'ΔΕ'}`;
@@ -228,7 +258,7 @@ export default function CaseScreen({ caseStock={}, setCaseStock, opsBasket=[], s
               {/* ΔΕΣΜΕΥΣΕΙΣ */}
               <TouchableOpacity
                 style={[styles.tdWrap, {flex:1, borderRightWidth:0}]}
-                onPress={()=>hasReservations?setShowReservations(key):null}>
+                onPress={()=>hasReservations?(setOldSel([]),setShowReservations(key)):null}>
                 <View style={{flexDirection:'row', alignItems:'center'}}>
                   <View style={{flexDirection:'row', flexWrap:'wrap', gap:2, flex:1}}>
                   {hasReservations
@@ -236,8 +266,8 @@ export default function CaseScreen({ caseStock={}, setCaseStock, opsBasket=[], s
                         const totalQty = parseInt(entry.qty) || 0;
                         let cum = 0;
                         return (entry.reservations||[]).map((r, i) => {
-                          cum += (parseInt(r.qty) || 1);
-                          const covered = cum <= totalQty;
+                          if(!r.oldCovered) cum += (parseInt(r.qty) || 1);
+                          const covered = r.oldCovered || cum <= totalQty;
                           const isReady = readyNos.has(String(r.orderNo));
                           const chipHL = stockHighlight?.kind === 'case' && String(r.orderNo ?? '') === String(stockHighlight.orderNo ?? '');
                           return (
@@ -347,7 +377,7 @@ export default function CaseScreen({ caseStock={}, setCaseStock, opsBasket=[], s
 
   const sumNeg = (side) => HEIGHTS.reduce((t,h)=>t+WIDTHS.reduce((s,w)=>{
     const e=stockMap[stockKey(h,w,side,activeCaseType)]||{qty:0,reservations:[]};
-    const av=(e.qty||0)-(e.reservations||[]).reduce((a,r)=>a+(parseInt(r.qty)||1),0);
+    const av=(e.qty||0)-(e.reservations||[]).reduce((a,r)=>r.oldCovered?a:a+(parseInt(r.qty)||1),0);
     return s+(av<0?av:0);
   },0),0);
   const negLeft=sumNeg('ΑΡΙΣΤΕΡΗ'), negRight=sumNeg('ΔΕΞΙΑ');
@@ -474,42 +504,67 @@ export default function CaseScreen({ caseStock={}, setCaseStock, opsBasket=[], s
 
       <Modal visible={!!showReservations} transparent animationType="fade" onRequestClose={()=>setShowReservations(null)}>
         <View style={styles.overlay}>
-          <View style={[styles.modalBox, {width:'90%', maxWidth:400}]}>
+          <View style={[styles.modalBox, {width:'92%', maxWidth:480}]}>
             <Text style={styles.modalTitle}>📦 Δεσμεύσεις</Text>
-            <ScrollView style={{maxHeight:300, width:'100%'}}>
-              {(reservationEntry?.reservations||[]).length === 0
-                ? <Text style={{color:'#999', textAlign:'center', padding:20}}>Δεν υπάρχουν δεσμεύσεις</Text>
-                : (() => {
-                  const totalQty = parseInt(reservationEntry?.qty) || 0;
-                  let cum = 0;
-                  return (reservationEntry?.reservations||[]).map((r,i) => {
-                    cum += (parseInt(r.qty) || 1);
-                    const covered = cum <= totalQty;
-                    return (
-                      <View key={i} style={{flexDirection:'row',
-                        justifyContent:'space-between', padding:8,
-                        borderBottomWidth:1, borderBottomColor:'#f0f0f0',
-                        backgroundColor: covered ? '#f1f8f1' : 'white'}}>
-                        <Text style={{fontWeight:'bold',
-                          color: covered ? '#1b5e20' : '#c62828'}}>
-                          #{r.orderNo}
-                        </Text>
-                        <Text style={{color:'#555'}}>{r.customer||'—'}</Text>
-                        <Text style={{fontWeight:'bold',
-                          color: covered ? '#1b5e20' : '#c62828'}}>
-                          {r.qty||1} τεμ.
-                        </Text>
-                      </View>
-                    );
-                  });
-                })()
-              }
-            </ScrollView>
-            <TouchableOpacity
-              style={[styles.modalBtn, {backgroundColor:'#8B0000', marginTop:16, width:'100%'}]}
-              onPress={()=>setShowReservations(null)}>
-              <Text style={{color:'white', fontWeight:'bold'}}>ΚΛΕΙΣΙΜΟ</Text>
-            </TouchableOpacity>
+            {(() => {
+              const totalQty = parseInt(reservationEntry?.qty) || 0;
+              const oldCount = (reservationEntry?.reservations||[]).reduce((s,r)=>r.oldCovered?s+(parseInt(r.qty)||1):s,0);
+              const remaining = totalQty<0 ? Math.abs(totalQty)-oldCount : 0;
+              const canBorrowOld = isAdmin && remaining>0;
+              const selDoors = oldSel.reduce((s,no)=>{ const r=(reservationEntry?.reservations||[]).find(x=>String(x.orderNo)===String(no)); return s+(parseInt(r?.qty)||1); },0);
+              let cum = 0;
+              return <>
+                {canBorrowOld && <Text style={{fontSize:12, color:'#e65100', textAlign:'center', marginBottom:6}}>Κάλυψη από παλιό στοκ — μέχρι {remaining} τεμ.</Text>}
+                <ScrollView style={{maxHeight:300, width:'100%'}}>
+                  {(reservationEntry?.reservations||[]).length === 0
+                    ? <Text style={{color:'#999', textAlign:'center', padding:20}}>Δεν υπάρχουν δεσμεύσεις</Text>
+                    : (reservationEntry?.reservations||[]).map((r,i) => {
+                        const isOld = !!r.oldCovered;
+                        if(!isOld) cum += (parseInt(r.qty) || 1);
+                        const covered = isOld || cum <= totalQty;
+                        const rq = parseInt(r.qty)||1;
+                        const selected = oldSel.some(no=>String(no)===String(r.orderNo));
+                        const showChk = canBorrowOld && !covered;
+                        const canPick = selected || (selDoors+rq)<=remaining;
+                        return (
+                          <View key={i} style={{flexDirection:'row', alignItems:'center',
+                            justifyContent:'space-between', padding:8,
+                            borderBottomWidth:1, borderBottomColor:'#f0f0f0',
+                            backgroundColor: covered ? '#f1f8f1' : 'white'}}>
+                            {showChk && <TouchableOpacity disabled={!canPick} onPress={()=>setOldSel(prev=>selected?prev.filter(no=>String(no)!==String(r.orderNo)):[...prev,r.orderNo])}
+                              style={{width:22, height:22, borderRadius:4, borderWidth:2, borderColor:selected?'#2e7d32':'#bbb', backgroundColor:selected?'#2e7d32':'#fff', alignItems:'center', justifyContent:'center', marginRight:8, opacity:canPick?1:0.4}}>
+                              <Text style={{color:'#fff', fontWeight:'bold', fontSize:14}}>{selected?'✓':''}</Text>
+                            </TouchableOpacity>}
+                            <TouchableOpacity style={{flex:1, flexDirection:'row', alignItems:'center', justifyContent:'space-between'}}
+                              onPress={()=>setResDetail({orderNo:r.orderNo, order:customOrders.find(o=>String(o.orderNo)===String(r.orderNo))||null})}>
+                              <View style={{flexDirection:'row', alignItems:'center', flex:1}}>
+                                <Text style={{fontWeight:'bold', textDecorationLine:'underline',
+                                  color: covered ? '#1b5e20' : '#c62828'}}>
+                                  #{r.orderNo}{isOld?' 📦':''}
+                                </Text>
+                                {isOld && isAdmin && <TouchableOpacity onPress={()=>undoOldCover(showReservations, r.orderNo)}
+                                  style={{marginLeft:6, backgroundColor:'#e65100', borderRadius:6, width:24, height:24, alignItems:'center', justifyContent:'center'}}>
+                                  <Text style={{color:'#fff', fontWeight:'bold', fontSize:15}}>↺</Text>
+                                </TouchableOpacity>}
+                              </View>
+                              <Text style={{color:'#555'}}>{r.customer||'—'}</Text>
+                              <Text style={{fontWeight:'bold', marginLeft:8,
+                                color: covered ? '#1b5e20' : '#c62828'}}>
+                                {rq} τεμ.
+                              </Text>
+                            </TouchableOpacity>
+                          </View>
+                        );
+                      })
+                  }
+                </ScrollView>
+                <TouchableOpacity
+                  style={[styles.modalBtn, {backgroundColor:'#8B0000', marginTop:16, width:'100%'}]}
+                  onPress={()=>{ if(oldSel.length>0){ setOldConfirm(showReservations); setShowReservations(null); } else setShowReservations(null); }}>
+                  <Text style={{color:'white', fontWeight:'bold'}}>ΚΛΕΙΣΙΜΟ</Text>
+                </TouchableOpacity>
+              </>;
+            })()}
           </View>
         </View>
       </Modal>
@@ -540,6 +595,60 @@ export default function CaseScreen({ caseStock={}, setCaseStock, opsBasket=[], s
           </View>
         </View>
       )}
+
+      {/* Στοιχεία παραγγελίας (από δέσμευση) */}
+      <Modal visible={!!resDetail} transparent animationType="fade" onRequestClose={()=>setResDetail(null)}>
+        <View style={styles.overlay}>
+          <View style={[styles.modalBox, {width:'86%', maxWidth:380, alignItems:'stretch'}]}>
+            {resDetail?.order ? (()=>{const o=resDetail.order; const row=(l,v)=>v?<View key={l} style={{flexDirection:'row', justifyContent:'space-between', paddingVertical:4, borderBottomWidth:1, borderBottomColor:'#f2f2f2'}}><Text style={{color:'#777', fontSize:13}}>{l}</Text><Text style={{fontWeight:'bold', fontSize:14, color:'#1a1a1a', flexShrink:1, textAlign:'right'}}>{v}</Text></View>:null;
+              return <>
+              <Text style={[styles.modalTitle, {fontSize:18}]}>Παραγγελία #{o.orderNo}</Text>
+              <ScrollView style={{maxHeight:400, width:'100%'}}>
+              {row('Πελάτης', o.customer)}
+              {row('Καταχώρηση', o.createdAt?new Date(o.createdAt).toLocaleDateString('el-GR'):null)}
+              {row('Παράδοση', o.deliveryDate)}
+              {row('Διάσταση', `${o.h}x${o.w} ${o.side==='ΑΡΙΣΤΕΡΗ'?'ΑΡ':'ΔΕ'}`)}
+              {row('Θωράκιση', o.sasiType||'ΜΟΝΗ ΘΩΡΑΚΙΣΗ')}
+              {row('Μοντέλο (διπλή)', o.dipliModel)}
+              {row('Τύπος κάσας', o.caseType)}
+              {row('Κλειδαριά', o.lock)}
+              {row('Αφαλός', o.cylinder)}
+              {row('Κυπρί', o.kypri && o.kypri!=='ΟΧΙ' ? o.kypri : null)}
+              {row('Μείωση ύψους', o.heightReduction)}
+              {row('Τοποθέτηση', o.installation)}
+              {row('Τεμάχια', o.qty)}
+              {row('Κατάσταση', STATUS_LABEL[o.status]||o.status||'—')}
+              {row('Σημειώσεις', o.notes)}
+              </ScrollView>
+            </>;})() : (
+              <View style={{alignItems:'center', paddingVertical:10}}>
+                <Text style={{fontSize:16, fontWeight:'bold', color:'#c62828', textAlign:'center'}}>⚠️ Δεν βρέθηκε παραγγελία #{resDetail?.orderNo}</Text>
+                <Text style={{fontSize:13, color:'#777', textAlign:'center', marginTop:8}}>Πιθανό «φάντασμα» — δέσμευση χωρίς παραγγελία.</Text>
+              </View>
+            )}
+            <TouchableOpacity style={[styles.modalBtn, {backgroundColor:'#8B0000', marginTop:16}]} onPress={()=>setResDetail(null)}>
+              <Text style={{color:'white', fontWeight:'bold'}}>ΚΛΕΙΣΙΜΟ</Text>
+            </TouchableOpacity>
+          </View>
+        </View>
+      </Modal>
+
+      {/* Επιβεβαίωση κάλυψης από παλιό στοκ */}
+      <Modal visible={!!oldConfirm} transparent animationType="fade" onRequestClose={()=>{setOldConfirm(false);setOldSel([]);}}>
+        <View style={styles.overlay}>
+          <View style={[styles.modalBox, {width:'72%', maxWidth:320}]}>
+            <Text style={[styles.modalTitle, {fontSize:19}]}>Κάλυψη από παλιό στοκ</Text>
+            <Text style={{fontSize:15, color:'#444', marginBottom:18, textAlign:'center'}}>Να καλυφθούν {oldSel.length} δεσμεύσεις από παλιό (μη περασμένο) στοκ;</Text>
+            <TouchableOpacity style={{width:'100%', paddingVertical:12, borderRadius:8, alignItems:'center', backgroundColor:'#2e7d32', marginBottom:8}}
+              onPress={()=>applyOldCover(oldConfirm)}>
+              <Text style={{color:'white', fontWeight:'bold', fontSize:15}}>ΝΑΙ, ΚΑΛΥΨΗ</Text>
+            </TouchableOpacity>
+            <TouchableOpacity style={{width:'100%', paddingVertical:10, alignItems:'center'}} onPress={()=>{setOldConfirm(false);setOldSel([]);}}>
+              <Text style={{color:'#999', fontWeight:'bold', fontSize:14}}>ΑΚΥΡΟ</Text>
+            </TouchableOpacity>
+          </View>
+        </View>
+      </Modal>
 
       {/* Δεύτερη επιβεβαίωση */}
       <Modal visible={confirmApply} transparent animationType="fade" onRequestClose={()=>setConfirmApply(false)}>
