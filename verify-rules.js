@@ -24,7 +24,6 @@ function buildTasksForMoniStdOrder(o) {
   const coats = (o.coatings || []).filter((c) => c && String(c).trim());
   const hasCoatings = coats.length > 0;
   const isOversize = isMoni && (String(o.h) === '223' || String(o.w) === '83');
-  const noOtherTask = !hasStaveraForm && !isMoniWithLock && !hasHeightReductionForm && !hasMontageForm && !hasKypri;
   const needsBuild =
     isDipli ||
     isMoniWithLock ||
@@ -38,12 +37,22 @@ function buildTasksForMoniStdOrder(o) {
     ...(hasHeightReductionForm ? { heightReduction: false } : {}),
     ...(hasKypri ? { kypri: false, case: false } : {}),
     ...(hasMontageForm ? { montage: false } : {}),
-    ...(sasiNeedsProduction || isDipli ? { sasi: false } : {}),
-    ...(isOversize && noOtherTask ? { oversize: false } : {}),
+    ...(isOversize ? { oversize: false } : (sasiNeedsProduction || isDipli ? { sasi: false } : {})),
     ...Object.fromEntries(coats.map((_, i) => [`epend${i}`, false])),
   };
   if (Object.keys(tasks).length === 0) return { sasi: false };
   return tasks;
+}
+
+function remapOversizeStdBuild(o) {
+  if (o.orderType !== 'ΤΥΠΟΠΟΙΗΜΕΝΗ' || o.status !== 'STD_BUILD' || !o.buildTasks) return null;
+  const isMoni = o.sasiType === 'ΜΟΝΗ ΘΩΡΑΚΙΣΗ' || !o.sasiType;
+  const isOversize = isMoni && (String(o.h) === '223' || String(o.w) === '83');
+  if (!isOversize || 'oversize' in o.buildTasks) return null;
+  const tasks = { ...o.buildTasks };
+  tasks.oversize = 'sasi' in tasks ? tasks.sasi : false;
+  delete tasks.sasi;
+  return { ...o, buildTasks: tasks };
 }
 
 function migrateCoatingsToStdBuild(o) {
@@ -82,6 +91,90 @@ function truthyBool(v) {
   return false;
 }
 
+// ΑΝΤΙΓΡΑΦΟ από utils.js — αυτόματη χρέωση πόρτας από τιμοκατάλογο
+const priceNum = (v) => { const n = parseFloat(String(v ?? '').replace(',', '.')); return isNaN(n) ? 0 : n; };
+const bandAdd = (bands, v) => {
+  const x = priceNum(v);
+  const b = (bands || []).find(bb => {
+    const from = String(bb?.from ?? '').trim() === '' ? -Infinity : priceNum(bb.from);
+    const to = String(bb?.to ?? '').trim() === '' ? Infinity : priceNum(bb.to);
+    return x >= from && x <= to;
+  });
+  return b ? priceNum(b.add) : 0;
+};
+function autoPriceLines(catalog, orderType, order = {}) {
+  const cat = orderType === 'ΕΙΔΙΚΗ' ? 'ΕΙΔΙΚΗ' : 'ΤΥΠΟΠΟΙΗΜΕΝΗ';
+  const catMatch = (c) => c === cat || c === 'ΓΕΝΙΚΗ';
+  const isDipli = String(order.sasiType || '').includes('ΔΙΠΛΗ') || String(order.armor || '').includes('ΔΙΠΛΗ');
+  const wantArmor = isDipli ? 'ΔΙΠΛΗ ΘΩΡΑΚΙΣΗ' : 'ΜΟΝΗ ΘΩΡΑΚΙΣΗ';
+  const model = isDipli ? String(order.dipliModel || '').trim() : '';
+  const coats = (order.coatings || []).filter(Boolean).map(s => String(s).trim());
+  const lock = String(order.lock || '').trim();
+  const q = parseInt(order.qty, 10); const qty = String(q > 0 ? q : 1);
+  const total = (e) => {
+    const h = bandAdd(e.heightBands, order.h), w = bandAdd(e.widthBands, order.w);
+    return priceNum(e.unitPrice) + (e.bandLogic === 'or' ? Math.max(h, w) : h + w);
+  };
+  const lines = [];
+
+  const armor = (catalog || []).filter(e => e && e.hasRule && catMatch(e.category)
+    && (e.ruleKind === 'armor' || (!e.ruleKind && e.ruleArmor)) && String(e.ruleArmor || '') === wantArmor);
+  const pick = isDipli
+    ? (model && armor.find(e => String(e.ruleModel || '').trim() === model)) || armor.find(e => !String(e.ruleModel || '').trim())
+    : armor[0];
+  if (pick && total(pick) > 0) lines.push({ label: pick.name || wantArmor, value: String(Math.round(total(pick) * 100) / 100), qty });
+
+  for (const e of (catalog || [])) {
+    if (!e || !e.hasRule || !catMatch(e.category)) continue;
+    const kind = e.ruleKind || (e.ruleArmor ? 'armor' : '');
+    if (kind === 'armor') continue;
+    const target = String(e.ruleTarget || '').trim();
+    const hit = kind === 'coating' ? (!!target && coats.includes(target))
+      : kind === 'lock' ? (!!lock && lock === target) : false;
+    if (!hit || total(e) <= 0) continue;
+    lines.push({ label: e.name || target, value: String(Math.round(total(e) * 100) / 100), qty });
+  }
+
+  const stav = (order.stavera || []).filter(s => s && s.dim);
+  if (stav.length) {
+    const ruleOf = (kind) => (catalog || []).find(e => e && e.hasRule && catMatch(e.category) && e.ruleKind === kind);
+    const perimM = (dim) => {
+      const n = String(dim).split(/[×xXχΧ]/).map(p => priceNum(p)).filter(v => v > 0);
+      return n.length >= 2 ? 2 * (n[0] + n[1]) / 100 : 0;
+    };
+    const charge = (rule, rows) => rows.reduce((sum, s) => {
+      const p = perimM(s.dim); if (p <= 0) return sum;
+      const rq = parseInt(s.qty, 10) > 0 ? parseInt(s.qty, 10) : 1;
+      return sum + Math.max(priceNum(rule.minCharge), p * priceNum(rule.unitPrice)) * rq;
+    }, 0);
+    const glass = ruleOf('glass'), design = ruleOf('design');
+    if (glass && priceNum(glass.unitPrice) > 0) {
+      const v = charge(glass, stav);
+      if (v > 0) lines.push({ label: glass.name || 'Σταθερό / Τζάμι', value: String(Math.round(v * 100) / 100), qty });
+    }
+    if (design && priceNum(design.unitPrice) > 0) {
+      const xRows = stav.filter(s => String(s.design || '').trim() === String(design.ruleTarget || '').trim());
+      const v = charge(design, xRows);
+      if (v > 0) lines.push({ label: design.name || 'ΧΙΑΣΤΗ', value: String(Math.round(v * 100) / 100), qty });
+    }
+  }
+  return lines;
+}
+function applyAutoPriceLines(priceList, lines) {
+  const list = Array.isArray(priceList) ? priceList : [];
+  const byLabel = new Map((lines || []).filter(l => l && l.label != null).map(l => [String(l.label).trim(), l]));
+  const seen = new Set();
+  const upd = list.map(it => {
+    const lbl = String(it?.label || '').trim();
+    const nl = byLabel.get(lbl);
+    if (!nl) return it;
+    seen.add(lbl);
+    return { ...it, value: (nl.value !== '' && nl.value != null) ? nl.value : it.value, qty: nl.qty || it.qty };
+  });
+  const add = (lines || []).filter(l => l && !seen.has(String(l.label).trim()));
+  return [...add, ...upd];
+}
+
 // ΑΝΤΙΓΡΑΦΟ από formatHelpers.js (suggestNextOrderNo, findDuplicateCustomers, custSortKey)
 function suggestNextOrderNo(presentNos = [], ledgerNos = [], startAt = 1) {
   const toInt = (x) => { const n = parseInt(String(x), 10); return Number.isFinite(n) ? n : null; };
@@ -90,6 +183,19 @@ function suggestNextOrderNo(presentNos = [], ledgerNos = [], startAt = 1) {
   return String(max + 1);
 }
 const groupOrderNo = (base, seq) => `${String(base).trim()}-${seq}`;
+const splitBaseNo = (orderNo) => String(orderNo).split('-')[0].trim();
+const nextGroupSuffix = (base, nos = []) => {
+  const b = String(base).trim();
+  let max = 0;
+  for (const no of nos) {
+    const s = String(no);
+    if (s.startsWith(b + '-')) {
+      const n = parseInt(s.slice(b.length + 1), 10);
+      if (Number.isFinite(n) && n > max) max = n;
+    }
+  }
+  return max + 1;
+};
 const phoneKey = (p) => { const d = String(p || '').replace(/\D/g, ''); return d.length > 10 ? d.slice(-10) : d; };
 const normTxt = (s) => String(s || '').normalize('NFD').replace(/[\u0300-\u036f]/g, '').toLowerCase().replace(/[.,;·]/g, ' ').replace(/\s+/g, ' ').trim();
 const custSortKey = (c) => String(c?.name || '').replace(/^[^\p{L}]+/u, '').toLocaleLowerCase('el');
@@ -207,64 +313,64 @@ group('ΜΟΝΗ σκέτη — εντός κανόνα 223/83 (νέος κανό
     { oversize: false });
 });
 
-group('ΜΟΝΗ + κλειδαριά — oversize δεν εμφανίζεται', () => {
+group('ΜΟΝΗ + κλειδαριά — 223/83 → oversize αντί sasi', () => {
   test('213×88 + lock → {lock,sasi}',
     buildTasksForMoniStdOrder(moni({ h: '213', w: '88', lock: 'CISA' })),
     { lock: false, sasi: false });
-  test('223×88 + lock → {lock,sasi} (όχι oversize)',
+  test('223×88 + lock → {lock,oversize}',
     buildTasksForMoniStdOrder(moni({ h: '223', w: '88', lock: 'CISA' })),
-    { lock: false, sasi: false });
-  test('218×83 + lock → {lock,sasi} (όχι oversize)',
+    { lock: false, oversize: false });
+  test('218×83 + lock → {lock,oversize}',
     buildTasksForMoniStdOrder(moni({ h: '218', w: '83', lock: 'CISA' })),
-    { lock: false, sasi: false });
+    { lock: false, oversize: false });
 });
 
-group('ΜΟΝΗ + σταθερό — oversize δεν εμφανίζεται', () => {
+group('ΜΟΝΗ + σταθερό — 223/83 προσθέτει oversize', () => {
   test('213×88 + stavera → {stavera}',
     buildTasksForMoniStdOrder(moni({ h: '213', w: '88', stavera: [{ dim: '50x100' }] })),
     { stavera: false });
-  test('223×88 + stavera → {stavera} (όχι oversize, όχι sasi production)',
+  test('223×88 + stavera → {stavera,oversize}',
     buildTasksForMoniStdOrder(moni({ h: '223', w: '88', stavera: [{ dim: '50x100' }] })),
-    { stavera: false });
-  test('218×83 + stavera → {stavera}',
+    { stavera: false, oversize: false });
+  test('218×83 + stavera → {stavera,oversize}',
     buildTasksForMoniStdOrder(moni({ h: '218', w: '83', stavera: [{ dim: '50x100' }] })),
-    { stavera: false });
+    { stavera: false, oversize: false });
   test('Άδειο stavera array → null για 213×88',
     buildTasksForMoniStdOrder(moni({ h: '213', w: '88', stavera: [{ dim: '' }] })),
     null);
 });
 
-group('ΜΟΝΗ + μοντάρισμα — oversize δεν εμφανίζεται', () => {
+group('ΜΟΝΗ + μοντάρισμα — 223/83 προσθέτει oversize', () => {
   test('213×88 + montage → {montage}',
     buildTasksForMoniStdOrder(moni({ h: '213', w: '88', installation: 'ΝΑΙ' })),
     { montage: false });
-  test('223×88 + montage → {montage} (όχι oversize)',
+  test('223×88 + montage → {montage,oversize}',
     buildTasksForMoniStdOrder(moni({ h: '223', w: '88', installation: 'ΝΑΙ' })),
-    { montage: false });
-  test('218×83 + montage → {montage}',
+    { montage: false, oversize: false });
+  test('218×83 + montage → {montage,oversize}',
     buildTasksForMoniStdOrder(moni({ h: '218', w: '83', installation: 'ΝΑΙ' })),
-    { montage: false });
+    { montage: false, oversize: false });
 });
 
-group('ΜΟΝΗ + μείωση ύψους — oversize δεν εμφανίζεται', () => {
+group('ΜΟΝΗ + μείωση ύψους — 223/83 → oversize αντί sasi', () => {
   test('213×88 + heightReduction → {heightReduction,sasi}',
     buildTasksForMoniStdOrder(moni({ h: '213', w: '88', heightReduction: '5cm' })),
     { heightReduction: false, sasi: false });
-  test('223×88 + heightReduction → {heightReduction,sasi} (όχι oversize)',
+  test('223×88 + heightReduction → {heightReduction,oversize}',
     buildTasksForMoniStdOrder(moni({ h: '223', w: '88', heightReduction: '5cm' })),
-    { heightReduction: false, sasi: false });
+    { heightReduction: false, oversize: false });
 });
 
-group('ΜΟΝΗ συνδυασμοί — oversize δεν εμφανίζεται όταν υπάρχει άλλο task', () => {
-  test('223×88 + lock + stavera → {stavera,lock,sasi}',
+group('ΜΟΝΗ συνδυασμοί — 223/83 πάντα oversize (αντί sasi)', () => {
+  test('223×88 + lock + stavera → {stavera,lock,oversize}',
     buildTasksForMoniStdOrder(moni({ h: '223', w: '88', lock: 'CISA', stavera: [{ dim: '50x100' }] })),
-    { stavera: false, lock: false, sasi: false });
-  test('223×83 + montage + heightReduction → {heightReduction,montage,sasi}',
+    { stavera: false, lock: false, oversize: false });
+  test('223×83 + montage + heightReduction → {heightReduction,montage,oversize}',
     buildTasksForMoniStdOrder(moni({ h: '223', w: '83', installation: 'ΝΑΙ', heightReduction: '5cm' })),
-    { heightReduction: false, montage: false, sasi: false });
-  test('223×88 + lock + montage + stavera → όλα + sasi',
+    { heightReduction: false, montage: false, oversize: false });
+  test('223×88 + lock + montage + stavera → όλα + oversize',
     buildTasksForMoniStdOrder(moni({ h: '223', w: '88', lock: 'CISA', installation: 'ΝΑΙ', stavera: [{ dim: '50x100' }] })),
-    { stavera: false, lock: false, montage: false, sasi: false });
+    { stavera: false, lock: false, montage: false, oversize: false });
 });
 
 group('ΔΙΠΛΗ — πάντα STD_BUILD με sasi, oversize δεν αφορά', () => {
@@ -301,15 +407,15 @@ group('Κυπρί — case παράγεται από στοκ, sasi ακολου
   test('218×93 ΜΟΝΗ + kypri → {kypri,case}',
     buildTasksForMoniStdOrder(moni({ h: '218', w: '93', kypri: 'ΝΑΙ' })),
     { kypri: false, case: false });
-  test('223×88 ΜΟΝΗ + kypri → {kypri,case} (όχι oversize)',
+  test('223×88 ΜΟΝΗ + kypri → {kypri,case,oversize}',
     buildTasksForMoniStdOrder(moni({ h: '223', w: '88', kypri: 'ΝΑΙ' })),
-    { kypri: false, case: false });
-  test('218×83 ΜΟΝΗ + kypri → {kypri,case} (όχι oversize)',
+    { kypri: false, case: false, oversize: false });
+  test('218×83 ΜΟΝΗ + kypri → {kypri,case,oversize}',
     buildTasksForMoniStdOrder(moni({ h: '218', w: '83', kypri: 'ΝΑΙ' })),
-    { kypri: false, case: false });
-  test('223×83 ΜΟΝΗ + kypri → {kypri,case} (όχι oversize)',
+    { kypri: false, case: false, oversize: false });
+  test('223×83 ΜΟΝΗ + kypri → {kypri,case,oversize}',
     buildTasksForMoniStdOrder(moni({ h: '223', w: '83', kypri: 'ΝΑΙ' })),
-    { kypri: false, case: false });
+    { kypri: false, case: false, oversize: false });
   test('213×88 ΜΟΝΗ + kypri + lock → {lock,kypri,case,sasi}',
     buildTasksForMoniStdOrder(moni({ h: '213', w: '88', kypri: 'ΝΑΙ', lock: 'CISA' })),
     { lock: false, kypri: false, case: false, sasi: false });
@@ -385,6 +491,31 @@ group('Migration — παλιές παραγγελίες με επενδύσει
     null);
 });
 
+group('remapOversizeStdBuild — παλιές 223/83 από sasi → oversize', () => {
+  const b = (extras = {}) => ({ orderType: 'ΤΥΠΟΠΟΙΗΜΕΝΗ', sasiType: 'ΜΟΝΗ ΘΩΡΑΚΙΣΗ', status: 'STD_BUILD', h: '213', w: '88', ...extras });
+  test('223×88 με {lock,sasi} → {lock,oversize}',
+    remapOversizeStdBuild(b({ h: '223', buildTasks: { lock: false, sasi: false } })).buildTasks,
+    { lock: false, oversize: false });
+  test('218×83 με sasi:true (ξεκίνησε) → oversize:true (κρατά πρόοδο)',
+    remapOversizeStdBuild(b({ w: '83', buildTasks: { sasi: true } })).buildTasks,
+    { oversize: true });
+  test('223/83 χωρίς sasi/oversize (π.χ. montage) → προσθήκη oversize:false',
+    remapOversizeStdBuild(b({ h: '223', buildTasks: { montage: false } })).buildTasks,
+    { montage: false, oversize: false });
+  test('223/83 που έχει ήδη oversize → null',
+    remapOversizeStdBuild(b({ h: '223', buildTasks: { oversize: false } })),
+    null);
+  test('εκτός κανόνα (213×88) → null',
+    remapOversizeStdBuild(b({ buildTasks: { sasi: false } })),
+    null);
+  test('ΔΙΠΛΗ 223×88 → null (δεν αφορά)',
+    remapOversizeStdBuild(b({ h: '223', sasiType: 'ΔΙΠΛΗ ΘΩΡΑΚΙΣΗ', buildTasks: { sasi: false } })),
+    null);
+  test('όχι STD_BUILD → null',
+    remapOversizeStdBuild(b({ h: '223', status: 'STD_READY', buildTasks: { sasi: false } })),
+    null);
+});
+
 group('sasiKey / caseKey', () => {
   test('sasiKey 223,88,ΔΕΞΙΑ',
     sasiKey('223', '88', 'ΔΕΞΙΑ'),
@@ -446,6 +577,18 @@ group('groupOrderNo / ομάδα πορτών — μορφή & αρίθμηση 
   test('suffixed στο μητρώο μετράει ως βάση: ledger 145-1 → 146', suggestNextOrderNo([], ['145-1']), '146');
 });
 
+group('σπάσιμο παραγγελίας — splitBaseNo / nextGroupSuffix', () => {
+  test('splitBaseNo σκέτο → ίδιο', splitBaseNo('4521'), '4521');
+  test('splitBaseNo με παύλα → βάση', splitBaseNo('4521-2'), '4521');
+  test('splitBaseNo με κενά → trim', splitBaseNo(' 4521 '), '4521');
+  test('πρώτο σπάσιμο σκέτου → 1', nextGroupSuffix('4521', ['4521','100']), 1);
+  test('υπάρχει 4521-1 → 2', nextGroupSuffix('4521', ['4521','4521-1']), 2);
+  test('υπάρχουν 4521-1,4521-2 → 3', nextGroupSuffix('4521', ['4521-1','4521-2']), 3);
+  test('αγνοεί άλλη βάση (452) → 1', nextGroupSuffix('4521', ['452-9','4521']), 1);
+  test('κενά nos → 1', nextGroupSuffix('4521', []), 1);
+  test('groupOrderNo με το suffix → "4521-2"', groupOrderNo('4521', nextGroupSuffix('4521', ['4521-1'])), '4521-2');
+});
+
 group('φύλακας ετικετών Firebase — firstBadFbKey/badKeyInWrite', () => {
   test('τελεία σε key → εντοπίζεται', firstBadFbKey({ 'PVC. ΕΞΩ': { dim: '1' } }), 'PVC. ΕΞΩ');
   test('κάθετος σε key → εντοπίζεται', firstBadFbKey({ '7016/9010': 1 }), '7016/9010');
@@ -505,6 +648,127 @@ group('custSortKey — αλφαβητική ταξινόμηση', () => {
   test('αγνοεί κεφαλαία/πεζά', custSortKey({ name:'αλεξης' }), custSortKey({ name:'ΑΛΕΞΗΣ' }));
   const arr = [{name:'Ζ'},{name:'-Α'},{name:'1 Β'}].sort((a,b)=>custSortKey(a).localeCompare(custSortKey(b),'el'));
   test('ταξινόμηση αγνοώντας σύμβολα/αριθμούς μπροστά', arr.map(x=>x.name), ['-Α','1 Β','Ζ']);
+});
+
+group('autoPriceLines — θωράκιση (πόρτα)', () => {
+  const cat = [
+    { name: 'Πόρτα ΜΟΝΗ', category: 'ΤΥΠΟΠΟΙΗΜΕΝΗ', hasRule: true, ruleKind: 'armor', ruleArmor: 'ΜΟΝΗ ΘΩΡΑΚΙΣΗ', unitPrice: '300' },
+    { name: 'Πόρτα ΔΙΠΛΗ', category: 'ΤΥΠΟΠΟΙΗΜΕΝΗ', hasRule: true, ruleKind: 'armor', ruleArmor: 'ΔΙΠΛΗ ΘΩΡΑΚΙΣΗ', unitPrice: '450' },
+    { name: 'Ειδική ΜΟΝΗ', category: 'ΕΙΔΙΚΗ', hasRule: true, ruleKind: 'armor', ruleArmor: 'ΜΟΝΗ ΘΩΡΑΚΙΣΗ', unitPrice: '500' },
+    { name: 'Λάστιχο', category: 'ΓΕΝΙΚΗ', hasRule: false, unitPrice: '10' },
+  ];
+  test('τυποπ. ΜΟΝΗ → 300', autoPriceLines(cat, 'ΤΥΠΟΠΟΙΗΜΕΝΗ', { sasiType: 'ΜΟΝΗ ΘΩΡΑΚΙΣΗ', qty: '1' }), [{ label: 'Πόρτα ΜΟΝΗ', value: '300', qty: '1' }]);
+  test('τυποπ. ΔΙΠΛΗ → 450', autoPriceLines(cat, 'ΤΥΠΟΠΟΙΗΜΕΝΗ', { sasiType: 'ΔΙΠΛΗ ΘΩΡΑΚΙΣΗ', qty: '1' }), [{ label: 'Πόρτα ΔΙΠΛΗ', value: '450', qty: '1' }]);
+  test('sasiType κενό → ΜΟΝΗ', autoPriceLines(cat, 'ΤΥΠΟΠΟΙΗΜΕΝΗ', { qty: '1' }), [{ label: 'Πόρτα ΜΟΝΗ', value: '300', qty: '1' }]);
+  test('armor ΔΙΠΛΗ → διπλή', autoPriceLines(cat, 'ΤΥΠΟΠΟΙΗΜΕΝΗ', { armor: 'ΔΙΠΛΗ', qty: '1' }), [{ label: 'Πόρτα ΔΙΠΛΗ', value: '450', qty: '1' }]);
+  test('ειδική ΜΟΝΗ → 500', autoPriceLines(cat, 'ΕΙΔΙΚΗ', { sasiType: 'ΜΟΝΗ ΘΩΡΑΚΙΣΗ', qty: '1' }), [{ label: 'Ειδική ΜΟΝΗ', value: '500', qty: '1' }]);
+  test('ειδική ΔΙΠΛΗ χωρίς κανόνα → []', autoPriceLines(cat, 'ΕΙΔΙΚΗ', { sasiType: 'ΔΙΠΛΗ ΘΩΡΑΚΙΣΗ', qty: '1' }), []);
+  test('qty 3 → ποσότητα 3', autoPriceLines(cat, 'ΤΥΠΟΠΟΙΗΜΕΝΗ', { sasiType: 'ΜΟΝΗ ΘΩΡΑΚΙΣΗ', qty: '3' }), [{ label: 'Πόρτα ΜΟΝΗ', value: '300', qty: '3' }]);
+  test('κενός κατάλογος → []', autoPriceLines([], 'ΤΥΠΟΠΟΙΗΜΕΝΗ', { sasiType: 'ΜΟΝΗ ΘΩΡΑΚΙΣΗ', qty: '1' }), []);
+});
+
+group('autoPriceLines — επενδύσεις / κλειδαριές / ΓΕΝΙΚΗ', () => {
+  const cat = [
+    { name: 'PVC ΕΞΩ', category: 'ΓΕΝΙΚΗ', hasRule: true, ruleKind: 'coating', ruleTarget: 'PVC ΕΞΩ', unitPrice: '40' },
+    { name: 'Κλειδαριά CISA', category: 'ΓΕΝΙΚΗ', hasRule: true, ruleKind: 'lock', ruleTarget: 'CISA', unitPrice: '80' },
+    { name: 'Ειδική επένδυση', category: 'ΕΙΔΙΚΗ', hasRule: true, ruleKind: 'coating', ruleTarget: 'INOX', unitPrice: '120' },
+  ];
+  test('επένδυση ΓΕΝΙΚΗ μπαίνει σε τυποποιημένη', autoPriceLines(cat, 'ΤΥΠΟΠΟΙΗΜΕΝΗ', { coatings: ['PVC ΕΞΩ'], qty: '1' }), [{ label: 'PVC ΕΞΩ', value: '40', qty: '1' }]);
+  test('κλειδαριά match', autoPriceLines(cat, 'ΤΥΠΟΠΟΙΗΜΕΝΗ', { lock: 'CISA', qty: '1' }), [{ label: 'Κλειδαριά CISA', value: '80', qty: '1' }]);
+  test('επένδυση που δεν υπάρχει στην παραγγελία → []', autoPriceLines(cat, 'ΤΥΠΟΠΟΙΗΜΕΝΗ', { coatings: ['LAMINATE'], qty: '1' }), []);
+  test('ειδική επένδυση δεν μπαίνει σε τυποποιημένη', autoPriceLines(cat, 'ΤΥΠΟΠΟΙΗΜΕΝΗ', { coatings: ['INOX'], qty: '1' }), []);
+  test('ειδική επένδυση μπαίνει σε ειδική', autoPriceLines(cat, 'ΕΙΔΙΚΗ', { coatings: ['INOX'], qty: '1' }), [{ label: 'Ειδική επένδυση', value: '120', qty: '1' }]);
+  test('πολλά μαζί: επένδυση + κλειδαριά', autoPriceLines(cat, 'ΤΥΠΟΠΟΙΗΜΕΝΗ', { coatings: ['PVC ΕΞΩ'], lock: 'CISA', qty: '1' }), [{ label: 'PVC ΕΞΩ', value: '40', qty: '1' }, { label: 'Κλειδαριά CISA', value: '80', qty: '1' }]);
+});
+
+group('autoPriceLines — κλίμακες επιβάρυνσης ύψους/πλάτους', () => {
+  const cat = [{
+    name: 'Ειδική ΜΟΝΗ', category: 'ΕΙΔΙΚΗ', hasRule: true, ruleKind: 'armor', ruleArmor: 'ΜΟΝΗ ΘΩΡΑΚΙΣΗ', unitPrice: '150',
+    heightBands: [{ from: '219', to: '230', add: '50' }],
+    widthBands: [{ from: '99', to: '120', add: '30' }, { from: '121', to: '', add: '60' }],
+  }];
+  const o = (h, w) => ({ sasiType: 'ΜΟΝΗ ΘΩΡΑΚΙΣΗ', qty: '1', h, w });
+  test('225×110 → 230', autoPriceLines(cat, 'ΕΙΔΙΚΗ', o('225', '110')), [{ label: 'Ειδική ΜΟΝΗ', value: '230', qty: '1' }]);
+  test('218×98 → 150', autoPriceLines(cat, 'ΕΙΔΙΚΗ', o('218', '98')), [{ label: 'Ειδική ΜΟΝΗ', value: '150', qty: '1' }]);
+  test('225×130 → ανοιχτό 121+ = 260', autoPriceLines(cat, 'ΕΙΔΙΚΗ', o('225', '130')), [{ label: 'Ειδική ΜΟΝΗ', value: '260', qty: '1' }]);
+  test('230×99 → οριακά = 230', autoPriceLines(cat, 'ΕΙΔΙΚΗ', o('230', '99')), [{ label: 'Ειδική ΜΟΝΗ', value: '230', qty: '1' }]);
+  test('χωρίς διαστάσεις → 150', autoPriceLines(cat, 'ΕΙΔΙΚΗ', { sasiType: 'ΜΟΝΗ ΘΩΡΑΚΙΣΗ', qty: '1' }), [{ label: 'Ειδική ΜΟΝΗ', value: '150', qty: '1' }]);
+  test('δεκαδική επιβάρυνση 12,5 → 162.5', autoPriceLines([{ name: 'Χ', category: 'ΤΥΠΟΠΟΙΗΜΕΝΗ', hasRule: true, ruleKind: 'armor', ruleArmor: 'ΜΟΝΗ ΘΩΡΑΚΙΣΗ', unitPrice: '150', widthBands: [{ from: '98', to: '', add: '12,5' }] }], 'ΤΥΠΟΠΟΙΗΜΕΝΗ', { sasiType: 'ΜΟΝΗ ΘΩΡΑΚΙΣΗ', qty: '1', h: '210', w: '98' }), [{ label: 'Χ', value: '162.5', qty: '1' }]);
+});
+
+group('autoPriceLines — λογική OR (μόνο η μεγαλύτερη) vs AND (αθροιστικά)', () => {
+  const cat = (logic) => [{
+    name: 'Ειδική ΜΟΝΗ', category: 'ΕΙΔΙΚΗ', hasRule: true, ruleKind: 'armor', ruleArmor: 'ΜΟΝΗ ΘΩΡΑΚΙΣΗ', unitPrice: '250', bandLogic: logic,
+    heightBands: [{ from: '219', to: '235', add: '45' }, { from: '236', to: '', add: '145' }],
+    widthBands: [{ from: '99', to: '', add: '45' }],
+  }];
+  const o = (h, w) => ({ sasiType: 'ΜΟΝΗ ΘΩΡΑΚΙΣΗ', qty: '1', h, w });
+  test('OR 225×95 → 295', autoPriceLines(cat('or'), 'ΕΙΔΙΚΗ', o('225', '95')), [{ label: 'Ειδική ΜΟΝΗ', value: '295', qty: '1' }]);
+  test('OR 225×100 → 295 (όχι 340)', autoPriceLines(cat('or'), 'ΕΙΔΙΚΗ', o('225', '100')), [{ label: 'Ειδική ΜΟΝΗ', value: '295', qty: '1' }]);
+  test('OR 240×100 → 395 (το μεγαλύτερο 145)', autoPriceLines(cat('or'), 'ΕΙΔΙΚΗ', o('240', '100')), [{ label: 'Ειδική ΜΟΝΗ', value: '395', qty: '1' }]);
+  test('OR 210×100 → 295', autoPriceLines(cat('or'), 'ΕΙΔΙΚΗ', o('210', '100')), [{ label: 'Ειδική ΜΟΝΗ', value: '295', qty: '1' }]);
+  test('OR 218×95 → 250 (καμία)', autoPriceLines(cat('or'), 'ΕΙΔΙΚΗ', o('218', '95')), [{ label: 'Ειδική ΜΟΝΗ', value: '250', qty: '1' }]);
+  test('AND 225×100 → 340 (αθροιστικά, default)', autoPriceLines(cat('and'), 'ΕΙΔΙΚΗ', o('225', '100')), [{ label: 'Ειδική ΜΟΝΗ', value: '340', qty: '1' }]);
+});
+
+group('autoPriceLines — μοντέλα διπλής θωράκισης', () => {
+  const cat = [
+    { name: 'Διπλή S21-1', category: 'ΤΥΠΟΠΟΙΗΜΕΝΗ', hasRule: true, ruleKind: 'armor', ruleArmor: 'ΔΙΠΛΗ ΘΩΡΑΚΙΣΗ', ruleModel: 'S21-1', unitPrice: '270' },
+    { name: 'Διπλή S22-1', category: 'ΤΥΠΟΠΟΙΗΜΕΝΗ', hasRule: true, ruleKind: 'armor', ruleArmor: 'ΔΙΠΛΗ ΘΩΡΑΚΙΣΗ', ruleModel: 'S22-1', unitPrice: '345' },
+    { name: 'Διπλή H23-2', category: 'ΤΥΠΟΠΟΙΗΜΕΝΗ', hasRule: true, ruleKind: 'armor', ruleArmor: 'ΔΙΠΛΗ ΘΩΡΑΚΙΣΗ', ruleModel: 'H23-2', unitPrice: '375' },
+  ];
+  test('μοντέλο S21-1 → 270', autoPriceLines(cat, 'ΤΥΠΟΠΟΙΗΜΕΝΗ', { sasiType: 'ΔΙΠΛΗ ΘΩΡΑΚΙΣΗ', dipliModel: 'S21-1', qty: '1' }), [{ label: 'Διπλή S21-1', value: '270', qty: '1' }]);
+  test('μοντέλο H23-2 → 375', autoPriceLines(cat, 'ΤΥΠΟΠΟΙΗΜΕΝΗ', { sasiType: 'ΔΙΠΛΗ ΘΩΡΑΚΙΣΗ', dipliModel: 'H23-2', qty: '1' }), [{ label: 'Διπλή H23-2', value: '375', qty: '1' }]);
+  test('μία μόνο γραμμή θωράκισης (όχι διπλο)', autoPriceLines(cat, 'ΤΥΠΟΠΟΙΗΜΕΝΗ', { sasiType: 'ΔΙΠΛΗ ΘΩΡΑΚΙΣΗ', dipliModel: 'S22-1', qty: '1' }).length, 1);
+  test('χωρίς μοντέλο + γενικός κανόνας → fallback', autoPriceLines([{ name: 'Διπλή γενική', category: 'ΤΥΠΟΠΟΙΗΜΕΝΗ', hasRule: true, ruleKind: 'armor', ruleArmor: 'ΔΙΠΛΗ ΘΩΡΑΚΙΣΗ', unitPrice: '450' }], 'ΤΥΠΟΠΟΙΗΜΕΝΗ', { sasiType: 'ΔΙΠΛΗ ΘΩΡΑΚΙΣΗ', dipliModel: 'S21-1', qty: '1' }), [{ label: 'Διπλή γενική', value: '450', qty: '1' }]);
+  test('μοντέλο χωρίς αντιστοιχία + χωρίς γενικό → []', autoPriceLines(cat, 'ΤΥΠΟΠΟΙΗΜΕΝΗ', { sasiType: 'ΔΙΠΛΗ ΘΩΡΑΚΙΣΗ', dipliModel: 'S22-2', qty: '1' }), []);
+});
+
+group('autoPriceLines — σταθερά (περίμετρος glass/design)', () => {
+  const cat = [
+    { name: 'Σταθερό / Τζάμι', category: 'ΓΕΝΙΚΗ', hasRule: true, ruleKind: 'glass', ruleTarget: 'Σταθερό / Τζάμι', unit: 'μμ', unitPrice: '22', minCharge: '50' },
+    { name: 'ΧΙΑΣΤΗ', category: 'ΓΕΝΙΚΗ', hasRule: true, ruleKind: 'design', ruleTarget: 'ΧΙΑΣΤΗ', unit: 'μμ', unitPrice: '24', minCharge: '50' },
+  ];
+  test('ένα σταθερό 210×50 → 5.2μ × 22 = 114.4',
+    autoPriceLines(cat, 'ΤΥΠΟΠΟΙΗΜΕΝΗ', { stavera: [{ dim: '210 × 50' }], qty: '1' }),
+    [{ label: 'Σταθερό / Τζάμι', value: '114.4', qty: '1' }]);
+  test('σταθερό + χιαστή → σταθερό ΚΑΙ χιαστή επιπλέον',
+    autoPriceLines(cat, 'ΤΥΠΟΠΟΙΗΜΕΝΗ', { stavera: [{ dim: '210 × 50', design: 'ΧΙΑΣΤΗ' }], qty: '1' }),
+    [{ label: 'Σταθερό / Τζάμι', value: '114.4', qty: '1' }, { label: 'ΧΙΑΣΤΗ', value: '124.8', qty: '1' }]);
+  test('ελάχιστο 50€ ανά κομμάτι (μικρό 30×20)',
+    autoPriceLines(cat, 'ΤΥΠΟΠΟΙΗΜΕΝΗ', { stavera: [{ dim: '30x20' }], qty: '1' }),
+    [{ label: 'Σταθερό / Τζάμι', value: '50', qty: '1' }]);
+  test('πολλαπλασιασμός με πόρτες (qty 3)',
+    autoPriceLines(cat, 'ΤΥΠΟΠΟΙΗΜΕΝΗ', { stavera: [{ dim: '210×50' }], qty: '3' }),
+    [{ label: 'Σταθερό / Τζάμι', value: '114.4', qty: '3' }]);
+  test('δύο σταθερά αθροίζονται (210×50 + 100×100)',
+    autoPriceLines(cat, 'ΤΥΠΟΠΟΙΗΜΕΝΗ', { stavera: [{ dim: '210×50' }, { dim: '100×100' }], qty: '1' }),
+    [{ label: 'Σταθερό / Τζάμι', value: '202.4', qty: '1' }]);
+  test('ποσότητα γραμμής σταθερού (qty 2)',
+    autoPriceLines(cat, 'ΤΥΠΟΠΟΙΗΜΕΝΗ', { stavera: [{ dim: '210×50', qty: '2' }], qty: '1' }),
+    [{ label: 'Σταθερό / Τζάμι', value: '228.8', qty: '1' }]);
+  test('χιαστή μόνο στη γραμμή που την έχει',
+    autoPriceLines(cat, 'ΤΥΠΟΠΟΙΗΜΕΝΗ', { stavera: [{ dim: '210×50', design: 'ΧΙΑΣΤΗ' }, { dim: '100×100' }], qty: '1' }),
+    [{ label: 'Σταθερό / Τζάμι', value: '202.4', qty: '1' }, { label: 'ΧΙΑΣΤΗ', value: '124.8', qty: '1' }]);
+  test('ισχύει και σε ΕΙΔΙΚΗ (ΓΕΝΙΚΗ κανόνας)',
+    autoPriceLines(cat, 'ΕΙΔΙΚΗ', { stavera: [{ dim: '210×50' }], qty: '1' }),
+    [{ label: 'Σταθερό / Τζάμι', value: '114.4', qty: '1' }]);
+  test('χωρίς κανόνα στον κατάλογο → καμία χρέωση σταθερού',
+    autoPriceLines([], 'ΤΥΠΟΠΟΙΗΜΕΝΗ', { stavera: [{ dim: '210×50' }], qty: '1' }), []);
+  test('μη έγκυρη διάσταση (ένας αριθμός) → αγνοείται',
+    autoPriceLines(cat, 'ΤΥΠΟΠΟΙΗΜΕΝΗ', { stavera: [{ dim: '210' }], qty: '1' }), []);
+});
+
+group('applyAutoPriceLines — συγχρονισμός αυτόματων γραμμών', () => {
+  const lines = [{ label: 'Πόρτα ΜΟΝΗ', value: '300', qty: '1' }];
+  test('κενή λίστα → προσθήκη', applyAutoPriceLines([], lines), lines);
+  test('κενές γραμμές → ίδια λίστα', applyAutoPriceLines([{ label: 'Α', value: '5', qty: '1' }], []), [{ label: 'Α', value: '5', qty: '1' }]);
+  test('μπαίνει στην αρχή', applyAutoPriceLines([{ label: 'Α', value: '5', qty: '1' }], lines), [{ label: 'Πόρτα ΜΟΝΗ', value: '300', qty: '1' }, { label: 'Α', value: '5', qty: '1' }]);
+  test('ανανεώνει τιμή ίδιου label', applyAutoPriceLines([{ label: 'Πόρτα ΜΟΝΗ', value: '999', qty: '1' }], lines), [{ label: 'Πόρτα ΜΟΝΗ', value: '300', qty: '1' }]);
+  test('μειωμένη χρέωση μετά από αλλαγή διάστασης', applyAutoPriceLines([{ label: 'Πόρτα ΜΟΝΗ', value: '330', qty: '1' }], [{ label: 'Πόρτα ΜΟΝΗ', value: '300', qty: '1' }]), [{ label: 'Πόρτα ΜΟΝΗ', value: '300', qty: '1' }]);
+  test('κενή νέα τιμή → κρατά χειροκίνητη', applyAutoPriceLines([{ label: 'Τοπ.', value: '50', qty: '1' }], [{ label: 'Τοπ.', value: '', qty: '1' }]), [{ label: 'Τοπ.', value: '50', qty: '1' }]);
+  test('ανανεώνει ποσότητα', applyAutoPriceLines([{ label: 'Μεντ.', value: '20', qty: '1' }], [{ label: 'Μεντ.', value: '20', qty: '3' }]), [{ label: 'Μεντ.', value: '20', qty: '3' }]);
+  test('πολλές γραμμές με σειρά', applyAutoPriceLines([], [{ label: 'A', value: '1', qty: '1' }, { label: 'B', value: '2', qty: '1' }]), [{ label: 'A', value: '1', qty: '1' }, { label: 'B', value: '2', qty: '1' }]);
 });
 
 // ---------- ΑΠΟΤΕΛΕΣΜΑ ----------

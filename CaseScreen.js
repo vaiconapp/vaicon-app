@@ -76,7 +76,8 @@ function QtyModal({ visible, title, onConfirm, onCancel }) {
   );
 }
 
-export default function CaseScreen({ caseStock={}, setCaseStock, opsBasket=[], setOpsBasket, stockHighlight=null, onClearSearchHighlight, locked=false, isAdmin=false }) {
+export default function CaseScreen({ caseStock={}, setCaseStock, opsBasket=[], setOpsBasket, stockHighlight=null, onClearSearchHighlight, locked=false, isAdmin=false, customOrders=[] }) {
+  const readyNos = React.useMemo(() => new Set(customOrders.filter(o=>o.status==='STD_READY').map(o=>String(o.orderNo))), [customOrders]);
   // Χρησιμοποιούμε απευθείας το κεντρικό state από App.js
   const baseMap = { ...initStockMap(), ...caseStock };
   const [qtyModal, setQtyModal] = useState({ visible:false, key:'', mode:'add', label:'', dim:'' });
@@ -185,6 +186,9 @@ export default function CaseScreen({ caseStock={}, setCaseStock, opsBasket=[], s
           const key = stockKey(h, w, side, caseType);
           const entry = stockMap[key] || { qty:0, reservations:[], pending:0 };
           const reserved = (entry.reservations||[]).reduce((s,r)=>s+(parseInt(r.qty)||1),0);
+          const totalQ = parseInt(entry.qty)||0;
+          let _cum=0, readyDoors=0, greenDoors=0, redDoors=0;
+          (entry.reservations||[]).forEach(r=>{ const q=parseInt(r.qty)||1; _cum+=q; const cov=_cum<=totalQ; if(readyNos.has(String(r.orderNo))) readyDoors+=q; else if(cov) greenDoors+=q; else redDoors+=q; });
           const available = (entry.qty||0) - reserved;
           const pending = entry.pending || 0;
           const label = `${h}x${w} ${side==='ΑΡΙΣΤΕΡΗ'?'ΑΡ':'ΔΕ'}`;
@@ -225,7 +229,8 @@ export default function CaseScreen({ caseStock={}, setCaseStock, opsBasket=[], s
               <TouchableOpacity
                 style={[styles.tdWrap, {flex:1, borderRightWidth:0}]}
                 onPress={()=>hasReservations?setShowReservations(key):null}>
-                <View style={{flexDirection:'row', flexWrap:'wrap', gap:2}}>
+                <View style={{flexDirection:'row', alignItems:'center'}}>
+                  <View style={{flexDirection:'row', flexWrap:'wrap', gap:2, flex:1}}>
                   {hasReservations
                     ? (() => {
                         const totalQty = parseInt(entry.qty) || 0;
@@ -233,16 +238,17 @@ export default function CaseScreen({ caseStock={}, setCaseStock, opsBasket=[], s
                         return (entry.reservations||[]).map((r, i) => {
                           cum += (parseInt(r.qty) || 1);
                           const covered = cum <= totalQty;
+                          const isReady = readyNos.has(String(r.orderNo));
                           const chipHL = stockHighlight?.kind === 'case' && String(r.orderNo ?? '') === String(stockHighlight.orderNo ?? '');
                           return (
                             <Text key={i} style={{
                               fontSize:12, fontWeight:'bold',
                               color: covered ? '#1b5e20' : '#c62828',
-                              backgroundColor: chipHL ? '#FFE082' : (covered ? '#f1f8f1' : 'transparent'),
-                              paddingHorizontal: (chipHL || covered) ? 3 : 0,
-                              borderRadius: 3,
-                              borderWidth: chipHL ? 1 : 0,
-                              borderColor: chipHL ? '#F57F17' : 'transparent',
+                              backgroundColor: chipHL ? '#FFE082' : (isReady ? '#d7ecd9' : (covered ? '#f1f8f1' : 'transparent')),
+                              paddingHorizontal: (chipHL || covered || isReady) ? 4 : 0,
+                              borderRadius: isReady ? 5 : 3,
+                              borderWidth: chipHL ? 1 : (isReady ? 1 : 0),
+                              borderColor: chipHL ? '#F57F17' : (isReady ? '#7cb342' : 'transparent'),
                             }}>
                               #{r.orderNo}({r.qty||1})
                             </Text>
@@ -251,6 +257,14 @@ export default function CaseScreen({ caseStock={}, setCaseStock, opsBasket=[], s
                       })()
                     : <Text style={{color:'#bbb'}}>—</Text>
                   }
+                  </View>
+                  {(readyDoors>0||greenDoors>0||redDoors>0)&&(
+                    <View style={{flexDirection:'row', gap:5, marginLeft:6, alignItems:'center'}}>
+                      {readyDoors>0&&<Text style={{fontSize:12, fontWeight:'900', color:'#2e7d32', backgroundColor:'#d7ecd9', borderWidth:1, borderColor:'#7cb342', borderRadius:5, paddingHorizontal:5}}>{readyDoors}</Text>}
+                      {greenDoors>0&&<Text style={{fontSize:12, fontWeight:'900', color:'#2e7d32'}}>{greenDoors}</Text>}
+                      {redDoors>0&&<Text style={{fontSize:12, fontWeight:'900', color:'#c62828'}}>{redDoors}</Text>}
+                    </View>
+                  )}
                 </View>
               </TouchableOpacity>
             </View>

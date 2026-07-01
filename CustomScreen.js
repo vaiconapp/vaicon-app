@@ -1495,7 +1495,6 @@ export default function CustomScreen({ customOrders, setCustomOrders, soldOrders
     const coatsForm = (customForm.coatings||[]).filter(c=>c&&String(c).trim());
     const hasCoatings = coatsForm.length > 0;
     const isOversize = isMoni && (String(customForm.h)==='223' || String(customForm.w)==='83');
-    const noOtherTask = !hasStaveraForm && !isMoniWithLock && !hasHeightReductionForm && !hasMontageForm && !hasKypri;
 
     const needsBuild = isDipli || isMoniWithLock || hasKypri ||
       (isMoni && (hasStaveraForm || hasMontageForm || hasHeightReductionForm || isOversize || hasCoatings));
@@ -1507,8 +1506,7 @@ export default function CustomScreen({ customOrders, setCustomOrders, soldOrders
       ...(hasHeightReductionForm ? {heightReduction: false} : {}),
       ...(hasKypri ? {kypri: false, case: false} : {}),
       ...(hasMontageForm ? {montage: false} : {}),
-      ...(sasiNeedsProduction || isDipli ? {sasi: false} : {}),
-      ...(isOversize && noOtherTask ? {oversize: false} : {}),
+      ...(isOversize ? {oversize: false} : (sasiNeedsProduction || isDipli ? {sasi: false} : {})),
       ...Object.fromEntries(coatsForm.map((_, i) => [`epend${i}`, false])),
     } : null;
 
@@ -2261,6 +2259,7 @@ export default function CustomScreen({ customOrders, setCustomOrders, soldOrders
       return false;
     };
 
+    const qtyCell = (o) => `<td style="text-align:center;font-weight:900;font-size:16px;color:#cc0000">${parseInt(o.qty,10)>1?o.qty:''}</td>`;
     let rows = '';
     if (type === 'status') {
       // ΕΚΤΥΠΩΣΗ ΚΑΤΑΣΤΑΣΗ
@@ -2279,6 +2278,7 @@ export default function CustomScreen({ customOrders, setCustomOrders, soldOrders
         return `<tr>
           <td style="font-weight:bold;font-size:14px">${o.orderNo}</td>
           <td>${o.customer||'—'}</td>
+          ${qtyCell(o)}
           <td style="font-weight:bold">${o.h}x${o.w} ${fora}</td>
           <td style="text-align:center;font-weight:bold;color:${caseReserved?(hasCaseOk?'#155724':'#721c24'):'#999'}">${caseReserved?(hasCaseOk?'✓':'✗'):'—'}</td>
           <td style="text-align:center;font-weight:bold;color:${sasiReserved?(hasSasiOk?'#155724':'#721c24'):'#999'}">${sasiReserved?(hasSasiOk?'✓':'✗'):'—'}</td>
@@ -2300,7 +2300,7 @@ export default function CustomScreen({ customOrders, setCustomOrders, soldOrders
           <h1>VAICON — ${title} — ΚΑΤΑΣΤΑΣΗ</h1>
           <h2 class="sub">📅 ${dateStr} &nbsp;|&nbsp; ${orders.length} παραγγελίες</h2>
           <table><thead><tr>
-            <th>Νο</th><th>Πελάτης</th><th>Διάσταση</th><th>ΚΑΣΑ</th><th>ΣΑΣΙ</th><th>Εκκρεμότητες</th><th>Παρατηρήσεις</th>
+            <th>Νο</th><th>Πελάτης</th><th style="text-align:center">Τεμ.</th><th>Διάσταση</th><th>ΚΑΣΑ</th><th>ΣΑΣΙ</th><th>Εκκρεμότητες</th><th>Παρατηρήσεις</th>
           </tr></thead><tbody>${rows}</tbody></table>
         </div>
       </body></html>`;
@@ -2319,8 +2319,8 @@ export default function CustomScreen({ customOrders, setCustomOrders, soldOrders
       rows = orders.map(o => {
         const fora = o.side==='ΑΡΙΣΤΕΡΗ'?'ΑΡ':'ΔΕΞ';
         const extras = [
-          o.lock?`Κλειδ: ${o.lock}`:'',
-          o.heightReduction?`Μείωση: ${o.heightReduction}`:'',
+          o.lock?`<span style="color:#cc0000;font-weight:bold">Κλειδ: ${o.lock}</span>`:'',
+          o.heightReduction?`<span style="color:#cc0000;font-weight:bold">Μείωση −${o.heightReduction}</span>`:'',
           o.stavera&&o.stavera.filter(s=>s.dim).length>0?`Σταθ: ${o.stavera.filter(s=>s.dim).map(s=>s.dim+(s.note?' '+s.note:'')).join(' | ')}`:'',
           o.installation==='ΝΑΙ'?'ΜΟΝΤΑΡΙΣΜΑ':'',
           o.caseType?(o.caseType.includes('ΑΝΟΙΧΤΟΥ')?'ΑΝΟΙΧΤΗ ΚΑΣΑ':'ΚΛΕΙΣΤΗ ΚΑΣΑ'):'',
@@ -2329,6 +2329,7 @@ export default function CustomScreen({ customOrders, setCustomOrders, soldOrders
         return `<tr>
           <td style="font-weight:bold;font-size:16px">${o.orderNo}</td>
           <td>${o.customer||'—'}</td>
+          ${qtyCell(o)}
           <td style="font-weight:900;font-size:15px">${o.h}x${o.w}</td>
           <td style="font-weight:bold;font-size:15px">${fora}</td>
           <td style="font-size:11px">${extras}</td>
@@ -2350,7 +2351,7 @@ export default function CustomScreen({ customOrders, setCustomOrders, soldOrders
           <h1>VAICON — ${title} — ΠΑΡΑΓΩΓΗ</h1>
           <h2 class="sub">📅 ${dateStr} &nbsp;|&nbsp; ${orders.length} παραγγελίες</h2>
           <table><thead><tr>
-            <th>Νο</th><th>Πελάτης</th><th>Διάσταση</th><th>Φορά</th><th>Στοιχεία</th><th>Παρατηρήσεις</th><th>Σημειώσεις</th>
+            <th>Νο</th><th>Πελάτης</th><th style="text-align:center">Τεμ.</th><th>Διάσταση</th><th>Φορά</th><th>Στοιχεία</th><th>Παρατηρήσεις</th><th>Σημειώσεις</th>
           </tr></thead><tbody>${rows}</tbody></table>
         </div>
       </body></html>`;
@@ -2378,6 +2379,7 @@ export default function CustomScreen({ customOrders, setCustomOrders, soldOrders
       return `<tr>
         <td style="font-weight:bold;font-size:15px">${o.orderNo}</td>
         <td>${o.customer||'—'}</td>
+        <td style="text-align:center;font-weight:900;font-size:15px;color:#cc0000">${parseInt(o.qty,10)>1?o.qty:''}</td>
         <td style="font-weight:bold">${o.h}x${o.w} ${fora}</td>
         <td style="font-size:11px;color:#555">${notesHtmlWithWarning(o.notes)}</td>
       </tr>`;
@@ -2396,10 +2398,10 @@ export default function CustomScreen({ customOrders, setCustomOrders, soldOrders
         <h2 class="sub">📅 ${dateStr} &nbsp;|&nbsp; ${sorted.length} παραγγελίες</h2>
         <table>
           <colgroup>
-            <col style="width:10%"><col style="width:20%"><col style="width:11%"><col style="width:59%">
+            <col style="width:10%"><col style="width:18%"><col style="width:7%"><col style="width:11%"><col style="width:54%">
           </colgroup>
           <thead><tr>
-          <th>Νο</th><th>Πελάτης</th><th>Διάσταση</th><th>Παρατηρήσεις</th>
+          <th>Νο</th><th>Πελάτης</th><th style="text-align:center">Τεμ.</th><th>Διάσταση</th><th>Παρατηρήσεις</th>
         </tr></thead><tbody>${rows}</tbody></table>
       </div>
     </body></html>`;

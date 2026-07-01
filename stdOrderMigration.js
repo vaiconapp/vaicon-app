@@ -14,7 +14,6 @@ export function buildTasksForMoniStdOrder(o) {
   const coats = (o.coatings || []).filter((c) => c && String(c).trim());
   const hasCoatings = coats.length > 0;
   const isOversize = isMoni && (String(o.h) === '223' || String(o.w) === '83');
-  const noOtherTask = !hasStaveraForm && !isMoniWithLock && !hasHeightReductionForm && !hasMontageForm && !hasKypri;
   const needsBuild =
     isDipli ||
     isMoniWithLock ||
@@ -28,8 +27,7 @@ export function buildTasksForMoniStdOrder(o) {
     ...(hasHeightReductionForm ? { heightReduction: false } : {}),
     ...(hasKypri ? { kypri: false, case: false } : {}),
     ...(hasMontageForm ? { montage: false } : {}),
-    ...(sasiNeedsProduction || isDipli ? { sasi: false } : {}),
-    ...(isOversize && noOtherTask ? { oversize: false } : {}),
+    ...(isOversize ? { oversize: false } : (sasiNeedsProduction || isDipli ? { sasi: false } : {})),
     ...Object.fromEntries(coats.map((_, i) => [`epend${i}`, false])),
   };
   if (Object.keys(tasks).length === 0) return { sasi: false };
@@ -80,20 +78,36 @@ export function migrateCoatingsToStdBuild(o) {
 }
 
 /**
+ * Παλιές 223/83 (μονή) που κρατούν ακόμη «sasi» (ή τίποτα) → μετατροπή σε «oversize»,
+ * ώστε να μπαίνουν στο «223/83» και να φεύγουν από το «Σασί». Κρατά την πρόοδο (done state).
+ * Επιστρέφει νέο order αν χρειάστηκε αλλαγή, αλλιώς null.
+ */
+export function remapOversizeStdBuild(o) {
+  if (o.orderType !== 'ΤΥΠΟΠΟΙΗΜΕΝΗ' || o.status !== 'STD_BUILD' || !o.buildTasks) return null;
+  const isMoni = o.sasiType === 'ΜΟΝΗ ΘΩΡΑΚΙΣΗ' || !o.sasiType;
+  const isOversize = isMoni && (String(o.h) === '223' || String(o.w) === '83');
+  if (!isOversize || 'oversize' in o.buildTasks) return null;
+  const tasks = { ...o.buildTasks };
+  tasks.oversize = 'sasi' in tasks ? tasks.sasi : false;
+  delete tasks.sasi;
+  return { ...o, buildTasks: tasks };
+}
+
+/**
  * @param {{ id: string }[]} loadedStd — raw από Firebase
  * @returns {{ mapped: object[], migrated: object[] }}
  */
 export function normalizeLoadedStdOrders(loadedStd) {
   const migrated = [];
   const mapped = loadedStd.map((o) => {
-    if (o.status === 'MONI_PROD' && o.orderType === 'ΤΥΠΟΠΟΙΗΜΕΝΗ' && (!o.sasiType || o.sasiType === 'ΜΟΝΗ ΘΩΡΑΚΙΣΗ')) {
-      const m = migrateMoniProdOrderToStdBuild(o);
-      migrated.push(m);
-      return m;
+    let cur = o;
+    if (cur.status === 'MONI_PROD' && cur.orderType === 'ΤΥΠΟΠΟΙΗΜΕΝΗ' && (!cur.sasiType || cur.sasiType === 'ΜΟΝΗ ΘΩΡΑΚΙΣΗ')) {
+      cur = migrateMoniProdOrderToStdBuild(cur);
     }
-    const m2 = migrateCoatingsToStdBuild(o);
-    if (m2) { migrated.push(m2); return m2; }
-    return o;
+    cur = migrateCoatingsToStdBuild(cur) || cur;
+    cur = remapOversizeStdBuild(cur) || cur;
+    if (cur !== o) migrated.push(cur);
+    return cur;
   });
   return { mapped, migrated };
 }
