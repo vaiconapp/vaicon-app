@@ -29,6 +29,34 @@ export function SellModal({ visible, totalQty, onConfirm, onCancel }) {
   );
 }
 
+export function SplitModal({ visible, totalQty, onConfirm, onCancel }) {
+  const [qty, setQty] = useState('');
+  return (
+    <Modal visible={visible} transparent animationType="fade">
+      <View style={styles.modalOverlay}>
+        <View style={styles.modalBox}>
+          <Text style={styles.modalTitle}>✂️ ΣΠΑΣΙΜΟ ΠΑΡΑΓΓΕΛΙΑΣ</Text>
+          <Text style={styles.modalSub}>Πόσα τεμάχια να ξεχωρίσω σε νέα παραγγελία;</Text>
+          <Text style={styles.modalTotal}>Σύνολο: {totalQty} τεμ.</Text>
+          <TextInput style={styles.modalInput} keyboardType="numeric" value={qty} onChangeText={setQty} placeholder="π.χ. 2" autoFocus />
+          <View style={{ flexDirection:'row', gap:10 }}>
+            <TouchableOpacity style={[styles.modalBtn,{backgroundColor:'#ccc'}]} onPress={()=>{setQty('');onCancel();}}>
+              <Text style={{fontWeight:'bold'}}>ΑΚΥΡΟ</Text>
+            </TouchableOpacity>
+            <TouchableOpacity style={[styles.modalBtn,{backgroundColor:'#6a1b9a'}]} onPress={()=>{
+              const n=parseInt(qty);
+              if(!n||n<1||n>=totalQty) return Alert.alert("Σφάλμα",`Βάλτε αριθμό 1 έως ${totalQty-1}`);
+              setQty(''); onConfirm(n);
+            }}>
+              <Text style={{fontWeight:'bold',color:'white'}}>ΣΠΑΣΙΜΟ</Text>
+            </TouchableOpacity>
+          </View>
+        </View>
+      </View>
+    </Modal>
+  );
+}
+
 export function ConfirmModal({ visible, title, message, confirmText, onConfirm, onCancel }) {
   return (
     <Modal visible={visible} transparent animationType="fade">

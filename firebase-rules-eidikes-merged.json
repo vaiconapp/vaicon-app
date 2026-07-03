@@ -78,6 +78,18 @@
       ".read":  "auth != null && auth.token.email != null && !auth.token.email.beginsWith('guest@') && (auth.token.email.beginsWith('admin@') || root.child('app_lock').child(auth.token.email.replace('@vaicon.local','').toUpperCase()).val() != true)",
       ".write": "auth != null && auth.token.email != null && !auth.token.email.beginsWith('guest@') && (auth.token.email.beginsWith('admin@') || root.child('app_lock').child(auth.token.email.replace('@vaicon.local','').toUpperCase()).val() != true)"
     },
+    "cylinders": {
+      ".read":  "auth != null && auth.token.email != null && !auth.token.email.beginsWith('guest@') && (auth.token.email.beginsWith('admin@') || root.child('app_lock').child(auth.token.email.replace('@vaicon.local','').toUpperCase()).val() != true)",
+      ".write": "auth != null && auth.token.email != null && !auth.token.email.beginsWith('guest@') && (auth.token.email.beginsWith('admin@') || root.child('app_lock').child(auth.token.email.replace('@vaicon.local','').toUpperCase()).val() != true)"
+    },
+    "misc": {
+      ".read":  "auth != null && auth.token.email != null && !auth.token.email.beginsWith('guest@') && (auth.token.email.beginsWith('admin@') || root.child('app_lock').child(auth.token.email.replace('@vaicon.local','').toUpperCase()).val() != true)",
+      ".write": "auth != null && auth.token.email != null && !auth.token.email.beginsWith('guest@') && (auth.token.email.beginsWith('admin@') || root.child('app_lock').child(auth.token.email.replace('@vaicon.local','').toUpperCase()).val() != true)"
+    },
+    "price_catalog": {
+      ".read":  "auth != null && auth.token.email != null && !auth.token.email.beginsWith('guest@') && (auth.token.email.beginsWith('admin@') || root.child('app_lock').child(auth.token.email.replace('@vaicon.local','').toUpperCase()).val() != true)",
+      ".write": "auth != null && auth.token.email != null && !auth.token.email.beginsWith('guest@') && (auth.token.email.beginsWith('admin@') || root.child('app_lock').child(auth.token.email.replace('@vaicon.local','').toUpperCase()).val() != true)"
+    },
     "user_labels": {
       ".read":  "auth != null && auth.token.email != null && !auth.token.email.beginsWith('guest@') && (auth.token.email.beginsWith('admin@') || root.child('app_lock').child(auth.token.email.replace('@vaicon.local','').toUpperCase()).val() != true)",
       ".write": "auth != null && auth.token.email != null && auth.token.email.beginsWith('admin@')"

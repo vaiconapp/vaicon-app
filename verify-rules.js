@@ -142,37 +142,30 @@ function autoPriceLines(catalog, orderType, order = {}) {
       const n = String(dim).split(/[×xXχΧ]/).map(p => priceNum(p)).filter(v => v > 0);
       return n.length >= 2 ? 2 * (n[0] + n[1]) / 100 : 0;
     };
-    const charge = (rule, rows) => rows.reduce((sum, s) => {
-      const p = perimM(s.dim); if (p <= 0) return sum;
-      const rq = parseInt(s.qty, 10) > 0 ? parseInt(s.qty, 10) : 1;
-      return sum + Math.max(priceNum(rule.minCharge), p * priceNum(rule.unitPrice)) * rq;
-    }, 0);
     const glass = ruleOf('glass'), design = ruleOf('design');
-    if (glass && priceNum(glass.unitPrice) > 0) {
-      const v = charge(glass, stav);
-      if (v > 0) lines.push({ label: glass.name || 'Σταθερό / Τζάμι', value: String(Math.round(v * 100) / 100), qty });
-    }
-    if (design && priceNum(design.unitPrice) > 0) {
-      const xRows = stav.filter(s => String(s.design || '').trim() === String(design.ruleTarget || '').trim());
-      const v = charge(design, xRows);
-      if (v > 0) lines.push({ label: design.name || 'ΧΙΑΣΤΗ', value: String(Math.round(v * 100) / 100), qty });
+    const doors = q > 0 ? q : 1;
+    const used = {};
+    const uniq = (base) => { used[base] = (used[base] || 0) + 1; return used[base] > 1 ? `${base} (${used[base]})` : base; };
+    const push = (rule, s, base) => {
+      const p = perimM(s.dim); if (p <= 0) return;
+      const per = Math.max(priceNum(rule.minCharge), p * priceNum(rule.unitPrice));
+      if (per <= 0) return;
+      const rq = parseInt(s.qty, 10) > 0 ? parseInt(s.qty, 10) : 1;
+      lines.push({ label: uniq(`${base} ${s.dim}`), value: String(Math.round(per * 100) / 100), qty: String(rq * doors) });
+    };
+    for (const s of stav) {
+      if (glass && priceNum(glass.unitPrice) > 0) push(glass, s, glass.name || 'Σταθερό / Τζάμι');
+      if (design && priceNum(design.unitPrice) > 0 && String(s.design || '').trim() === String(design.ruleTarget || '').trim())
+        push(design, s, design.name || 'ΧΙΑΣΤΗ');
     }
   }
   return lines;
 }
 function applyAutoPriceLines(priceList, lines) {
   const list = Array.isArray(priceList) ? priceList : [];
-  const byLabel = new Map((lines || []).filter(l => l && l.label != null).map(l => [String(l.label).trim(), l]));
-  const seen = new Set();
-  const upd = list.map(it => {
-    const lbl = String(it?.label || '').trim();
-    const nl = byLabel.get(lbl);
-    if (!nl) return it;
-    seen.add(lbl);
-    return { ...it, value: (nl.value !== '' && nl.value != null) ? nl.value : it.value, qty: nl.qty || it.qty };
-  });
-  const add = (lines || []).filter(l => l && !seen.has(String(l.label).trim()));
-  return [...add, ...upd];
+  const have = new Set(list.map(it => String(it?.label || '').trim()));
+  const add = (lines || []).filter(l => l && !have.has(String(l.label).trim()));
+  return [...add, ...list];
 }
 
 // ΑΝΤΙΓΡΑΦΟ από formatHelpers.js (suggestNextOrderNo, findDuplicateCustomers, custSortKey)
@@ -731,43 +724,44 @@ group('autoPriceLines — σταθερά (περίμετρος glass/design)', (
   ];
   test('ένα σταθερό 210×50 → 5.2μ × 22 = 114.4',
     autoPriceLines(cat, 'ΤΥΠΟΠΟΙΗΜΕΝΗ', { stavera: [{ dim: '210 × 50' }], qty: '1' }),
-    [{ label: 'Σταθερό / Τζάμι', value: '114.4', qty: '1' }]);
+    [{ label: 'Σταθερό / Τζάμι 210 × 50', value: '114.4', qty: '1' }]);
   test('σταθερό + χιαστή → σταθερό ΚΑΙ χιαστή επιπλέον',
     autoPriceLines(cat, 'ΤΥΠΟΠΟΙΗΜΕΝΗ', { stavera: [{ dim: '210 × 50', design: 'ΧΙΑΣΤΗ' }], qty: '1' }),
-    [{ label: 'Σταθερό / Τζάμι', value: '114.4', qty: '1' }, { label: 'ΧΙΑΣΤΗ', value: '124.8', qty: '1' }]);
+    [{ label: 'Σταθερό / Τζάμι 210 × 50', value: '114.4', qty: '1' }, { label: 'ΧΙΑΣΤΗ 210 × 50', value: '124.8', qty: '1' }]);
   test('ελάχιστο 50€ ανά κομμάτι (μικρό 30×20)',
     autoPriceLines(cat, 'ΤΥΠΟΠΟΙΗΜΕΝΗ', { stavera: [{ dim: '30x20' }], qty: '1' }),
-    [{ label: 'Σταθερό / Τζάμι', value: '50', qty: '1' }]);
-  test('πολλαπλασιασμός με πόρτες (qty 3)',
+    [{ label: 'Σταθερό / Τζάμι 30x20', value: '50', qty: '1' }]);
+  test('πολλαπλασιασμός με πόρτες (qty 3) → τιμή/κομμάτι, ποσότητα ×3',
     autoPriceLines(cat, 'ΤΥΠΟΠΟΙΗΜΕΝΗ', { stavera: [{ dim: '210×50' }], qty: '3' }),
-    [{ label: 'Σταθερό / Τζάμι', value: '114.4', qty: '3' }]);
-  test('δύο σταθερά αθροίζονται (210×50 + 100×100)',
+    [{ label: 'Σταθερό / Τζάμι 210×50', value: '114.4', qty: '3' }]);
+  test('δύο σταθερά → δύο ξεχωριστές γραμμές',
     autoPriceLines(cat, 'ΤΥΠΟΠΟΙΗΜΕΝΗ', { stavera: [{ dim: '210×50' }, { dim: '100×100' }], qty: '1' }),
-    [{ label: 'Σταθερό / Τζάμι', value: '202.4', qty: '1' }]);
-  test('ποσότητα γραμμής σταθερού (qty 2)',
+    [{ label: 'Σταθερό / Τζάμι 210×50', value: '114.4', qty: '1' }, { label: 'Σταθερό / Τζάμι 100×100', value: '88', qty: '1' }]);
+  test('ποσότητα γραμμής σταθερού (qty 2) → τιμή/κομμάτι, ποσότητα 2',
     autoPriceLines(cat, 'ΤΥΠΟΠΟΙΗΜΕΝΗ', { stavera: [{ dim: '210×50', qty: '2' }], qty: '1' }),
-    [{ label: 'Σταθερό / Τζάμι', value: '228.8', qty: '1' }]);
+    [{ label: 'Σταθερό / Τζάμι 210×50', value: '114.4', qty: '2' }]);
+  test('ίδια διάσταση σε δύο σειρές → μοναδικό label με (2)',
+    autoPriceLines(cat, 'ΤΥΠΟΠΟΙΗΜΕΝΗ', { stavera: [{ dim: '210×50' }, { dim: '210×50' }], qty: '1' }),
+    [{ label: 'Σταθερό / Τζάμι 210×50', value: '114.4', qty: '1' }, { label: 'Σταθερό / Τζάμι 210×50 (2)', value: '114.4', qty: '1' }]);
   test('χιαστή μόνο στη γραμμή που την έχει',
     autoPriceLines(cat, 'ΤΥΠΟΠΟΙΗΜΕΝΗ', { stavera: [{ dim: '210×50', design: 'ΧΙΑΣΤΗ' }, { dim: '100×100' }], qty: '1' }),
-    [{ label: 'Σταθερό / Τζάμι', value: '202.4', qty: '1' }, { label: 'ΧΙΑΣΤΗ', value: '124.8', qty: '1' }]);
+    [{ label: 'Σταθερό / Τζάμι 210×50', value: '114.4', qty: '1' }, { label: 'ΧΙΑΣΤΗ 210×50', value: '124.8', qty: '1' }, { label: 'Σταθερό / Τζάμι 100×100', value: '88', qty: '1' }]);
   test('ισχύει και σε ΕΙΔΙΚΗ (ΓΕΝΙΚΗ κανόνας)',
     autoPriceLines(cat, 'ΕΙΔΙΚΗ', { stavera: [{ dim: '210×50' }], qty: '1' }),
-    [{ label: 'Σταθερό / Τζάμι', value: '114.4', qty: '1' }]);
+    [{ label: 'Σταθερό / Τζάμι 210×50', value: '114.4', qty: '1' }]);
   test('χωρίς κανόνα στον κατάλογο → καμία χρέωση σταθερού',
     autoPriceLines([], 'ΤΥΠΟΠΟΙΗΜΕΝΗ', { stavera: [{ dim: '210×50' }], qty: '1' }), []);
   test('μη έγκυρη διάσταση (ένας αριθμός) → αγνοείται',
     autoPriceLines(cat, 'ΤΥΠΟΠΟΙΗΜΕΝΗ', { stavera: [{ dim: '210' }], qty: '1' }), []);
 });
 
-group('applyAutoPriceLines — συγχρονισμός αυτόματων γραμμών', () => {
+group('applyAutoPriceLines — μόνο προσθήκη (κρατά χειροκίνητες τιμές)', () => {
   const lines = [{ label: 'Πόρτα ΜΟΝΗ', value: '300', qty: '1' }];
   test('κενή λίστα → προσθήκη', applyAutoPriceLines([], lines), lines);
   test('κενές γραμμές → ίδια λίστα', applyAutoPriceLines([{ label: 'Α', value: '5', qty: '1' }], []), [{ label: 'Α', value: '5', qty: '1' }]);
   test('μπαίνει στην αρχή', applyAutoPriceLines([{ label: 'Α', value: '5', qty: '1' }], lines), [{ label: 'Πόρτα ΜΟΝΗ', value: '300', qty: '1' }, { label: 'Α', value: '5', qty: '1' }]);
-  test('ανανεώνει τιμή ίδιου label', applyAutoPriceLines([{ label: 'Πόρτα ΜΟΝΗ', value: '999', qty: '1' }], lines), [{ label: 'Πόρτα ΜΟΝΗ', value: '300', qty: '1' }]);
-  test('μειωμένη χρέωση μετά από αλλαγή διάστασης', applyAutoPriceLines([{ label: 'Πόρτα ΜΟΝΗ', value: '330', qty: '1' }], [{ label: 'Πόρτα ΜΟΝΗ', value: '300', qty: '1' }]), [{ label: 'Πόρτα ΜΟΝΗ', value: '300', qty: '1' }]);
-  test('κενή νέα τιμή → κρατά χειροκίνητη', applyAutoPriceLines([{ label: 'Τοπ.', value: '50', qty: '1' }], [{ label: 'Τοπ.', value: '', qty: '1' }]), [{ label: 'Τοπ.', value: '50', qty: '1' }]);
-  test('ανανεώνει ποσότητα', applyAutoPriceLines([{ label: 'Μεντ.', value: '20', qty: '1' }], [{ label: 'Μεντ.', value: '20', qty: '3' }]), [{ label: 'Μεντ.', value: '20', qty: '3' }]);
+  test('υπάρχον label ΔΕΝ αλλάζει (κρατά χειροκίνητη τιμή)', applyAutoPriceLines([{ label: 'Πόρτα ΜΟΝΗ', value: '290', qty: '1' }], lines), [{ label: 'Πόρτα ΜΟΝΗ', value: '290', qty: '1' }]);
+  test('υπάρχον label ΔΕΝ αλλάζει ποσότητα', applyAutoPriceLines([{ label: 'Μεντ.', value: '20', qty: '1' }], [{ label: 'Μεντ.', value: '20', qty: '3' }]), [{ label: 'Μεντ.', value: '20', qty: '1' }]);
   test('πολλές γραμμές με σειρά', applyAutoPriceLines([], [{ label: 'A', value: '1', qty: '1' }, { label: 'B', value: '2', qty: '1' }]), [{ label: 'A', value: '1', qty: '1' }, { label: 'B', value: '2', qty: '1' }]);
 });
 

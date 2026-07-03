@@ -25,12 +25,12 @@ function authInstance() {
   return getAuth(getFirebaseApp());
 }
 
-/** Επιστρέφει φρέσκο ID token (το SDK κάνει refresh αυτόματα κοντά στη λήξη). */
-async function getFreshIdToken() {
+/** Επιστρέφει φρέσκο ID token (το SDK κάνει refresh αυτόματα κοντά στη λήξη· force=true εξαναγκάζει refresh). */
+async function getFreshIdToken(force = false) {
   const user = authInstance().currentUser;
   if (!user) return null;
   try {
-    return await user.getIdToken();
+    return await user.getIdToken(force);
   } catch {
     return null;
   }
@@ -86,6 +86,19 @@ export function installFetchAuthInterceptor() {
 
       const res = await originalFetch(finalInput, init);
       if ((res.status === 401 || res.status === 403) && method !== 'GET') {
+        // Πιθανό ληγμένο token: ζήτα φρέσκο (force) και ξαναπροσπάθησε μία φορά.
+        const fresh = await getFreshIdToken(true);
+        if (fresh) {
+          const sep = url.indexOf('?') === -1 ? '?' : '&';
+          const retryUrl = `${url}${sep}auth=${fresh}`;
+          let retryInput = retryUrl;
+          if (typeof input !== 'string') { try { retryInput = new Request(retryUrl, input); } catch { retryInput = retryUrl; } }
+          const res2 = await originalFetch(retryInput, init);
+          if (res2.status === 401 || res2.status === 403) {
+            alertAuthProblem(`Η βάση απέρριψε την εγγραφή (${res2.status}).\nΗ ενέργεια (${method}) ΔΕΝ αποθηκεύτηκε.\nΚάνε αποσύνδεση και ξανά είσοδο.`);
+          }
+          return res2;
+        }
         alertAuthProblem(`Η βάση απέρριψε την εγγραφή (${res.status}).\nΗ ενέργεια (${method}) ΔΕΝ αποθηκεύτηκε.\nΚάνε αποσύνδεση και ξανά είσοδο.`);
       }
       return res;

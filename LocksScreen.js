@@ -1,9 +1,10 @@
 import React, { useState } from 'react';
-import { StyleSheet, Text, View, ScrollView, TouchableOpacity, TextInput, Alert } from 'react-native';
+import { StyleSheet, Text, View, ScrollView, TouchableOpacity, TextInput, Alert, Platform } from 'react-native';
 import { FIREBASE_URL } from './firebaseConfig';
 
 export default function LocksScreen({ locks, setLocks, onClose }) {
   const [form, setForm] = useState('');
+  const [formPrice, setFormPrice] = useState('');
   const [editingId, setEditingId] = useState(null);
   const [search, setSearch] = useState('');
 
@@ -54,7 +55,7 @@ export default function LocksScreen({ locks, setLocks, onClose }) {
       const existing = locks.find(l => l.id === editingId);
       if (!existing) return Alert.alert("Προσοχή", "Η εγγραφή δεν βρέθηκε, ανανεώστε τη σελίδα.");
       const oldName = existing.name;
-      const updated = { ...existing, name: form.trim() };
+      const updated = { ...existing, name: form.trim(), price: formPrice.trim() };
       setLocks(locks.map(l => l.id === editingId ? updated : l));
       await syncToCloud(updated);
       await propagateLockRename(oldName, form.trim());
@@ -62,24 +63,24 @@ export default function LocksScreen({ locks, setLocks, onClose }) {
     } else {
       const exists = locks.some(l => l.name.toLowerCase() === form.trim().toLowerCase());
       if (exists) return Alert.alert("Προσοχή", "Αυτή η κλειδαριά υπάρχει ήδη.");
-      const newLock = { id: Date.now().toString(), name: form.trim(), createdAt: Date.now(), order: locks.length };
+      const newLock = { id: Date.now().toString(), name: form.trim(), price: formPrice.trim(), createdAt: Date.now(), order: locks.length };
       setLocks([...locks, newLock]);
       await syncToCloud(newLock);
       Alert.alert("VAICON", `Κλειδαριά αποθηκεύτηκε!\n${form.trim()}`);
     }
-    setForm(''); setEditingId(null);
+    setForm(''); setFormPrice(''); setEditingId(null);
   };
 
-  const editLock = (lock) => { setForm(lock.name); setEditingId(lock.id); };
+  const editLock = (lock) => { setForm(lock.name); setFormPrice(lock.price || ''); setEditingId(lock.id); };
 
-  const deleteLock = (id) => {
-    Alert.alert("Διαγραφή", "Οριστική διαγραφή κλειδαριάς;", [
-      { text: "Όχι" },
-      { text: "Ναι", style: "destructive", onPress: async () => {
-        setLocks(locks.filter(l => l.id !== id));
-        await deleteFromCloud(id);
-      }}
-    ]);
+  const deleteLock = async (id) => {
+    const ok = Platform.OS === 'web'
+      ? window.confirm('Οριστική διαγραφή κλειδαριάς;')
+      : await new Promise(res => Alert.alert('Διαγραφή', 'Οριστική διαγραφή κλειδαριάς;', [{ text: 'Όχι', onPress: () => res(false) }, { text: 'Ναι', style: 'destructive', onPress: () => res(true) }]));
+    if (!ok) return;
+    setLocks(locks.filter(l => l.id !== id));
+    if (editingId === id) { setForm(''); setFormPrice(''); setEditingId(null); }
+    await deleteFromCloud(id);
   };
 
   const sorted = [...locks].sort((a, b) => (a.order ?? a.createdAt) - (b.order ?? b.createdAt));
@@ -97,12 +98,13 @@ export default function LocksScreen({ locks, setLocks, onClose }) {
         <Text style={styles.label}>{editingId ? 'ΕΠΕΞΕΡΓΑΣΙΑ ΚΛΕΙΔΑΡΙΑΣ' : 'ΝΕΑ ΚΛΕΙΔΑΡΙΑ'}</Text>
         <View style={styles.inputRow}>
           <TextInput style={styles.input} placeholder="π.χ. Cisa 3 σημεία, Yale, Mottura..." value={form} onChangeText={setForm} autoCapitalize="characters" />
+          <TextInput style={styles.priceInput} placeholder="€" value={formPrice} onChangeText={setFormPrice} keyboardType="numeric" />
           <TouchableOpacity style={styles.saveBtn} onPress={saveLock}>
             <Text style={styles.saveTxt}>{editingId ? '✓' : '+'}</Text>
           </TouchableOpacity>
         </View>
         {editingId && (
-          <TouchableOpacity onPress={() => { setForm(''); setEditingId(null); }} style={styles.cancelEdit}>
+          <TouchableOpacity onPress={() => { setForm(''); setFormPrice(''); setEditingId(null); }} style={styles.cancelEdit}>
             <Text style={styles.cancelTxt}>ΑΚΥΡΟ</Text>
           </TouchableOpacity>
         )}
@@ -122,6 +124,7 @@ export default function LocksScreen({ locks, setLocks, onClose }) {
                   </TouchableOpacity>
                 </View>
                 <Text style={styles.cardName}>{l.name}</Text>
+                {!!String(l.price || '').trim() && <Text style={styles.cardPrice}>€{l.price}</Text>}
                 <View style={styles.cardBtns}>
                   <TouchableOpacity style={styles.editBtn} onPress={() => editLock(l)}>
                     <Text style={styles.editTxt}>✏️</Text>
@@ -150,6 +153,7 @@ const styles = StyleSheet.create({
   label: { fontSize: 12, fontWeight: 'bold', color: '#555', marginBottom: 6 },
   inputRow: { flexDirection: 'row', gap: 8, marginBottom: 8 },
   input: { flex: 1, backgroundColor: 'white', borderRadius: 8, padding: 12, borderWidth: 1, borderColor: '#ddd', fontSize: 14 },
+  priceInput: { width: 70, backgroundColor: 'white', borderRadius: 8, padding: 12, borderWidth: 1, borderColor: '#ddd', fontSize: 14, textAlign: 'center' },
   saveBtn: { backgroundColor: '#8B0000', borderRadius: 8, width: 48, justifyContent: 'center', alignItems: 'center' },
   saveTxt: { color: 'white', fontSize: 22, fontWeight: 'bold' },
   cancelEdit: { alignSelf: 'flex-start', marginBottom: 8 },
@@ -160,6 +164,7 @@ const styles = StyleSheet.create({
   orderBtns: { flexDirection: 'column', marginRight: 8, gap: 2 },
   orderBtn: { fontSize: 14, color: '#8B0000', fontWeight: 'bold', paddingHorizontal: 2 },
   cardName: { flex: 1, fontSize: 14, fontWeight: 'bold', color: '#1a1a1a' },
+  cardPrice: { fontSize: 13, fontWeight: 'bold', color: '#8B0000', marginRight: 8 },
   cardBtns: { flexDirection: 'row', gap: 8 },
   editBtn: { padding: 6 },
   editTxt: { fontSize: 16 },

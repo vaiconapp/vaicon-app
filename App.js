@@ -11,6 +11,9 @@ import StatsScreen from './StatsScreen';
 import CustomersScreen from './CustomersScreen';
 import CoatingsScreen from './CoatingsScreen';
 import LocksScreen from './LocksScreen';
+import PricedListScreen from './PricedListScreen';
+import { seedExtras } from './seedExtras';
+import PriceCatalogScreen from './PriceCatalogScreen';
 import ActivityScreen from './ActivityScreen';
 import MessagesScreen from './MessagesScreen';
 import SellerLogScreen from './SellerLogScreen';
@@ -305,6 +308,9 @@ export default function App() {
   const [showCustomers, setShowCustomers] = useState(false);
   const [showCoatings, setShowCoatings] = useState(false);
   const [showLocks, setShowLocks] = useState(false);
+  const [showCylinders, setShowCylinders] = useState(false);
+  const [showMisc, setShowMisc] = useState(false);
+  const [showPriceCatalog, setShowPriceCatalog] = useState(false);
   const [showActivity, setShowActivity] = useState(false);
   const [showSellerLog, setShowSellerLog] = useState(false);
   const [sellerFilter, setSellerFilter] = useState('');
@@ -355,6 +361,8 @@ export default function App() {
   const [customers, setCustomers] = useState([]);
   const [coatings, setCoatings] = useState([]);
   const [locks, setLocks] = useState([]);
+  const [cylinders, setCylinders] = useState([]);
+  const [misc, setMisc] = useState([]);
   const [dipliSasiStock, setDipliSasiStock] = useState([]);
   const [sasiStock, setSasiStock] = useState({});
   const [caseStock, setCaseStock] = useState({});
@@ -775,7 +783,7 @@ export default function App() {
     document.body.appendChild(a); a.click(); document.body.removeChild(a);
     setTimeout(() => URL.revokeObjectURL(url), 1000);
   };
-  const BACKUP_NODES = ['std_orders', 'std_quotes', 'sasi_orders', 'case_orders', 'sasi_stock', 'case_stock', 'dipli_sasi_stock', 'customers', 'coatings', 'locks', 'user_labels', 'activity_log', 'messages', 'app_lock', 'order_files', 'upload_tokens', 'order_seq', 'seller_submissions', 'approval_log', 'approval_rights', 'tab_rights'];
+  const BACKUP_NODES = ['std_orders', 'std_quotes', 'sasi_orders', 'case_orders', 'sasi_stock', 'case_stock', 'dipli_sasi_stock', 'customers', 'coatings', 'locks', 'cylinders', 'misc', 'user_labels', 'activity_log', 'messages', 'app_lock', 'order_files', 'upload_tokens', 'order_seq', 'seller_submissions', 'approval_log', 'approval_rights', 'tab_rights'];
   const doBackup = async () => {
     if (Platform.OS !== 'web') { Alert.alert('Μη διαθέσιμο', 'Το backup είναι διαθέσιμο μόνο από browser.'); return; }
     setBackupRunning(true);
@@ -928,6 +936,8 @@ export default function App() {
       if (showActivity) { setShowActivity(false); return true; }
       if (showCoatings) { setShowCoatings(false); return true; }
       if (showLocks) { setShowLocks(false); return true; }
+      if (showCylinders) { setShowCylinders(false); return true; }
+      if (showMisc) { setShowMisc(false); return true; }
       if (showCustomers) { setShowCustomers(false); return true; }
       if (staveraFilterModalVisible) {
         setStaveraFilterModalVisible(false);
@@ -941,7 +951,31 @@ export default function App() {
       return false; // έξοδος από app αν ήδη στην 1η καρτέλα
     });
     return () => sub.remove();
-  }, [menuOpen, showActivity, showCoatings, showLocks, showCustomers, tabIndex, staveraFilterModalVisible, globalSearchModalVisible, closeGlobalSearchModal, incomingMsg, unreadPrompt, showInbox, showMessages]);
+  }, [menuOpen, showActivity, showCoatings, showLocks, showCylinders, showMisc, showCustomers, tabIndex, staveraFilterModalVisible, globalSearchModalVisible, closeGlobalSearchModal, incomingMsg, unreadPrompt, showInbox, showMessages]);
+
+  useEffect(() => {
+    let alive = true;
+    (async () => {
+      try {
+        const [c, m] = await Promise.all([
+          fetch(`${FIREBASE_URL}/cylinders.json`).then(r => r.ok ? r.json() : null),
+          fetch(`${FIREBASE_URL}/misc.json`).then(r => r.ok ? r.json() : null),
+        ]);
+        if (!alive) return;
+        setCylinders(c ? Object.keys(c).map(k => ({ id: k, ...c[k] })) : []);
+        setMisc(m ? Object.keys(m).map(k => ({ id: k, ...m[k] })) : []);
+      } catch {}
+    })();
+    return () => { alive = false; };
+  }, []);
+
+  // ΠΡΟΣΩΡΙΝΟ: εφάπαξ γέμισμα ΑΦΑΛΩΝ & ΔΙΑΦΟΡΩΝ από PDF — μόνο αφού συνδεθεί ο admin.
+  const seededRef = useRef(false);
+  useEffect(() => {
+    if (seededRef.current || !isLoggedIn || currentUser?.role !== 'admin') return;
+    seededRef.current = true;
+    seedExtras(setCylinders, setMisc);
+  }, [isLoggedIn, currentUser]);
 
   const fetchData = async () => {
     if (fetchAbortRef.current) fetchAbortRef.current.abort();
@@ -1078,6 +1112,14 @@ export default function App() {
           <TouchableOpacity
             style={{ flexDirection: 'row', alignItems: 'center', gap: 6, backgroundColor: 'rgba(255,255,255,0.18)', paddingHorizontal: 12, paddingVertical: 7, borderRadius: 8, marginRight: 8 }}
             onPress={openInbox}>
+            <Text style={{ fontSize: 18 }}>✉️</Text>
+            <Text style={{ color: 'white', fontSize: 14, fontWeight: 'bold', letterSpacing: 0.5 }}>ΜΗΝΥΜΑΤΑ</Text>
+          </TouchableOpacity>
+        )}
+        {currentUser?.role === 'admin' && (
+          <TouchableOpacity
+            style={{ flexDirection: 'row', alignItems: 'center', gap: 6, backgroundColor: 'rgba(255,255,255,0.18)', paddingHorizontal: 12, paddingVertical: 7, borderRadius: 8, marginRight: 8 }}
+            onPress={() => setShowMessages(true)}>
             <Text style={{ fontSize: 18 }}>✉️</Text>
             <Text style={{ color: 'white', fontSize: 14, fontWeight: 'bold', letterSpacing: 0.5 }}>ΜΗΝΥΜΑΤΑ</Text>
           </TouchableOpacity>
@@ -1278,7 +1320,7 @@ export default function App() {
         {/* ═══ ΚΥΡΙΟ ΠΕΡΙΕΧΟΜΕΝΟ δεξιά ═══ */}
         <View style={{ flex: 1 }} {...panResponder.panHandlers}>
           <View style={{ flex: 1, display: (view === 'customMoni' || view === 'customDipli' || view === 'customNew' || view === 'customQuotes') ? 'flex' : 'none' }}>
-            <CustomScreen isForeman={isForeman} quotes={quotes} setQuotes={setQuotes} quotesOnly={view === 'customQuotes'} customOrders={customOrders} setCustomOrders={setCustomOrders} soldOrders={soldOrders} setSoldOrders={setSoldOrders} customers={customers} onRequestAddCustomer={(name, cb)=>{ setPendingCustomer(name); setPendingCustomerCallback(()=>cb); setShowCustomers(true); }} sasiStock={sasiStock} setSasiStock={setSasiStock} caseStock={caseStock} setCaseStock={setCaseStock} sasiOrders={sasiOrders} setSasiOrders={setSasiOrders} caseOrders={caseOrders} setCaseOrders={setCaseOrders} coatings={coatings} dipliSasiStock={dipliSasiStock} setDipliSasiStock={setDipliSasiStock} locks={locks} isGuest={isGuest || (view !== 'customNew' && unlockedTab !== view)} locked={!isGuest && view !== 'customNew' && unlockedTab !== view} formOnly={view === 'customNew'} forcedTab={view === 'customMoni' ? 'ΜΟΝΗ' : view === 'customDipli' ? 'ΔΙΠΛΗ' : null} setTabIndex={setTabIndex} highlightOrderId={globalSearchHighlightOrderId} onClearSearchHighlight={clearSearchNavigationHighlight} currentUserName={currentUser?.username ? (userLabels[lockKey(currentUser.username)] || currentUser.username) : ''} isAdmin={isAdmin} resolveName={(u) => userLabels[lockKey(u)] || u} showCustomerLookup={showCustomerLookup} setShowCustomerLookup={setShowCustomerLookup} isSeller={isSeller} sellerKey={sellerKey} filterSellerKey={sellerFilter || null} editSubmission={editSubmission} onEditSubmissionDone={() => setEditSubmission(null)} />
+            <CustomScreen isForeman={isForeman} quotes={quotes} setQuotes={setQuotes} quotesOnly={view === 'customQuotes'} customOrders={customOrders} setCustomOrders={setCustomOrders} soldOrders={soldOrders} setSoldOrders={setSoldOrders} customers={customers} onRequestAddCustomer={(name, cb)=>{ setPendingCustomer(name); setPendingCustomerCallback(()=>cb); setShowCustomers(true); }} sasiStock={sasiStock} setSasiStock={setSasiStock} caseStock={caseStock} setCaseStock={setCaseStock} sasiOrders={sasiOrders} setSasiOrders={setSasiOrders} caseOrders={caseOrders} setCaseOrders={setCaseOrders} coatings={coatings} dipliSasiStock={dipliSasiStock} setDipliSasiStock={setDipliSasiStock} locks={locks} cylinders={cylinders} misc={misc} isGuest={isGuest || (view !== 'customNew' && unlockedTab !== view)} locked={!isGuest && view !== 'customNew' && unlockedTab !== view} formOnly={view === 'customNew'} forcedTab={view === 'customMoni' ? 'ΜΟΝΗ' : view === 'customDipli' ? 'ΔΙΠΛΗ' : null} setTabIndex={setTabIndex} highlightOrderId={globalSearchHighlightOrderId} onClearSearchHighlight={clearSearchNavigationHighlight} currentUserName={currentUser?.username ? (userLabels[lockKey(currentUser.username)] || currentUser.username) : ''} isAdmin={isAdmin} resolveName={(u) => userLabels[lockKey(u)] || u} showCustomerLookup={showCustomerLookup} setShowCustomerLookup={setShowCustomerLookup} isSeller={isSeller} sellerKey={sellerKey} filterSellerKey={sellerFilter || null} editSubmission={editSubmission} onEditSubmissionDone={() => setEditSubmission(null)} />
           </View>
           {view === 'sasi'   && <SasiScreen sasiStock={sasiStock} setSasiStock={setSasiStock} opsBasket={sasiOps} setOpsBasket={setSasiOps} stockHighlight={globalSearchStockMeta} onClearSearchHighlight={clearSearchNavigationHighlight} locked={isGuest || unlockedTab !== 'sasi'} isAdmin={isAdmin} customOrders={customOrders} />}
           {view === 'cases'  && <CaseScreen caseStock={caseStock} setCaseStock={setCaseStock} opsBasket={caseOps} setOpsBasket={setCaseOps} stockHighlight={globalSearchStockMeta} onClearSearchHighlight={clearSearchNavigationHighlight} locked={isGuest || unlockedTab !== 'cases'} isAdmin={isAdmin} customOrders={customOrders} />}
@@ -1291,8 +1333,9 @@ export default function App() {
         <Modal visible={menuOpen} transparent animationType="fade" onRequestClose={() => setMenuOpen(false)}>
           <TouchableOpacity style={styles.menuOverlay} onPress={() => setMenuOpen(false)}>
             <View style={styles.menuPanel}>
-              <Text style={styles.menuTitle}>ΜΕΝΟΥ</Text>
+              <ScrollView showsVerticalScrollIndicator={false}>
               {!isGuest && !isSeller && (<>
+              <View style={styles.menuGroup}>
               <TouchableOpacity style={styles.menuItem} onPress={() => { setMenuOpen(false); setShowCustomers(true); }}>
                 <Text style={styles.menuItemText}>👥 ΠΕΛΑΤΕΣ</Text>
               </TouchableOpacity>
@@ -1302,27 +1345,36 @@ export default function App() {
               <TouchableOpacity style={styles.menuItem} onPress={() => { setMenuOpen(false); setShowLocks(true); }}>
                 <Text style={styles.menuItemText}>🔒 ΚΛΕΙΔΑΡΙΕΣ</Text>
               </TouchableOpacity>
+              <TouchableOpacity style={styles.menuItem} onPress={() => { setMenuOpen(false); setShowCylinders(true); }}>
+                <Text style={styles.menuItemText}>🗝️ ΑΦΑΛΟΙ</Text>
+              </TouchableOpacity>
+              <TouchableOpacity style={styles.menuItem} onPress={() => { setMenuOpen(false); setShowMisc(true); }}>
+                <Text style={styles.menuItemText}>📦 ΔΙΑΦΟΡΑ</Text>
+              </TouchableOpacity>
+              {currentUser?.role === 'admin' && (
+                <TouchableOpacity style={[styles.menuItem, { backgroundColor: '#eef4ff' }]} onPress={() => { setMenuOpen(false); setShowPriceCatalog(true); }}>
+                  <Text style={[styles.menuItemText, { color: '#1565C0' }]}>💶 ΤΙΜΟΚΑΤΑΛΟΓΟΣ</Text>
+                </TouchableOpacity>
+              )}
+              </View>
+              <View style={styles.menuGroup}>
               <TouchableOpacity style={styles.menuItem} onPress={() => { setMenuOpen(false); setShowActivity(true); }}>
                 <Text style={styles.menuItemText}>📜 ΙΣΤΟΡΙΚΟ ΚΙΝΗΣΕΩΝ</Text>
               </TouchableOpacity>
               <TouchableOpacity style={styles.menuItem} onPress={() => { setMenuOpen(false); setShowApprovalHistory(true); }}>
                 <Text style={styles.menuItemText}>📋 ΙΣΤΟΡΙΚΟ ΕΓΚΡΙΣΕΩΝ</Text>
               </TouchableOpacity>
+              </View>
               </>)}
               {currentUser?.role === 'admin' && (
-                <TouchableOpacity style={[styles.menuItem, { backgroundColor: '#eef4ff' }]} onPress={() => { setMenuOpen(false); setShowMessages(true); }}>
-                  <Text style={[styles.menuItemText, { color: '#1565C0' }]}>✉️ ΜΗΝΥΜΑΤΑ</Text>
-                </TouchableOpacity>
-              )}
-              {currentUser?.role === 'admin' && (
+                <View style={styles.menuGroup}>
                 <TouchableOpacity style={[styles.menuItem, { backgroundColor: '#eef4ff' }]} onPress={() => { setMenuOpen(false); setShowSellerLog(true); }}>
                   <Text style={[styles.menuItemText, { color: '#1565C0' }]}>📒 ΑΝΑΘΕΣΕΙΣ ΠΩΛΗΤΩΝ</Text>
                 </TouchableOpacity>
-              )}
-              {currentUser?.role === 'admin' && (
                 <TouchableOpacity style={[styles.menuItem, { backgroundColor: '#eef4ff' }]} onPress={() => { setMenuOpen(false); setShowApprovalRights(true); }}>
                   <Text style={[styles.menuItemText, { color: '#1565C0' }]}>✅ ΕΓΚΡΙΣΕΙΣ ΠΑΡΑΓΓΕΛΙΩΝ</Text>
                 </TouchableOpacity>
+                </View>
               )}
               {currentUser?.role === 'admin' && (
                 <TouchableOpacity style={[styles.menuItem, { backgroundColor: '#fff4e6' }]} onPress={openAdmin}>
@@ -1351,6 +1403,7 @@ export default function App() {
               }}>
                 <Text style={[styles.menuItemText, { color: '#8B0000' }]}>🔐 ΑΠΟΣΥΝΔΕΣΗ</Text>
               </TouchableOpacity>
+              </ScrollView>
             </View>
           </TouchableOpacity>
         </Modal>
@@ -1446,8 +1499,17 @@ export default function App() {
           />
         </Modal>
 
+        <Modal visible={showPriceCatalog} animationType="slide" onRequestClose={() => setShowPriceCatalog(false)}>
+          <PriceCatalogScreen coatings={coatings} locks={locks} onClose={() => setShowPriceCatalog(false)} />
+        </Modal>
         <Modal visible={showLocks} animationType="slide" onRequestClose={() => setShowLocks(false)}>
           <LocksScreen locks={locks} setLocks={setLocks} onClose={() => setShowLocks(false)} />
+        </Modal>
+        <Modal visible={showCylinders} animationType="slide" onRequestClose={() => setShowCylinders(false)}>
+          <PricedListScreen title="ΑΦΑΛΟΙ" icon="🗝️" items={cylinders} setItems={setCylinders} fbNode="cylinders" placeholder="π.χ. ISEO R-50 με 5 κλειδιά..." onClose={() => setShowCylinders(false)} />
+        </Modal>
+        <Modal visible={showMisc} animationType="slide" onRequestClose={() => setShowMisc(false)}>
+          <PricedListScreen title="ΔΙΑΦΟΡΑ" icon="📦" items={misc} setItems={setMisc} fbNode="misc" placeholder="π.χ. 3ος μεντεσές, μόνωση φελιζόλ..." showFlags isAdmin={isAdmin} onClose={() => setShowMisc(false)} />
         </Modal>
 
         {/* ΠΕΛΑΤΕΣ SCREEN */}
@@ -1970,9 +2032,9 @@ const styles = StyleSheet.create({
   loadingDivider: { width: 40, height: 3, backgroundColor: '#E53935', borderRadius: 2, marginBottom: 24 },
   loadingText: { color: '#888', fontSize: 13, fontWeight: '600', letterSpacing: 1 },
   menuOverlay: { flex: 1, backgroundColor: 'rgba(0,0,0,0.5)', justifyContent: 'flex-start', alignItems: 'flex-end' },
-  menuPanel: { backgroundColor: '#fff', width: 220, marginTop: 80, marginRight: 10, borderRadius: 12, padding: 16, elevation: 10 },
-  menuTitle: { fontSize: 12, fontWeight: 'bold', color: '#999', marginBottom: 12, letterSpacing: 2 },
-  menuItem: { padding: 14, borderRadius: 8, backgroundColor: '#f5f5f5', marginBottom: 8 },
+  menuPanel: { backgroundColor: '#fff', width: 220, marginTop: 60, marginRight: 10, marginBottom: 16, maxHeight: '85%', borderRadius: 12, padding: 14, elevation: 10 },
+  menuGroup: { borderWidth: 1, borderColor: '#e0e0e0', borderRadius: 10, padding: 6, paddingBottom: 0, marginBottom: 10, backgroundColor: '#fafafa' },
+  menuItem: { padding: 10, borderRadius: 8, backgroundColor: '#f5f5f5', marginBottom: 6 },
   menuItemText: { fontSize: 15, fontWeight: 'bold', color: '#1a1a1a' },
   // ── TOP BAR styles ──
   topBar: { backgroundColor: '#1a1a2e', flexDirection: 'row', alignItems: 'center', paddingHorizontal: 16, paddingVertical: 12, paddingTop: (StatusBar.currentHeight || 0) + 12 },
