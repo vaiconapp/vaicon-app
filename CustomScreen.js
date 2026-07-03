@@ -1159,9 +1159,13 @@ export default function CustomScreen({ customOrders, setCustomOrders, soldOrders
     const qtyStr = String(parseInt(src.qty, 10) > 0 ? parseInt(src.qty, 10) : 1);
     const have = new Set(lines.map(l => l.label));
     const push = (label, value) => { if (label && !have.has(label)) { lines.push({ label, value, qty: qtyStr }); have.add(label); } };
-    // Κλειδαριά/άφαλος: εμφανίζεται πάντα γραμμή όταν επιλεγεί — με τιμή αν υπάρχει, αλλιώς κενή (κόκκινη υπενθύμιση).
-    for (const [arr, name] of [[locks, src.lock], [cylinders, src.cylinder]]) {
-      const it = (arr || []).find(x => x && x.name === name); if (name && it) push(name, pNum(it.price) > 0 ? String(it.price) : '');
+    // Κλειδαριά/άφαλος: γραμμή πάντα όταν επιλεγεί — τιμή αν υπάρχει, αλλιώς κενή (κόκκινη υπενθύμιση).
+    // Ανεκτική αντιστοίχιση (το πεδίο μπορεί να έχει όνομα λίστας + επιπλέον κείμενο).
+    const bestLock = (arr, val) => { const v = String(val || '').trim(); if (!v) return null; return (arr || []).filter(x => x && x.name && (v === x.name || v.startsWith(x.name))).sort((a, b) => (b.name?.length || 0) - (a.name?.length || 0))[0] || null; };
+    for (const [arr, val] of [[locks, src.lock], [cylinders, src.cylinder]]) {
+      if (!String(val || '').trim()) continue;
+      const it = bestLock(arr, val);
+      push(it ? it.name : String(val).trim(), (it && pNum(it.price) > 0) ? String(it.price) : '');
     }
     for (const name of (src.misc || [])) {
       const it = (misc || []).find(x => x && x.name === name); if (it && pNum(it.price) > 0) push(name, String(it.price));

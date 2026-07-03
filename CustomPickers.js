@@ -1,4 +1,4 @@
-import React from 'react';
+import React, { useState, useEffect } from 'react';
 import { Modal, View, Text, TouchableOpacity, ScrollView, TextInput, Dimensions } from 'react-native';
 import { sortCoatingsGrouped } from './formatHelpers';
 import { DIPLI_MODELS, DIPLI_DEFAULT } from './utils';
@@ -142,15 +142,18 @@ export function MiscPickerModal({ visible, onClose, anchor, customForm, setCusto
 }
 
 export function LockPickerModal({ visible, onClose, anchor, customForm, setCustomForm, locks, cylinders }) {
+  const [lockText, setLockText] = useState('');
+  const [cylText, setCylText] = useState('');
+  useEffect(() => { if (visible) { setLockText(customForm.lock || ''); setCylText(customForm.cylinder || ''); } }, [visible]);
   const ordered = (arr) => [...(arr||[])].sort((a,b)=>(a.order??a.createdAt)-(b.order??b.createdAt));
-  const W = 360, sw = Dimensions.get('window').width;
+  const W = Math.min(480, Dimensions.get('window').width - 12), sw = Dimensions.get('window').width;
   const left = anchor ? Math.max(6, Math.min(anchor.x, sw - W - 6)) : 6;
-  const top = anchor ? anchor.y + anchor.h + 2 : 80;
-  const row = (sel, label, onPress, key, price) => (
+  const top = anchor ? Math.max(6, anchor.y - 24) : 80;
+  const row = (sel, name, onPress, key, price) => (
     <TouchableOpacity key={key}
       style={{paddingVertical:7,paddingHorizontal:9,borderBottomWidth:1,borderBottomColor:'#eee',flexDirection:'row',alignItems:'center',justifyContent:'space-between',backgroundColor:sel?'#FBEEEE':'#fff'}}
       onPress={onPress}>
-      <Text style={{fontSize:12,color:sel?'#8B0000':'#1a1a1a',fontWeight:sel?'700':'500',flex:1}} numberOfLines={2}>{label}</Text>
+      <Text style={{fontSize:12,color:sel?'#8B0000':'#1a1a1a',fontWeight:sel?'700':'500',flex:1}} numberOfLines={2}>{name}</Text>
       {!!String(price||'').trim()&&<Text style={{fontSize:11,fontWeight:'700',color:'#8B0000',marginHorizontal:4}}>€{price}</Text>}
       {sel&&<Text style={{color:'#00C851',fontSize:14}}>✓</Text>}
     </TouchableOpacity>
@@ -158,20 +161,33 @@ export function LockPickerModal({ visible, onClose, anchor, customForm, setCusto
   return (
     <Modal visible={visible} transparent animationType="fade" onRequestClose={onClose}>
       <TouchableOpacity activeOpacity={1} onPress={onClose} style={{flex:1}}>
-        <View style={{position:'absolute',left,top,width:W,maxHeight:320,backgroundColor:'#fff',borderRadius:10,borderWidth:1,borderColor:'#8B0000',shadowColor:'#000',shadowOpacity:0.2,shadowRadius:6,elevation:6,overflow:'hidden',flexDirection:'row'}}>
-          <View style={{flex:2,borderRightWidth:1,borderRightColor:'#eee'}}>
-            <Text style={{fontSize:11,fontWeight:'700',color:'#8B0000',paddingVertical:5,paddingHorizontal:9,backgroundColor:'#FBEEEE'}}>ΚΛΕΙΔΑΡΙΕΣ</Text>
-            <ScrollView style={{maxHeight:288}}>
-              {row(!customForm.lock,'— Χωρίς',()=>setCustomForm({...customForm,lock:''}),'no-lock')}
-              {ordered(locks).map(l=>row(customForm.lock===l.name,l.name,()=>setCustomForm({...customForm,lock:l.name}),l.id,l.price))}
-            </ScrollView>
+        <View style={{position:'absolute',left,top,width:W,backgroundColor:'#fff',borderRadius:10,borderWidth:1,borderColor:'#8B0000',shadowColor:'#000',shadowOpacity:0.2,shadowRadius:6,elevation:6,overflow:'hidden'}}>
+          <View style={{flexDirection:'row'}}>
+            <View style={{flex:2,borderRightWidth:1,borderRightColor:'#eee'}}>
+              <Text style={{fontSize:11,fontWeight:'700',color:'#8B0000',paddingVertical:5,paddingHorizontal:9,backgroundColor:'#FBEEEE'}}>ΚΛΕΙΔΑΡΙΕΣ</Text>
+              <ScrollView style={{maxHeight:240}}>
+                {row(!customForm.lock,'— Χωρίς',()=>{setLockText('');setCustomForm({...customForm,lock:''});},'no-lock')}
+                {ordered(locks).map(l=>row((customForm.lock||'').startsWith(l.name),l.name,()=>{setLockText(l.name);setCustomForm({...customForm,lock:l.name});},l.id,l.price))}
+              </ScrollView>
+            </View>
+            <View style={{flex:1.6}}>
+              <Text style={{fontSize:11,fontWeight:'700',color:'#8B0000',paddingVertical:5,paddingHorizontal:9,backgroundColor:'#FBEEEE'}}>ΑΦΑΛΟΙ</Text>
+              <ScrollView style={{maxHeight:240}}>
+                {row(!customForm.cylinder,'— Χωρίς',()=>{setCylText('');setCustomForm({...customForm,cylinder:''});},'no-cyl')}
+                {ordered(cylinders).map(c=>row((customForm.cylinder||'').startsWith(c.name),c.name,()=>{setCylText(c.name);setCustomForm({...customForm,cylinder:c.name});},c.id,c.price))}
+              </ScrollView>
+            </View>
           </View>
-          <View style={{flex:1}}>
-            <Text style={{fontSize:11,fontWeight:'700',color:'#8B0000',paddingVertical:5,paddingHorizontal:9,backgroundColor:'#FBEEEE'}}>ΑΦΑΛΟΙ</Text>
-            <ScrollView style={{maxHeight:288}}>
-              {row(!customForm.cylinder,'— Χωρίς',()=>setCustomForm({...customForm,cylinder:''}),'no-cyl')}
-              {ordered(cylinders).map(c=>row(customForm.cylinder===c.name,c.name,()=>setCustomForm({...customForm,cylinder:c.name}),c.id,c.price))}
-            </ScrollView>
+          <View style={{padding:9,borderTopWidth:1,borderTopColor:'#eee',backgroundColor:'#f9f9f9'}}>
+            <TextInput style={{backgroundColor:'#fff',borderWidth:1.5,borderColor:'#8B0000',borderRadius:8,padding:7,fontSize:13,color:'#1a1a1a',marginBottom:6}}
+              placeholder="Κλειδαριά (κείμενο)" placeholderTextColor="#aaa"
+              value={lockText} onChangeText={v=>{setLockText(v);setCustomForm({...customForm,lock:v});}} returnKeyType="done"/>
+            <TextInput style={{backgroundColor:'#fff',borderWidth:1.5,borderColor:'#8B0000',borderRadius:8,padding:7,fontSize:13,color:'#1a1a1a',marginBottom:6}}
+              placeholder="Άφαλος (κείμενο)" placeholderTextColor="#aaa"
+              value={cylText} onChangeText={v=>{setCylText(v);setCustomForm({...customForm,cylinder:v});}} returnKeyType="done" onSubmitEditing={onClose}/>
+            <TouchableOpacity style={{backgroundColor:'#8B0000',padding:9,borderRadius:8,alignItems:'center'}} onPress={onClose}>
+              <Text style={{color:'white',fontWeight:'bold',fontSize:13}}>✓ ΟΚ</Text>
+            </TouchableOpacity>
           </View>
         </View>
       </TouchableOpacity>
