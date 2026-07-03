@@ -179,20 +179,18 @@ export function LockPickerModal({ visible, onClose, anchor, customForm, setCusto
   );
 }
 
-export function CoatingsPickerModal({ visible, onClose, customForm, setCustomForm, coatings }) {
+export function CoatingsPickerModal({ visible, onClose, anchor, customForm, setCustomForm, coatings }) {
+  const W = 340, sw = Dimensions.get('window').width;
+  const left = anchor ? Math.max(6, Math.min(anchor.x, sw - W - 6)) : 6;
+  const top = anchor ? anchor.y + anchor.h + 2 : 80;
   return (
-    <Modal visible={visible} transparent animationType="slide" onRequestClose={onClose}>
-      <View style={{flex:1,backgroundColor:'rgba(0,0,0,0.5)',justifyContent:'flex-end'}}>
-        <View style={{backgroundColor:'#fff',borderTopLeftRadius:16,borderTopRightRadius:16,maxHeight:'60%'}}>
-          <View style={{backgroundColor:'#007AFF',padding:16,borderTopLeftRadius:16,borderTopRightRadius:16,flexDirection:'row',justifyContent:'space-between',alignItems:'center'}}>
-            <Text style={{color:'white',fontWeight:'bold',fontSize:16}}>🎨 Επένδυση Πόρτας</Text>
-            <TouchableOpacity onPress={onClose}>
-              <Text style={{color:'white',fontSize:20,fontWeight:'bold'}}>✕</Text>
-            </TouchableOpacity>
-          </View>
-          <ScrollView>
+    <Modal visible={visible} transparent animationType="fade" onRequestClose={onClose}>
+      <TouchableOpacity activeOpacity={1} onPress={onClose} style={{flex:1}}>
+        <View style={{position:'absolute',left,top,width:W,maxHeight:380,backgroundColor:'#fff',borderRadius:10,borderWidth:1,borderColor:'#007AFF',shadowColor:'#000',shadowOpacity:0.2,shadowRadius:6,elevation:6,overflow:'hidden'}}>
+          <Text style={{fontSize:11,fontWeight:'700',color:'#007AFF',paddingVertical:5,paddingHorizontal:9,backgroundColor:'#E8F4FD'}}>ΕΠΕΝΔΥΣΗ ΠΟΡΤΑΣ</Text>
+          <ScrollView style={{maxHeight:300}}>
             {coatings.length===0 && (
-              <Text style={{padding:20,color:'#aaa',textAlign:'center'}}>Δεν υπάρχουν επενδύσεις. Προσθέστε από το μενού ☰.</Text>
+              <Text style={{padding:14,color:'#aaa',textAlign:'center',fontSize:12}}>Δεν υπάρχουν επενδύσεις. Προσθέστε από το μενού ☰.</Text>
             )}
             {sortCoatingsGrouped(coatings).map(c=>{
               const selected = (customForm.coatings||[]).includes(c.name);
@@ -200,7 +198,7 @@ export function CoatingsPickerModal({ visible, onClose, customForm, setCustomFor
               const bg = n.includes('μέσα')||n.includes('μεσα') ? '#E8F4FD' : n.includes('έξω')||n.includes('εξω') ? '#FFF3E0' : '#fff';
               return (
                 <TouchableOpacity key={c.id}
-                  style={{padding:16,borderBottomWidth:1,borderBottomColor:'#eee',flexDirection:'row',alignItems:'center',justifyContent:'space-between', backgroundColor: bg}}
+                  style={{paddingVertical:8,paddingHorizontal:10,borderBottomWidth:1,borderBottomColor:'#eee',flexDirection:'row',alignItems:'center',justifyContent:'space-between', backgroundColor: bg}}
                   onPress={()=>{
                     const current = customForm.coatings||[];
                     const updated = selected ? current.filter(x=>x!==c.name) : [...current,c.name];
@@ -209,26 +207,26 @@ export function CoatingsPickerModal({ visible, onClose, customForm, setCustomFor
                       setTimeout(()=>onClose(), 150);
                     }
                   }}>
-                  <Text style={{fontSize:15,color:'#000'}}>{c.name}</Text>
-                  {selected && <Text style={{color:'#007AFF',fontSize:18,fontWeight:'bold'}}>✓</Text>}
+                  <Text style={{fontSize:13,color:'#000',flex:1}}>{c.name}</Text>
+                  {selected && <Text style={{color:'#007AFF',fontSize:16,fontWeight:'bold'}}>✓</Text>}
                 </TouchableOpacity>
               );
             })}
             {(customForm.coatings||[]).length>0&&(
               <TouchableOpacity
-                style={{margin:12,padding:12,backgroundColor:'#ff4444',borderRadius:8,alignItems:'center'}}
+                style={{margin:8,padding:9,backgroundColor:'#ff4444',borderRadius:8,alignItems:'center'}}
                 onPress={()=>setCustomForm({...customForm,coatings:[]})}>
-                <Text style={{color:'white',fontWeight:'bold'}}>ΕΚΚΑΘΑΡΙΣΗ ΕΠΙΛΟΓΩΝ</Text>
+                <Text style={{color:'white',fontWeight:'bold',fontSize:12}}>ΕΚΚΑΘΑΡΙΣΗ ΕΠΙΛΟΓΩΝ</Text>
               </TouchableOpacity>
             )}
           </ScrollView>
           <TouchableOpacity
-            style={{margin:12,padding:14,backgroundColor:'#007AFF',borderRadius:8,alignItems:'center'}}
+            style={{margin:8,padding:10,backgroundColor:'#007AFF',borderRadius:8,alignItems:'center'}}
             onPress={onClose}>
-            <Text style={{color:'white',fontWeight:'bold',fontSize:15}}>ΟΛΟΚΛΗΡΩΣΗ</Text>
+            <Text style={{color:'white',fontWeight:'bold',fontSize:13}}>ΟΛΟΚΛΗΡΩΣΗ</Text>
           </TouchableOpacity>
         </View>
-      </View>
+      </TouchableOpacity>
     </Modal>
   );
 }

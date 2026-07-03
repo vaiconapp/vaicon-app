@@ -90,6 +90,15 @@ const deliveryDateDisplay = (order) => {
   return String(v).trim();
 };
 
+// Αναβολή δέσμευσης στοκ: παραγγελία με ημ. παράδοσης πιάνει στοκ 2 ημερολογιακές μέρες πριν.
+// Επιστρέφει timestamp «ξυπνήματος» αν η παράδοση απέχει >2 μέρες, αλλιώς null (κανονική δέσμευση τώρα).
+const computeDeferUntil = (order) => {
+  const d = parseDateStr(deliveryDateDisplay(order));
+  if (!d || isNaN(d.getTime())) return null;
+  const wake = new Date(d.getFullYear(), d.getMonth(), d.getDate() - 2, 0, 0, 0, 0).getTime();
+  return wake > Date.now() ? wake : null;
+};
+
 /** Λίστες τυποποιημένων: 📅 καταχώρηση — παράδοση */
 const StdOrderDatesLine = ({ order, fontSize = 11, marginBottom }) => {
   const created = fmtDate(order.createdAt);
@@ -607,6 +616,8 @@ export default function CustomScreen({ customOrders, setCustomOrders, soldOrders
   const [showStavColPicker, setShowStavColPicker] = useState(false);
   const [stavColAnchor, setStavColAnchor] = useState(null);
   const stavColBtnRef = useRef(null);
+  const [coatingsAnchor, setCoatingsAnchor] = useState(null);
+  const coatingsBtnRef = useRef(null);
   const [showCoatingsPicker, setShowCoatingsPicker] = useState(false);
   const [showDatePicker, setShowDatePicker] = useState(false);
   const [customHardwareText, setCustomHardwareText] = useState('');
@@ -1148,8 +1159,9 @@ export default function CustomScreen({ customOrders, setCustomOrders, soldOrders
     const qtyStr = String(parseInt(src.qty, 10) > 0 ? parseInt(src.qty, 10) : 1);
     const have = new Set(lines.map(l => l.label));
     const push = (label, value) => { if (label && !have.has(label)) { lines.push({ label, value, qty: qtyStr }); have.add(label); } };
+    // Κλειδαριά/άφαλος: εμφανίζεται πάντα γραμμή όταν επιλεγεί — με τιμή αν υπάρχει, αλλιώς κενή (κόκκινη υπενθύμιση).
     for (const [arr, name] of [[locks, src.lock], [cylinders, src.cylinder]]) {
-      const it = (arr || []).find(x => x && x.name === name); if (name && it && pNum(it.price) > 0) push(name, String(it.price));
+      const it = (arr || []).find(x => x && x.name === name); if (name && it) push(name, pNum(it.price) > 0 ? String(it.price) : '');
     }
     for (const name of (src.misc || [])) {
       const it = (misc || []).find(x => x && x.name === name); if (it && pNum(it.price) > 0) push(name, String(it.price));
@@ -1648,7 +1660,8 @@ export default function CustomScreen({ customOrders, setCustomOrders, soldOrders
       const orderQtyR = parseInt(newOrder.qty)||1;
       const sk = sasiKey(String(newOrder.h), String(newOrder.w), newOrder.side);
       const ck = caseKey(String(newOrder.h), String(newOrder.w), newOrder.side, newOrder.caseType);
-      const newRes = { orderNo: newOrder.orderNo, customer: newOrder.customer||'', qty: orderQtyR };
+      const _deferUntil = computeDeferUntil(newOrder);
+      const newRes = { orderNo: newOrder.orderNo, customer: newOrder.customer||'', qty: orderQtyR, ...(_deferUntil ? { deferUntil: _deferUntil } : {}) };
 
       const reserveSasi = isMoni && !isMoniWithLock && !hasHeightReductionForm;
       const reserveCase = !hasKypri;
@@ -1852,7 +1865,8 @@ export default function CustomScreen({ customOrders, setCustomOrders, soldOrders
     setCustomOrders(prev => [order, ...prev.filter(o => o.id !== order.id)]);
     const isMoni = order.sasiType === 'ΜΟΝΗ ΘΩΡΑΚΙΣΗ' || !order.sasiType;
     const qtyR = parseInt(order.qty) || 1;
-    const newRes = { orderNo: number, customer: order.customer || '', qty: qtyR };
+    const _defU = computeDeferUntil(order);
+    const newRes = { orderNo: number, customer: order.customer || '', qty: qtyR, ...(_defU ? { deferUntil: _defU } : {}) };
     if (isMoni && !order.lock && !order.heightReduction) {
       const sk = sasiKey(String(order.h), String(order.w), order.side);
       const base = (await fetch(`${FIREBASE_URL}/sasi_stock/${sk}.json`).then(x => x.json()).catch(() => null)) || { qty: 0, reservations: [] };
@@ -5069,7 +5083,7 @@ export default function CustomScreen({ customOrders, setCustomOrders, soldOrders
 
                 {/* ΓΡΑΜΜΗ 2: Επένδυση — ολόκληρη γραμμή */}
                 <Text style={vstyles.fieldLabelDark}>Επένδυση</Text>
-                <TouchableOpacity style={[vstyles.selectBtn,{marginTop:2,marginBottom:8}]} onPress={()=>{blurAll();setShowCoatingsPicker(true);}}>
+                <TouchableOpacity ref={coatingsBtnRef} style={[vstyles.selectBtn,{marginTop:2,marginBottom:8}]} onPress={()=>{blurAll();coatingsBtnRef.current&&coatingsBtnRef.current.measureInWindow&&coatingsBtnRef.current.measureInWindow((x,y,w,h)=>setCoatingsAnchor({x,y,w,h}));setShowCoatingsPicker(true);}}>
                   <Text style={{fontSize:13,color:(customForm.coatings&&customForm.coatings.length>0)?'#1a1a1a':'#aaa',flex:1}} numberOfLines={1}>
                     {(customForm.coatings&&customForm.coatings.length>0)?customForm.coatings.join(', '):'Επιλέξτε...'}
                   </Text>
@@ -6681,6 +6695,7 @@ export default function CustomScreen({ customOrders, setCustomOrders, soldOrders
       <CoatingsPickerModal
         visible={showCoatingsPicker}
         onClose={()=>setShowCoatingsPicker(false)}
+        anchor={coatingsAnchor}
         customForm={customForm}
         setCustomForm={(next)=>{
           const n = typeof next === 'function' ? next(customForm) : next;

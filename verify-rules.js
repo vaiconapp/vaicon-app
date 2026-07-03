@@ -80,6 +80,15 @@ const sasiKey = (h, w, side) => `${h}_${w}_${side}`;
 const caseKey = (h, w, side, caseType) =>
   `${h}_${w}_${side}_${(caseType || '').includes('ΑΝΟΙΧΤΟΥ') || caseType === 'ΚΑΣΑ ΑΝΟΙΧΤΗ' ? 'AN' : 'KL'}`;
 
+const resDeferred = (r, now = Date.now()) => !!r && r.deferUntil != null && now < Number(r.deferUntil);
+
+const stockAvailable = (stockMap, key, now = Date.now()) => {
+  const entry = stockMap?.[key];
+  if (!entry) return 0;
+  const reserved = (entry.reservations || []).reduce((s, r) => resDeferred(r, now) ? s : s + (parseInt(r.qty) || 1), 0);
+  return (parseInt(entry.qty) || 0) - reserved;
+};
+
 function truthyBool(v) {
   if (v === true || v === 1) return true;
   if (v === false || v === 0 || v == null || v === '') return false;
@@ -528,6 +537,23 @@ group('sasiKey / caseKey', () => {
   test('caseKey άδειο caseType → KL (default)',
     caseKey('223', '88', 'ΔΕΞΙΑ', ''),
     '223_88_ΔΕΞΙΑ_KL');
+});
+
+group('stockAvailable — αναβολή δέσμευσης (deferUntil)', () => {
+  const DAY = 86400000;
+  const now = 1_000_000_000_000;
+  const mk = (qty, reservations) => ({ K: { qty, reservations } });
+  test('χωρίς deferUntil → μετράει κανονικά',
+    stockAvailable(mk(5, [{ orderNo: 'A', qty: 2 }]), 'K', now), 3);
+  test('deferUntil στο μέλλον → ΔΕΝ πιάνει στοκ',
+    stockAvailable(mk(5, [{ orderNo: 'A', qty: 2, deferUntil: now + 3 * DAY }]), 'K', now), 5);
+  test('deferUntil πέρασε (ξύπνησε) → πιάνει στοκ',
+    stockAvailable(mk(5, [{ orderNo: 'A', qty: 2, deferUntil: now - DAY }]), 'K', now), 3);
+  test('μείγμα: μία κανονική + μία σε αναβολή → μόνο η κανονική μετράει',
+    stockAvailable(mk(5, [{ orderNo: 'A', qty: 2 }, { orderNo: 'B', qty: 4, deferUntil: now + DAY }]), 'K', now), 3);
+  test('resDeferred: μέλλον → true', resDeferred({ deferUntil: now + DAY }, now), true);
+  test('resDeferred: παρελθόν → false', resDeferred({ deferUntil: now - DAY }, now), false);
+  test('resDeferred: χωρίς deferUntil → false', resDeferred({ qty: 1 }, now), false);
 });
 
 group('truthyBool — Firebase boolean parsing', () => {

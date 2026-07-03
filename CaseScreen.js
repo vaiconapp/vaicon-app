@@ -2,7 +2,7 @@ import React, { useState, useEffect } from 'react';
 import { StyleSheet, Text, View, ScrollView, TouchableOpacity, TextInput, Alert, Modal, Platform } from 'react-native';
 import { FIREBASE_URL } from './firebaseConfig';
 import { logActivity } from './activityLog';
-import { caseKey as stockKey } from './stockUtils';
+import { caseKey as stockKey, resDeferred } from './stockUtils';
 
 const HEIGHTS = ['208', '213', '218', '223'];
 const WIDTHS  = ['83', '88', '93', '98'];
@@ -215,10 +215,10 @@ export default function CaseScreen({ caseStock={}, setCaseStock, opsBasket=[], s
         {HEIGHTS.map(h => WIDTHS.map(w => {
           const key = stockKey(h, w, side, caseType);
           const entry = stockMap[key] || { qty:0, reservations:[], pending:0 };
-          const reserved = (entry.reservations||[]).reduce((s,r)=>r.oldCovered?s:s+(parseInt(r.qty)||1),0);
+          const reserved = (entry.reservations||[]).reduce((s,r)=>(r.oldCovered||resDeferred(r))?s:s+(parseInt(r.qty)||1),0);
           const totalQ = parseInt(entry.qty)||0;
-          let _cum=0, readyDoors=0, greenDoors=0, redDoors=0;
-          (entry.reservations||[]).forEach(r=>{ const q=parseInt(r.qty)||1; if(r.oldCovered){greenDoors+=q; return;} _cum+=q; const cov=_cum<=totalQ; if(readyNos.has(String(r.orderNo))) readyDoors+=q; else if(cov) greenDoors+=q; else redDoors+=q; });
+          let _cum=0, readyDoors=0, greenDoors=0, redDoors=0, deferredDoors=0;
+          (entry.reservations||[]).forEach(r=>{ const q=parseInt(r.qty)||1; if(resDeferred(r)){deferredDoors+=q; return;} if(r.oldCovered){greenDoors+=q; return;} _cum+=q; const cov=_cum<=totalQ; if(readyNos.has(String(r.orderNo))) readyDoors+=q; else if(cov) greenDoors+=q; else redDoors+=q; });
           const available = (entry.qty||0) - reserved;
           const pending = entry.pending || 0;
           const label = `${h}x${w} ${side==='ΑΡΙΣΤΕΡΗ'?'ΑΡ':'ΔΕ'}`;
@@ -266,21 +266,22 @@ export default function CaseScreen({ caseStock={}, setCaseStock, opsBasket=[], s
                         const totalQty = parseInt(entry.qty) || 0;
                         let cum = 0;
                         return (entry.reservations||[]).map((r, i) => {
-                          if(!r.oldCovered) cum += (parseInt(r.qty) || 1);
+                          const deferred = resDeferred(r);
+                          if(!r.oldCovered && !deferred) cum += (parseInt(r.qty) || 1);
                           const covered = r.oldCovered || cum <= totalQty;
                           const isReady = readyNos.has(String(r.orderNo));
                           const chipHL = stockHighlight?.kind === 'case' && String(r.orderNo ?? '') === String(stockHighlight.orderNo ?? '');
                           return (
                             <Text key={i} style={{
                               fontSize:12, fontWeight:'bold',
-                              color: covered ? '#1b5e20' : '#c62828',
-                              backgroundColor: chipHL ? '#FFE082' : (isReady ? '#d7ecd9' : (covered ? '#f1f8f1' : 'transparent')),
-                              paddingHorizontal: (chipHL || covered || isReady) ? 4 : 0,
+                              color: deferred ? '#8a6d1b' : (covered ? '#1b5e20' : '#c62828'),
+                              backgroundColor: chipHL ? '#FFE082' : (deferred ? '#fff8e1' : (isReady ? '#d7ecd9' : (covered ? '#f1f8f1' : 'transparent'))),
+                              paddingHorizontal: (chipHL || covered || isReady || deferred) ? 4 : 0,
                               borderRadius: isReady ? 5 : 3,
                               borderWidth: chipHL ? 1 : (isReady ? 1 : 0),
                               borderColor: chipHL ? '#F57F17' : (isReady ? '#7cb342' : 'transparent'),
                             }}>
-                              #{r.orderNo}({r.qty||1})
+                              #{r.orderNo}({r.qty||1}){deferred ? '⏳' : ''}
                             </Text>
                           );
                         });
@@ -288,11 +289,12 @@ export default function CaseScreen({ caseStock={}, setCaseStock, opsBasket=[], s
                     : <Text style={{color:'#bbb'}}>—</Text>
                   }
                   </View>
-                  {(readyDoors>0||greenDoors>0||redDoors>0)&&(
+                  {(readyDoors>0||greenDoors>0||redDoors>0||deferredDoors>0)&&(
                     <View style={{flexDirection:'row', gap:5, marginLeft:6, alignItems:'center'}}>
                       {readyDoors>0&&<Text style={{fontSize:12, fontWeight:'900', color:'#2e7d32', backgroundColor:'#d7ecd9', borderWidth:1, borderColor:'#7cb342', borderRadius:5, paddingHorizontal:5}}>{readyDoors}</Text>}
                       {greenDoors>0&&<Text style={{fontSize:12, fontWeight:'900', color:'#2e7d32'}}>{greenDoors}</Text>}
                       {redDoors>0&&<Text style={{fontSize:12, fontWeight:'900', color:'#c62828'}}>{redDoors}</Text>}
+                      {deferredDoors>0&&<Text style={{fontSize:12, fontWeight:'900', color:'#8a6d1b'}}>⏳{deferredDoors}</Text>}
                     </View>
                   )}
                 </View>

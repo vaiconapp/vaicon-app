@@ -73,6 +73,16 @@ export default function LocksScreen({ locks, setLocks, onClose }) {
 
   const editLock = (lock) => { setForm(lock.name); setFormPrice(lock.price || ''); setEditingId(lock.id); };
 
+  const printList = () => {
+    if (Platform.OS !== 'web') return;
+    const esc = s => String(s || '').replace(/[&<>]/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;' }[c]));
+    const list = [...locks].sort((a, b) => (a.order ?? a.createdAt) - (b.order ?? b.createdAt));
+    const rows = list.map((l, i) => `<tr><td>${i + 1}</td><td>${esc(l.name)}</td><td class="p">${l.price ? '€' + esc(l.price) : ''}</td></tr>`).join('');
+    const html = `<!doctype html><html><head><meta charset="utf-8"><title>ΚΛΕΙΔΑΡΙΕΣ</title><style>body{font-family:Arial,sans-serif;margin:12mm;color:#000}h1{font-size:20px;margin:0 0 12px}table{width:100%;border-collapse:collapse}th,td{border-bottom:1px solid #ddd;padding:5px 6px;font-size:13px}th{text-align:left;border-bottom:2px solid #999}.p{text-align:right;font-weight:bold;white-space:nowrap}@media print{@page{size:A4 portrait;margin:12mm}}</style></head><body><h1>🔒 ΚΛΕΙΔΑΡΙΕΣ — ΛΙΣΤΑ (${locks.length})</h1><table><tr><th>#</th><th>Κλειδαριά</th><th class="p">Τιμή</th></tr>${rows || '<tr><td colspan="3">Καμία εγγραφή.</td></tr>'}</table><script>window.onload=()=>setTimeout(()=>window.print(),300)</script></body></html>`;
+    const win = window.open('', '_blank', 'width=900,height=700');
+    if (win) { win.document.write(html); win.document.close(); }
+  };
+
   const deleteLock = async (id) => {
     const ok = Platform.OS === 'web'
       ? window.confirm('Οριστική διαγραφή κλειδαριάς;')
@@ -108,7 +118,10 @@ export default function LocksScreen({ locks, setLocks, onClose }) {
             <Text style={styles.cancelTxt}>ΑΚΥΡΟ</Text>
           </TouchableOpacity>
         )}
-        <TextInput style={styles.search} placeholder="🔍 Αναζήτηση..." value={search} onChangeText={setSearch} />
+        <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8, marginBottom: 8 }}>
+          <TextInput style={[styles.search, { flex: 1, marginBottom: 0 }]} placeholder="🔍 Αναζήτηση..." value={search} onChangeText={setSearch} />
+          {Platform.OS === 'web' && <TouchableOpacity style={styles.printBtn} onPress={printList}><Text style={styles.printTxt}>🖨️ ΕΚΤΥΠΩΣΗ</Text></TouchableOpacity>}
+        </View>
         <Text style={styles.count}>Σύνολο: {locks.length} κλειδαριές</Text>
         <ScrollView>
           {sorted.map((l, sortedIdx) => {
@@ -159,6 +172,8 @@ const styles = StyleSheet.create({
   cancelEdit: { alignSelf: 'flex-start', marginBottom: 8 },
   cancelTxt: { color: '#ff4444', fontSize: 12, fontWeight: 'bold' },
   search: { backgroundColor: 'white', borderRadius: 8, padding: 10, borderWidth: 1, borderColor: '#ddd', marginBottom: 8 },
+  printBtn: { backgroundColor: '#eef4ff', borderWidth: 1, borderColor: '#1565C0', borderRadius: 8, paddingHorizontal: 12, paddingVertical: 10 },
+  printTxt: { color: '#1565C0', fontWeight: 'bold', fontSize: 12 },
   count: { fontSize: 11, color: '#999', marginBottom: 8 },
   card: { backgroundColor: 'white', borderRadius: 8, padding: 14, marginBottom: 6, flexDirection: 'row', alignItems: 'center', elevation: 1, borderLeftWidth: 4, borderLeftColor: '#8B0000' },
   orderBtns: { flexDirection: 'column', marginRight: 8, gap: 2 },
