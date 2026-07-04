@@ -206,7 +206,7 @@ export default function SasiScreen({ sasiStock={}, setSasiStock, opsBasket=[], s
         {HEIGHTS.map(h => WIDTHS.map(w => {
           const key = stockKey(h, w, side);
           const entry = stockMap[key] || { qty:0, reservations:[], pending:0 };
-          const reserved = (entry.reservations||[]).reduce((s,r)=>(r.oldCovered||resDeferred(r))?s:s+(parseInt(r.qty)||1),0);
+          const reserved = (entry.reservations||[]).reduce((s,r)=>r.oldCovered?s:s+(parseInt(r.qty)||1),0);
           const totalQ = parseInt(entry.qty)||0;
           let _cum=0, readyDoors=0, greenDoors=0, redDoors=0, deferredDoors=0;
           (entry.reservations||[]).forEach(r=>{ const q=parseInt(r.qty)||1; if(resDeferred(r)){deferredDoors+=q; return;} if(r.oldCovered){greenDoors+=q; return;} _cum+=q; const cov=_cum<=totalQ; if(readyNos.has(String(r.orderNo))) readyDoors+=q; else if(cov) greenDoors+=q; else redDoors+=q; });

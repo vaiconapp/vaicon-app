@@ -89,6 +89,23 @@ const stockAvailable = (stockMap, key, now = Date.now()) => {
   return (parseInt(entry.qty) || 0) - reserved;
 };
 
+const sameOrderNo = (a, b) => String(a ?? '') === String(b ?? '');
+
+// Αντίγραφο ξαναδέσμευσης στην επεξεργασία (CustomScreen.js saveOrderWith):
+// ίδιο «ράφι» (key) → κρατά θέση + σημαδάκια (oldCovered/borrow)· αλλιώς → τέλος, καθαρή.
+function reserveOnEdit(baseArr, editingOrderNo, newRes, oldKey, newKey) {
+  const arr = baseArr || [];
+  let prev = null;
+  if (editingOrderNo != null && oldKey === newKey) {
+    const idx = arr.findIndex(r => sameOrderNo(r.orderNo, editingOrderNo));
+    if (idx >= 0) { const { orderNo, customer, qty, deferUntil, ...flags } = arr[idx]; prev = { idx, flags }; }
+  }
+  const filtered = arr.filter(r => !sameOrderNo(r.orderNo, newRes.orderNo));
+  const res = prev ? { ...newRes, ...prev.flags } : newRes;
+  if (prev && prev.idx >= 0 && prev.idx <= filtered.length) { const out = [...filtered]; out.splice(prev.idx, 0, res); return out; }
+  return [...filtered, res];
+}
+
 function truthyBool(v) {
   if (v === true || v === 1) return true;
   if (v === false || v === 0 || v == null || v === '') return false;
@@ -554,6 +571,24 @@ group('stockAvailable — αναβολή δέσμευσης (deferUntil)', () =>
   test('resDeferred: μέλλον → true', resDeferred({ deferUntil: now + DAY }, now), true);
   test('resDeferred: παρελθόν → false', resDeferred({ deferUntil: now - DAY }, now), false);
   test('resDeferred: χωρίς deferUntil → false', resDeferred({ qty: 1 }, now), false);
+});
+
+group('Ξαναδέσμευση στην επεξεργασία — θέση + σημαδάκι κάσας', () => {
+  const sig = arr => arr.map(r => `${r.orderNo}${r.oldCovered ? '*' : ''}${r.borrowedFrom ? '<' : ''}`).join(',');
+  const base = [{ orderNo: 'A', qty: 1 }, { orderNo: '6509', qty: 1, oldCovered: true }, { orderNo: 'C', qty: 1 }];
+  const newRes = { orderNo: '6509', customer: 'x', qty: 1 };
+  test('ίδιο ράφι: κρατά θέση (2η) + δεσμευμένη κάσα',
+    sig(reserveOnEdit(base, '6509', newRes, 'K1', 'K1')), 'A,6509*,C');
+  test('άλλο ράφι (αλλαγή διάστασης): πάει τέλος, χωρίς σημαδάκι',
+    sig(reserveOnEdit(base.filter(r => r.orderNo !== '6509'), '6509', newRes, 'K1', 'K2')), 'A,C,6509');
+  test('ίδιο ράφι: κρατά δανεισμό',
+    sig(reserveOnEdit([{ orderNo: 'A', qty: 1 }, { orderNo: '6509', qty: 1, borrowedFrom: 'Z' }], '6509', newRes, 'K1', 'K1')), 'A,6509<');
+  test('νέα παραγγελία: απλή προσθήκη στο τέλος',
+    sig(reserveOnEdit([{ orderNo: 'A', qty: 1 }], null, { orderNo: 'B', qty: 1 }, null, 'K1')), 'A,B');
+  test('ίδιο ράφι χωρίς προηγούμενη δέσμευση → τέλος',
+    sig(reserveOnEdit([{ orderNo: 'A', qty: 1 }], '6509', newRes, 'K1', 'K1')), 'A,6509');
+  test('ίδιο ράφι: το qty ανανεώνεται (δεν κρατά το παλιό)',
+    reserveOnEdit(base, '6509', { orderNo: '6509', customer: 'x', qty: 5 }, 'K1', 'K1')[1].qty, 5);
 });
 
 group('truthyBool — Firebase boolean parsing', () => {

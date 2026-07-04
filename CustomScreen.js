@@ -1657,13 +1657,27 @@ export default function CustomScreen({ customOrders, setCustomOrders, soldOrders
 
     // ── Δέσμευση στοκ — sync για νέες & επεξεργασία ──
     if (setSasiStock && setCaseStock) {
+      const orderQtyR = parseInt(newOrder.qty)||1;
+      const sk = sasiKey(String(newOrder.h), String(newOrder.w), newOrder.side);
+      const ck = caseKey(String(newOrder.h), String(newOrder.w), newOrder.side, newOrder.caseType);
+      // Επεξεργασία χωρίς αλλαγή διαστάσεων: κρατάμε θέση + σημαδάκια (δεσμευμένη/δανεισμένη κάσα).
+      const keepPrev = (map, oldKey, newKey) => {
+        if (!editingOrder || oldKey !== newKey) return null;
+        const arr = (map?.[oldKey]?.reservations) || [];
+        const idx = arr.findIndex(r => sameOrderNo(r.orderNo, editingOrder.orderNo));
+        if (idx < 0) return null;
+        const { orderNo, customer, qty, deferUntil, ...flags } = arr[idx];
+        return { idx, flags };
+      };
+      const oldSk = editingOrder ? sasiKey(String(editingOrder.h), String(editingOrder.w), editingOrder.side) : null;
+      const oldCk = editingOrder ? caseKey(String(editingOrder.h), String(editingOrder.w), editingOrder.side, editingOrder.caseType) : null;
+      const prevSasi = keepPrev(sasiStock, oldSk, sk);
+      const prevCase = keepPrev(caseStock, oldCk, ck);
+
       if (editingOrder) {
         const oldIsMoni = (editingOrder.sasiType==='ΜΟΝΗ ΘΩΡΑΚΙΣΗ'||!editingOrder.sasiType);
         await removeStockReservation(editingOrder.orderNo, editingOrder.h, editingOrder.w, editingOrder.side, editingOrder.caseType, oldIsMoni);
       }
-      const orderQtyR = parseInt(newOrder.qty)||1;
-      const sk = sasiKey(String(newOrder.h), String(newOrder.w), newOrder.side);
-      const ck = caseKey(String(newOrder.h), String(newOrder.w), newOrder.side, newOrder.caseType);
       const _deferUntil = computeDeferUntil(newOrder);
       const newRes = { orderNo: newOrder.orderNo, customer: newOrder.customer||'', qty: orderQtyR, ...(_deferUntil ? { deferUntil: _deferUntil } : {}) };
 
@@ -1675,10 +1689,16 @@ export default function CustomScreen({ customOrders, setCustomOrders, soldOrders
         try { return (await (await fetch(`${FIREBASE_URL}${path}`)).json()) || fallback; }
         catch { return fallback; }
       };
+      const withRes = (baseArr, prev) => {
+        const filtered = (baseArr||[]).filter(r=>!sameOrderNo(r.orderNo, newOrder.orderNo));
+        const res = prev ? { ...newRes, ...prev.flags } : newRes;
+        if (prev && prev.idx>=0 && prev.idx<=filtered.length) { const out=[...filtered]; out.splice(prev.idx, 0, res); return out; }
+        return [...filtered, res];
+      };
 
       if (reserveSasi) {
         const base = await fetchBase(`/sasi_stock/${sk}.json`, sasiStock[sk] || { qty: 0, reservations: [] });
-        const upd = { ...base, reservations: [...(base.reservations||[]).filter(r=>r.orderNo!==newOrder.orderNo), newRes] };
+        const upd = { ...base, reservations: withRes(base.reservations, prevSasi) };
         setSasiStock(prev=>({...prev, [sk]: upd}));
         await fetch(`${FIREBASE_URL}/sasi_stock/${sk}.json`,{method:'PUT',body:JSON.stringify(upd)});
       }
@@ -1686,7 +1706,7 @@ export default function CustomScreen({ customOrders, setCustomOrders, soldOrders
       if (reserveCase) {
         const caseFallback = { qty: 0, reservations: [], caseType: (newOrder.caseType||'').includes('ΑΝΟΙΧΤΟΥ')?'ΚΑΣΑ ΑΝΟΙΧΤΗ':'ΚΑΣΑ ΚΛΕΙΣΤΗ' };
         const baseCase = await fetchBase(`/case_stock/${ck}.json`, caseStock[ck] || caseFallback);
-        const updCase = { ...baseCase, reservations: [...(baseCase.reservations||[]).filter(r=>r.orderNo!==newOrder.orderNo), newRes] };
+        const updCase = { ...baseCase, reservations: withRes(baseCase.reservations, prevCase) };
         setCaseStock(prev=>({...prev, [ck]: updCase}));
         await fetch(`${FIREBASE_URL}/case_stock/${ck}.json`,{method:'PUT',body:JSON.stringify(updCase)});
       }
@@ -3047,6 +3067,8 @@ export default function CustomScreen({ customOrders, setCustomOrders, soldOrders
     return (
       <View key={o.id} style={[{backgroundColor:'#fff', borderRadius:8, marginBottom:6, borderLeftWidth:5, borderLeftColor: allDone?'#00C851':'#e65100', elevation:2, padding:10}, searchHL(o.id)]}>
         <View style={{flexDirection:'row', justifyContent:'space-between', alignItems:'flex-start'}}>
+          <View style={{flex:1, alignSelf:'stretch'}}>
+          <View style={{flexDirection:'row'}}>
           {/* ΣΤΗΛΗ 1: στοιχεία ταυτότητας + badges — σταθερό πλάτος για στοίχιση */}
           <View style={{width:280}}>
             <StdOrderDatesLine order={o} marginBottom={4} />
@@ -3114,6 +3136,9 @@ export default function CustomScreen({ customOrders, setCustomOrders, soldOrders
               {renderEpendStack(o, tasks, ependHorizontal)}
             </View>
           </View>
+          </View>
+          <View style={{marginTop:'auto'}}>{renderDocButton(o)}</View>
+          </View>
           {/* ΚΑΣΑ + ΣΑΣΙ + ΕΠΙΣΤΡΟΦΗ + ΔΙΑΓΡΑΦΗ — δεξιά */}
           <View style={{alignItems:'flex-end', gap:4, marginLeft:8}}>
             <View style={{flexDirection:'row', gap:4}}>
@@ -3166,7 +3191,6 @@ export default function CustomScreen({ customOrders, setCustomOrders, soldOrders
           </View>
           {renderNotifyColumn(o)}
         </View>
-        {renderDocButton(o)}
       </View>
     );
   };
@@ -5378,7 +5402,7 @@ export default function CustomScreen({ customOrders, setCustomOrders, soldOrders
                   <View key={o.id}
                     style={[{backgroundColor:'#fff', borderRadius:8, padding:10, marginBottom:8, borderLeftWidth:5, borderLeftColor:cardBorder, elevation:2}, searchHL(o.id)]}>
                     <View style={{flexDirection:'row', justifyContent:'space-between', alignItems:'flex-start'}}>
-                      <View style={{flex:1}}>
+                      <View style={{flex:1, alignSelf:'stretch'}}>
                         {/* ΓΡΑΜΜΗ 1: καταχώρηση — παράδοση */}
                         <StdOrderDatesLine order={o} marginBottom={4} />
                         {/* ΓΡΑΜΜΗ 2: #νούμερο — πελάτης — τεμάχια */}
@@ -5403,6 +5427,7 @@ export default function CustomScreen({ customOrders, setCustomOrders, soldOrders
                         {o.stavera&&o.stavera.filter(s=>s.dim).length>0?<Text style={{fontSize:11, color:'#555', marginTop:2}}>📐 {o.stavera.filter(s=>s.dim).map(s=>stavParts(s)+(s.note?' '+s.note:'')).join(' | ')}</Text>:null}
                         {/* ΓΡΑΜΜΗ 5: παρατηρήσεις */}
                         {renderNotesWithWarning(o.notes, {fontSize:11, color:'#888', marginTop:2})}
+                        <View style={{marginTop:'auto'}}>{renderDocButton(o)}</View>
                       </View>
                       <View style={{alignItems:'flex-end', gap:4, marginLeft:8}}>
                         <View style={{flexDirection:'row', gap:4}}>
@@ -5516,7 +5541,6 @@ export default function CustomScreen({ customOrders, setCustomOrders, soldOrders
                       </View>
                       {renderNotifyColumn(o)}
                     </View>
-                    {renderDocButton(o)}
                   </View>
                 );
               };
@@ -5525,7 +5549,7 @@ export default function CustomScreen({ customOrders, setCustomOrders, soldOrders
               const renderReadyCard = (o) => (
                 <View key={o.id} style={[{backgroundColor:'#e8f5e9', borderRadius:8, padding:10, marginBottom:8, borderLeftWidth:5, borderLeftColor:'#00C851', elevation:2}, searchHL(o.id)]}>
                   <View style={{flexDirection:'row', justifyContent:'space-between', alignItems:'flex-start'}}>
-                    <View style={{flex:1}}>
+                    <View style={{flex:1, alignSelf:'stretch'}}>
                       <View style={{flexDirection:'row', flexWrap:'wrap', alignItems:'center', gap:8, marginBottom:4}}>
                         {fmtDate(o.createdAt)?<Text style={{fontSize:11, fontWeight:'bold', color:'#007AFF'}}>📅 {fmtDate(o.createdAt)}</Text>:null}
                         {fmtDate(o.readyAt)?<Text style={{fontSize:11, fontWeight:'bold', color:'#2e7d32'}}>✅ {fmtDate(o.readyAt)}</Text>:null}
@@ -5557,6 +5581,7 @@ export default function CustomScreen({ customOrders, setCustomOrders, soldOrders
                         {(o.stavera&&o.stavera.filter(s=>s.dim).length>0&&!truthyBool(o.staveraDone))&&<View style={{backgroundColor:'#c62828', borderRadius:4, paddingHorizontal:6, paddingVertical:2}}><Text style={{color:'white', fontWeight:'bold', fontSize:11}}>🔴 ΑΝΑΜΟΝΗ ΓΙΑ ΣΤΑΘΕΡΟ</Text></View>}
                         {(o.stavera&&o.stavera.filter(s=>s.dim).length>0&&truthyBool(o.staveraDone))&&<View style={{backgroundColor:'#2e7d32', borderRadius:4, paddingHorizontal:6, paddingVertical:2}}><Text style={{color:'white', fontWeight:'bold', fontSize:11}}>🟢 ΣΤΑΘΕΡΑ</Text></View>}
                       </View>
+                      <View style={{marginTop:'auto'}}>{renderDocButton(o)}</View>
                     </View>
                     {renderSaleNote(o)}
                     {!locked&&<View style={{gap:4, marginLeft:8}}>
@@ -5701,7 +5726,6 @@ export default function CustomScreen({ customOrders, setCustomOrders, soldOrders
                     </View>}
                     {renderNotifyColumn(o)}
                   </View>
-                  {renderDocButton(o)}
                 </View>
               );
 
@@ -5709,7 +5733,7 @@ export default function CustomScreen({ customOrders, setCustomOrders, soldOrders
               const renderSoldCard = (o) => (
                 <View key={o.id} style={[{backgroundColor:'#f5f5f5', borderRadius:8, padding:10, marginBottom:8, borderLeftWidth:5, borderLeftColor: o.fromMenon?'#7b1fa2':'#888', elevation:1}, searchHL(o.id)]}>
                   <View style={{flexDirection:'row', justifyContent:'space-between', alignItems:'flex-start'}}>
-                    <View style={{flex:1}}>
+                    <View style={{flex:1, alignSelf:'stretch'}}>
                       {/* Badge αν προέρχεται από ΜΕΝΟΝΤΑ */}
                       {o.fromMenon&&<View style={{backgroundColor:'#7b1fa2',borderRadius:4,paddingHorizontal:6,paddingVertical:2,alignSelf:'flex-start',marginBottom:4}}><Text style={{color:'white',fontWeight:'bold',fontSize:10}}>📦 ΑΠΟ ΜΕΝΟΝΤΑ ΕΜΠΟΡΕΥΜΑΤΑ</Text></View>}
                       {/* Καταχώρηση · έτοιμη · πώληση */}
@@ -5753,6 +5777,7 @@ export default function CustomScreen({ customOrders, setCustomOrders, soldOrders
                       {renderNotesWithWarning(o.notes, {fontSize:11, color:'#888', marginTop:2})}
                       {/* menonNotes — εμφανίζεται μόνο αν προέρχεται από ΜΕΝΟΝΤΑ */}
                       {o.fromMenon&&o.menonNotes?<Text style={{fontSize:11, color:'#7b1fa2', fontWeight:'bold', marginTop:2}}>📝 {o.menonNotes}</Text>:null}
+                      <View style={{marginTop:'auto'}}>{renderDocButton(o)}</View>
                     </View>
                     {renderSaleNote(o)}
                     {!locked&&<View style={{gap:4, marginLeft:8}}>
@@ -5887,7 +5912,6 @@ export default function CustomScreen({ customOrders, setCustomOrders, soldOrders
                       )}
                     </View>}
                   </View>
-                  {renderDocButton(o)}
                 </View>
               );
 
@@ -6213,7 +6237,7 @@ export default function CustomScreen({ customOrders, setCustomOrders, soldOrders
                         return (
                           <View key={o.id} style={[{backgroundColor:'#fff', borderRadius:8, marginBottom:6, borderLeftWidth:5, borderLeftColor: allDone?'#00C851':'#e65100', elevation:2, padding:10}, searchHL(o.id)]}>
                             <View style={{flexDirection:'row', justifyContent:'space-between', alignItems:'flex-start'}}>
-                              <View style={{flex:1}}>
+                              <View style={{flex:1, alignSelf:'stretch'}}>
                                 <StdOrderDatesLine order={o} marginBottom={4} />
                                 {/* ΓΡΑΜΜΗ 2: #νούμερο — πελάτης — τεμάχια */}
                                 <View style={{flexDirection:'row', alignItems:'center', gap:6, flexWrap:'wrap'}}>
@@ -6271,6 +6295,7 @@ export default function CustomScreen({ customOrders, setCustomOrders, soldOrders
                                   })()}
                                   {renderEpendStack(o, tasks)}
                                 </View>
+                                <View style={{marginTop:'auto'}}>{renderDocButton(o)}</View>
                               </View>
                               <View style={{alignItems:'flex-end', gap:4, marginLeft:8}}>
                                 {hasCaseReserved&&(
@@ -6315,7 +6340,6 @@ export default function CustomScreen({ customOrders, setCustomOrders, soldOrders
                               </View>
                               {renderNotifyColumn(o)}
                             </View>
-                            {renderDocButton(o)}
                           </View>
                         );
                       })}
