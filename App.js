@@ -1276,7 +1276,7 @@ export default function App() {
       onLogout={() => { setPendingLogin(null); }} />;
 
   // DEV: client-side 2FA (Firebase Auth ήδη έγινε)
-  if (Platform.OS === 'web' && isLoggedIn && currentUser && needsTwoFactor(currentUser) && !twofaPassed)
+  if (IS_DEV && Platform.OS === 'web' && isLoggedIn && currentUser && needsTwoFactor(currentUser) && !twofaPassed)
     return <TwoFactorScreen user={currentUser}
       onSuccess={(r) => { markTwofa(currentUser); setTwofaPassed(true); }}
       onLogout={() => { clearTwofa(); forgetLogin(); if (USE_FIREBASE_AUTH) { void fbSignOutUser(); } setIsLoggedIn(false); setTwofaPassed(false); }} />;
