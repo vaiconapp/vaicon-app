@@ -29,24 +29,6 @@ const sendSms = async (phone, text) => {
 exports.handler = async (event) => {
   if (event.httpMethod !== 'POST') return json(405, { ok: false, error: 'Method not allowed' });
   let p; try { p = JSON.parse(event.body || '{}'); } catch { return json(400, { ok: false, error: 'bad json' }); }
-  if (p.action === 'diag') {
-    const phone = norm(process.env.OWNER_PHONE);
-    let ystatus = null, ybody = null;
-    try {
-      const r = await fetch(YUBOTO_ENDPOINT, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json; charset=utf-8', 'Authorization': 'Basic ' + (process.env.YUBOTO_API_KEY || '') },
-        body: JSON.stringify({ contacts: [{ phonenumber: phone }], sms: { sender: process.env.YUBOTO_SENDER || 'VAICON', text: 'VAICON diag', validity: 60, typesms: 'sms', priority: 1 } }),
-      });
-      ystatus = r.status; ybody = (await r.text()).slice(0, 300);
-    } catch (e) { ybody = 'FETCH ERR: ' + e.message; }
-    return json(200, {
-      ok: true, phone, apiKeyLen: (process.env.YUBOTO_API_KEY || '').length,
-      sender: process.env.YUBOTO_SENDER || '(default VAICON)',
-      testMode: process.env.YUBOTO_TEST_MODE || '(unset->true)',
-      ystatus, ybody,
-    });
-  }
   const u = key(p.username);
   if (!u) return json(400, { ok: false, error: 'no user' });
   const path = `${dbBase()}/twofa/${encodeURIComponent(u)}.json`;
