@@ -128,7 +128,7 @@ function LoginScreen({ onSuccess }) {
             rememberLogin();
             onSuccess({ username, role: res.role, email: res.email });
           } else {
-            const r = await start2FA(username, pwd);
+            const r = await verifyPasswordOnly(username, pwd);
             if (!r.ok) { setError('❌ ' + (r.error || 'Λάθος κωδικός.')); setPwd(''); setTimeout(() => setError(''), 3000); return; }
             onSuccess({ username, role: 'user', email: `${username.toLowerCase()}@vaicon.local`, _password: pwd });
           }
