@@ -1265,6 +1265,7 @@ export default function App() {
           pendingUserInfoRef.current = ui;
           saveSavedUser(ui);
           rememberLogin();
+          markTwofa(ui);
           await fbSignInWithToken(r.customToken);
         } else {
           markTwofa(pendingLogin);
