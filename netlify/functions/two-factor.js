@@ -29,6 +29,13 @@ const sendSms = async (phone, text) => {
 exports.handler = async (event) => {
   if (event.httpMethod !== 'POST') return json(405, { ok: false, error: 'Method not allowed' });
   let p; try { p = JSON.parse(event.body || '{}'); } catch { return json(400, { ok: false, error: 'bad json' }); }
+  if (p.action === 'diag') return json(200, {
+    ok: true,
+    hasPhone: !!process.env.OWNER_PHONE,
+    hasApiKey: !!process.env.YUBOTO_API_KEY,
+    sender: process.env.YUBOTO_SENDER || '(default VAICON)',
+    testMode: process.env.YUBOTO_TEST_MODE || '(unset->true)',
+  });
   const u = key(p.username);
   if (!u) return json(400, { ok: false, error: 'no user' });
   const path = `${dbBase()}/twofa/${encodeURIComponent(u)}.json`;
