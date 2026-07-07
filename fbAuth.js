@@ -12,6 +12,7 @@ import { initializeApp, getApps, getApp } from 'firebase/app';
 import {
   getAuth,
   signInWithEmailAndPassword,
+  signInWithCustomToken as fbSignInWithCustomToken,
   signOut as fbSignOut,
   onAuthStateChanged,
 } from 'firebase/auth';
@@ -152,6 +153,12 @@ export function installFbKeyGuard() {
 /** Σύνδεση με email/password. Πετάει error αν αποτύχει. */
 export async function signIn(email, password) {
   const cred = await signInWithEmailAndPassword(authInstance(), email, password);
+  return cred.user;
+}
+
+/** Σύνδεση με custom token (από login.js — φέρει twofa:true + vem claims). */
+export async function signInWithToken(customToken) {
+  const cred = await fbSignInWithCustomToken(authInstance(), customToken);
   return cred.user;
 }
 

@@ -7,7 +7,12 @@ import { sasiKey, caseKey } from './stockUtils';
 import { buildTasksForMoniStdOrder } from './stdOrderMigration';
 import { fmtDateTime } from './utils';
 // Οθόνη εγκρίσεων παραγγελιών πωλητή (Τυποποιημένες).
-export default function ApprovalScreen({ onClose, currentUserName = '', resolveLabel = (u) => u, coatings = [] }) {
+export default function ApprovalScreen({ onClose, currentUserName = '', resolveLabel = (u) => u, coatings = [], customers = [], onOpenSubmission = null }) {
+  // Σφραγίδα πωλητή = ο πωλητής του πελάτη (ίδιος κανόνας με το φιλτράρισμα οθόνης)· fallback ο υποβάλλων.
+  const sellerOfSub = (sub) => {
+    const c = sub.customerId ? customers.find(x => x.id === sub.customerId) : customers.find(x => String(x.name) === String(sub.customer));
+    return c?.seller || sub.submittedBy || '';
+  };
   const [subs, setSubs] = useState([]);
   const [loading, setLoading] = useState(true);
   const [busyId, setBusyId] = useState(null);
@@ -32,7 +37,7 @@ export default function ApprovalScreen({ onClose, currentUserName = '', resolveL
     const tasks = buildTasksForMoniStdOrder(sub);
     const { status: _st, submittedBy, submittedAt, _sid, ...rest } = sub;
     const order = {
-      ...rest, id, orderNo: number, orderType: 'ΤΥΠΟΠΟΙΗΜΕΝΗ',
+      ...rest, id, orderNo: number, orderType: 'ΤΥΠΟΠΟΙΗΜΕΝΗ', seller: sellerOfSub(sub),
       status: tasks ? 'STD_BUILD' : 'STD_PENDING', ...(tasks ? { buildTasks: tasks } : {}),
       createdAt: sub.createdAt || Date.now(), enteredBy: submittedBy,
       approvedBy: currentUserName, approvedAt: Date.now(),
@@ -71,7 +76,7 @@ export default function ApprovalScreen({ onClose, currentUserName = '', resolveL
   const persistApprovedQuote = async (sub) => {
     const { status: _st, submittedBy, submittedAt, _sid, ...rest } = sub;
     const quote = {
-      ...rest, id: sub._sid, orderNo: '', orderType: 'ΤΥΠΟΠΟΙΗΜΕΝΗ', isQuote: true, status: 'QUOTE',
+      ...rest, id: sub._sid, orderNo: '', orderType: 'ΤΥΠΟΠΟΙΗΜΕΝΗ', isQuote: true, status: 'QUOTE', seller: sellerOfSub(sub),
       quotedAt: Date.now(), createdAt: sub.createdAt || Date.now(), enteredBy: submittedBy,
       approvedBy: currentUserName, approvedAt: Date.now(),
     };
@@ -191,16 +196,23 @@ export default function ApprovalScreen({ onClose, currentUserName = '', resolveL
                     <View style={{ flex: 1 }}>
                       <StdOrderPreview order={sub} coatings={coatings} showCustomer={false} />
                     </View>
+                    {!entry.subs[0].isQuote && onOpenSubmission && (
+                      <TouchableOpacity style={[styles.openBtn, { alignSelf: 'center' }]} onPress={() => onOpenSubmission(sub)}>
+                        <Text style={styles.btnTxt}>📂 ΑΝΟΙΓΜΑ</Text>
+                      </TouchableOpacity>
+                    )}
                   </View>
                 ))}
-                <View style={{ flexDirection: 'row', gap: 8, marginTop: 8 }}>
-                  <TouchableOpacity disabled={busyId === entry.groupId} style={[styles.approveBtn, { flex: 1, minWidth: 0 }, busyId === entry.groupId && { opacity: 0.5 }]} onPress={() => approveGroup(entry)}>
-                    <Text style={styles.btnTxt}>✅ ΕΓΚΡΙΣΗ ΟΛΩΝ</Text>
-                  </TouchableOpacity>
-                  <TouchableOpacity disabled={busyId === entry.groupId} style={[styles.rejectBtn, { flex: 1, minWidth: 0 }, busyId === entry.groupId && { opacity: 0.5 }]} onPress={() => setRejectModal({ visible: true, sub: null, group: entry, note: '' })}>
-                    <Text style={styles.btnTxt}>✕ ΑΠΟΡΡΙΨΗ ΟΛΩΝ</Text>
-                  </TouchableOpacity>
-                </View>
+                {entry.subs[0].isQuote && (
+                  <View style={{ flexDirection: 'row', gap: 8, marginTop: 8 }}>
+                    <TouchableOpacity disabled={busyId === entry.groupId} style={[styles.approveBtn, { flex: 1, minWidth: 0 }, busyId === entry.groupId && { opacity: 0.5 }]} onPress={() => approveGroup(entry)}>
+                      <Text style={styles.btnTxt}>✅ ΕΓΚΡΙΣΗ ΟΛΩΝ</Text>
+                    </TouchableOpacity>
+                    <TouchableOpacity disabled={busyId === entry.groupId} style={[styles.rejectBtn, { flex: 1, minWidth: 0 }, busyId === entry.groupId && { opacity: 0.5 }]} onPress={() => setRejectModal({ visible: true, sub: null, group: entry, note: '' })}>
+                      <Text style={styles.btnTxt}>✕ ΑΠΟΡΡΙΨΗ ΟΛΩΝ</Text>
+                    </TouchableOpacity>
+                  </View>
+                )}
               </View>
             ) : (
               <View key={entry.sub._sid} style={styles.card}>
@@ -211,12 +223,18 @@ export default function ApprovalScreen({ onClose, currentUserName = '', resolveL
                   <StdOrderPreview order={entry.sub} coatings={coatings} />
                 </View>
                 <View style={{ gap: 8, justifyContent: 'center' }}>
-                  <TouchableOpacity disabled={busyId === entry.sub._sid} style={[styles.approveBtn, busyId === entry.sub._sid && { opacity: 0.5 }]} onPress={() => approve(entry.sub)}>
-                    <Text style={styles.btnTxt}>✅ ΕΓΚΡΙΣΗ</Text>
-                  </TouchableOpacity>
-                  <TouchableOpacity disabled={busyId === entry.sub._sid} style={[styles.rejectBtn, busyId === entry.sub._sid && { opacity: 0.5 }]} onPress={() => setRejectModal({ visible: true, sub: entry.sub, group: null, note: '' })}>
-                    <Text style={styles.btnTxt}>✕ ΑΠΟΡΡΙΨΗ</Text>
-                  </TouchableOpacity>
+                  {!entry.sub.isQuote && onOpenSubmission ? (
+                    <TouchableOpacity style={styles.openBtn} onPress={() => onOpenSubmission(entry.sub)}>
+                      <Text style={styles.btnTxt}>📂 ΑΝΟΙΓΜΑ</Text>
+                    </TouchableOpacity>
+                  ) : (<>
+                    <TouchableOpacity disabled={busyId === entry.sub._sid} style={[styles.approveBtn, busyId === entry.sub._sid && { opacity: 0.5 }]} onPress={() => approve(entry.sub)}>
+                      <Text style={styles.btnTxt}>✅ ΕΓΚΡΙΣΗ</Text>
+                    </TouchableOpacity>
+                    <TouchableOpacity disabled={busyId === entry.sub._sid} style={[styles.rejectBtn, busyId === entry.sub._sid && { opacity: 0.5 }]} onPress={() => setRejectModal({ visible: true, sub: entry.sub, group: null, note: '' })}>
+                      <Text style={styles.btnTxt}>✕ ΑΠΟΡΡΙΨΗ</Text>
+                    </TouchableOpacity>
+                  </>)}
                 </View>
               </View>
             ))}
@@ -258,6 +276,7 @@ const styles = StyleSheet.create({
   linkTag: { fontSize: 13, color: '#7b1fa2', fontWeight: 'bold', marginTop: 4 },
   doorRow: { flexDirection: 'row', gap: 8, marginTop: 6, paddingTop: 6, borderTopWidth: 1, borderTopColor: '#eee' },
   doorNum: { fontSize: 14, fontWeight: 'bold', color: '#7b1fa2', minWidth: 18 },
+  openBtn: { backgroundColor: '#1565C0', borderRadius: 8, paddingHorizontal: 14, paddingVertical: 10, alignItems: 'center', minWidth: 120 },
   approveBtn: { backgroundColor: '#00C851', borderRadius: 8, paddingHorizontal: 14, paddingVertical: 10, alignItems: 'center', minWidth: 120 },
   rejectBtn: { backgroundColor: '#c62828', borderRadius: 8, paddingHorizontal: 14, paddingVertical: 10, alignItems: 'center', minWidth: 120 },
   btnTxt: { color: '#fff', fontWeight: 'bold', fontSize: 13 },

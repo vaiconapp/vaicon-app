@@ -1,5 +1,5 @@
 import { initializeApp, getApps, getApp } from 'firebase/app';
-import { getDatabase, ref, onValue } from 'firebase/database';
+import { getDatabase, ref, onValue, query, orderByChild, equalTo } from 'firebase/database';
 import { firebaseAppConfig, FIREBASE_URL } from './firebaseConfig';
 import { normalizeLoadedStdOrders } from './stdOrderMigration';
 
@@ -85,8 +85,14 @@ export function applyFetchedBundle(setters, bundle) {
 export function subscribeFirebaseRealtime(setters) {
   const app = getApps().length === 0 ? initializeApp(firebaseAppConfig) : getApp();
   const db = getDatabase(app);
-  const { setLoading, setActivityRefreshKey, ...S } = setters;
+  const { setLoading, setActivityRefreshKey, isSeller, sellerKey, ...S } = setters;
   const unsubs = [];
+
+  // Πωλητής: διαβάζει από τη βάση ΜΟΝΟ τα δικά του (seller == sellerKey).
+  const SELLER_FILTERED = new Set(['std_orders', 'std_quotes', 'customers']);
+  const srcFor = (path) => (isSeller && sellerKey && SELLER_FILTERED.has(path))
+    ? query(ref(db, path), orderByChild('seller'), equalTo(sellerKey))
+    : ref(db, path);
 
   let done = false;
   const finish = () => { if (!done) { done = true; setLoading(false); } };
@@ -112,7 +118,7 @@ export function subscribeFirebaseRealtime(setters) {
     let first = true;
     const markFirst = () => { if (first) { first = false; onFirstSnapshot(); } };
     unsubs.push(onValue(
-      ref(db, path),
+      srcFor(path),
       snap => { apply(snap.val()); markFirst(); },
       err => {
         // π.χ. permission_denied από τα Security Rules ή αποτυχία σύνδεσης.

@@ -20,3 +20,9 @@
 #   FIREBASE_DB_URL, FIREBASE_SERVICE_ACCOUNT
 [functions]
   node_bundler = "esbuild"
+
+[dev]
+  command = "npx expo start --web --port 8084"
+  targetPort = 8084
+  port = 8888
+  autoLaunch = false
