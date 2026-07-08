@@ -1539,7 +1539,7 @@ export default function App() {
           <TouchableOpacity style={styles.menuOverlay} onPress={() => setMenuOpen(false)}>
             <View style={styles.menuPanel}>
               <ScrollView showsVerticalScrollIndicator={false}>
-              {!isGuest && !isSeller && (<>
+              {!isGuest && !isSeller && !isForeman && (<>
               <View style={styles.menuGroup}>
               <TouchableOpacity style={styles.menuItem} onPress={() => { setMenuOpen(false); setShowCustomers(true); }}>
                 <Text style={styles.menuItemText}>👥 ΠΕΛΑΤΕΣ</Text>

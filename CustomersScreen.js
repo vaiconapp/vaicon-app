@@ -17,6 +17,7 @@ export default function CustomersScreen({ customers, setCustomers, isAdmin=false
   const [sellerOpen, setSellerOpen] = useState(false);
   const [filterSeller, setFilterSeller] = useState('');
   const [filterSellerOpen, setFilterSellerOpen] = useState(false);
+  const [sortMode, setSortMode] = useState('name'); // 'name' | 'date' | 'orders'
   const scrollRef = useRef(null);
 
   const uniqueCities = useMemo(() => {
@@ -208,7 +209,14 @@ export default function CustomersScreen({ customers, setCustomers, isAdmin=false
       c.city?.toLowerCase().includes(search.toLowerCase()) ||
       c.profession?.toLowerCase().includes(search.toLowerCase())
     )
-    .sort((a, b) => custSortKey(a).localeCompare(custSortKey(b), 'el'));
+    .sort((a, b) => {
+      if (sortMode === 'date') return (b.createdAt || 0) - (a.createdAt || 0);
+      if (sortMode === 'orders') {
+        const d = (orderCountByCustomer[b.name] || 0) - (orderCountByCustomer[a.name] || 0);
+        if (d !== 0) return d;
+      }
+      return custSortKey(a).localeCompare(custSortKey(b), 'el');
+    });
 
   const printCustomers = () => {
     const esc = s => String(s || '').replace(/[&<>]/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;' }[c]));
@@ -232,6 +240,12 @@ export default function CustomersScreen({ customers, setCustomers, isAdmin=false
           <Text style={styles.backTxt}>✕</Text>
         </TouchableOpacity>
         <Text style={styles.headerTitle}>👥 ΠΕΛΑΤΕΣ</Text>
+        <View style={{ flex: 1 }} />
+        {isAdmin && (
+          <TouchableOpacity onPress={printCustomers} style={styles.printBtn}>
+            <Text style={styles.printTxt}>🖨️</Text>
+          </TouchableOpacity>
+        )}
       </View>
 
       <ScrollView ref={scrollRef} style={{ padding: 12 }}>
@@ -327,31 +341,45 @@ export default function CustomersScreen({ customers, setCustomers, isAdmin=false
             </TouchableOpacity>
           </View>
 
-          <Text style={[styles.sectionTitle, { marginTop:24 }]}>ΛΙΣΤΑ ΠΕΛΑΤΩΝ ({customers.length})</Text>
-          <Text style={styles.hint}>💡 Κράτα 3 δευτ. για επεξεργασία • Κράτα το ✕ 2 δευτ. για διαγραφή</Text>
-          <View style={{ flexDirection:'row', gap:8, alignItems:'flex-start', zIndex:15, marginBottom:8 }}>
-            {isAdmin && (
-              <TouchableOpacity onPress={printCustomers} style={{ backgroundColor:'#1565C0', borderRadius:8, paddingHorizontal:16, paddingVertical:12, alignItems:'center', justifyContent:'center' }}>
-                <Text style={{ color:'#fff', fontWeight:'bold', fontSize:14 }}>🖨️ ΕΚΤΥΠΩΣΗ</Text>
-              </TouchableOpacity>
-            )}
-            <TextInput style={[styles.input, { backgroundColor:'#fff', flex:3, marginBottom:0 }]} placeholder="🔍 Αναζήτηση" value={search} onChangeText={setSearch} />
+          <View style={{ flexDirection:'row', alignItems:'center', marginTop:24, marginBottom:10, gap:6, zIndex:20, position:'relative' }}>
+            <Text style={[styles.sectionTitle, { marginBottom:0 }]}>ΛΙΣΤΑ ΠΕΛΑΤΩΝ ({filtered.length === customers.length ? customers.length : `${filtered.length} από ${customers.length}`})</Text>
+            <TouchableOpacity
+              onPress={()=>setSortMode('name')}
+              style={{ marginLeft:10, paddingHorizontal:10, paddingVertical:6, borderRadius:6, backgroundColor: sortMode==='name' ? '#8B0000' : '#ddd' }}>
+              <Text style={{ color: sortMode==='name' ? 'white' : '#555', fontWeight:'bold', fontSize:12 }}>🔤 A→Ω</Text>
+            </TouchableOpacity>
+            <TouchableOpacity
+              onPress={()=>setSortMode('date')}
+              style={{ paddingHorizontal:10, paddingVertical:6, borderRadius:6, backgroundColor: sortMode==='date' ? '#8B0000' : '#ddd' }}>
+              <Text style={{ color: sortMode==='date' ? 'white' : '#555', fontWeight:'bold', fontSize:12 }}>📅 Ημ/νία</Text>
+            </TouchableOpacity>
+            <TouchableOpacity
+              onPress={()=>setSortMode('orders')}
+              style={{ paddingHorizontal:10, paddingVertical:6, borderRadius:6, backgroundColor: sortMode==='orders' ? '#8B0000' : '#ddd' }}>
+              <Text style={{ color: sortMode==='orders' ? 'white' : '#555', fontWeight:'bold', fontSize:12 }}>🔢 #↓</Text>
+            </TouchableOpacity>
+            <TextInput
+              style={{ marginLeft:10, backgroundColor:'#fff', paddingHorizontal:12, paddingVertical:11, borderRadius:8, borderWidth:1, borderColor:'#ddd', fontSize:16, width:280 }}
+              placeholder="🔍 Αναζήτηση"
+              value={search}
+              onChangeText={setSearch}
+            />
             {sellers.length > 0 && (
-              <View style={{ flex:1 }}>
+              <View style={{ marginLeft:10, width:230, zIndex:30 }}>
                 <TouchableOpacity onPress={()=>setFilterSellerOpen(o=>!o)}
-                  style={[styles.input, { backgroundColor: filterSeller?'#e3f2fd':'#fff', marginBottom:0, flexDirection:'row', alignItems:'center', justifyContent:'space-between' }, filterSeller && { borderColor:'#1565C0' }]}>
-                  <Text style={{ fontWeight:'bold', fontSize:13, color: filterSeller?'#1565C0':'#777' }} numberOfLines={1}>
-                    {filterSeller ? (resolveLabel(filterSeller) || filterSeller) : '🧑‍💼 Πωλητής'}
+                  style={{ backgroundColor: filterSeller?'#e3f2fd':'#fff', paddingHorizontal:12, paddingVertical:11, borderRadius:8, borderWidth:1, borderColor: filterSeller?'#1565C0':'#ddd', flexDirection:'row', alignItems:'center', justifyContent:'space-between' }}>
+                  <Text style={{ fontWeight:'bold', fontSize:15, color: filterSeller?'#1565C0':'#777' }} numberOfLines={1}>
+                    {filterSeller ? `🧑‍💼 ${resolveLabel(filterSeller) || filterSeller}` : '🧑‍💼 Πωλητής'}
                   </Text>
-                  <Text style={{ color:'#888', fontSize:12, fontWeight:'bold' }}>{filterSellerOpen?'▲':'▼'}</Text>
+                  <Text style={{ color:'#888', fontSize:13, fontWeight:'bold' }}>{filterSellerOpen?'▲':'▼'}</Text>
                 </TouchableOpacity>
                 {filterSellerOpen && (
-                  <View style={{ position:'absolute', top:46, left:0, right:0, backgroundColor:'#fff', borderWidth:1, borderColor:'#1565C0', borderRadius:8, zIndex:25, elevation:8 }}>
-                    <TouchableOpacity onPress={()=>{ setFilterSeller(''); setFilterSellerOpen(false); }} style={{ paddingVertical:11, paddingHorizontal:12, borderBottomWidth:1, borderBottomColor:'#eee' }}>
+                  <View style={{ position:'absolute', top:50, left:0, right:0, backgroundColor:'#fff', borderWidth:1, borderColor:'#1565C0', borderRadius:8, zIndex:50, elevation:12, shadowColor:'#000', shadowOffset:{width:0,height:4}, shadowOpacity:0.3, shadowRadius:8 }}>
+                    <TouchableOpacity onPress={()=>{ setFilterSeller(''); setFilterSellerOpen(false); }} style={{ paddingVertical:12, paddingHorizontal:12, borderBottomWidth:1, borderBottomColor:'#eee' }}>
                       <Text style={{ color:'#555', fontWeight:'bold', fontSize:15 }}>— Όλοι</Text>
                     </TouchableOpacity>
                     {sellers.map(s => { const k = lockKey(s); return (
-                      <TouchableOpacity key={k} onPress={()=>{ setFilterSeller(k); setFilterSellerOpen(false); }} style={{ paddingVertical:11, paddingHorizontal:12, borderBottomWidth:1, borderBottomColor:'#eee', backgroundColor: filterSeller===k?'#e3f2fd':'#fff' }}>
+                      <TouchableOpacity key={k} onPress={()=>{ setFilterSeller(k); setFilterSellerOpen(false); }} style={{ paddingVertical:12, paddingHorizontal:12, borderBottomWidth:1, borderBottomColor:'#eee', backgroundColor: filterSeller===k?'#e3f2fd':'#fff' }}>
                         <Text style={{ color:'#1a1a1a', fontWeight:'bold', fontSize:15 }}>{resolveLabel(k) || s}</Text>
                       </TouchableOpacity>
                     ); })}
@@ -360,6 +388,7 @@ export default function CustomersScreen({ customers, setCustomers, isAdmin=false
               </View>
             )}
           </View>
+          <Text style={styles.hint}>💡 Κράτα 3 δευτ. για επεξεργασία • Κράτα το ✕ 2 δευτ. για διαγραφή</Text>
 
           {filtered.map(c => (
             <TouchableOpacity
@@ -370,20 +399,42 @@ export default function CustomersScreen({ customers, setCustomers, isAdmin=false
               activeOpacity={0.7}
             >
               <View style={{ flex:1 }}>
-                <Text style={styles.customerName}>{c.name}</Text>
-                {c.seller ? (
-                  <View style={{ alignSelf:'flex-start', backgroundColor:'#e3f2fd', borderColor:'#1565C0', borderWidth:1, borderRadius:6, paddingHorizontal:8, paddingVertical:2, marginTop:2, marginBottom:2 }}>
-                    <Text style={{ color:'#1565C0', fontWeight:'bold', fontSize:12 }}>🏷 Πωλητής: {resolveLabel(c.seller) || c.seller}</Text>
-                  </View>
-                ) : null}
-                {[c.phone, c.phone2, c.phone3].filter(Boolean).length > 0 ? (
-                  <Text style={styles.customerDetail}>📞 {[c.phone, c.phone2, c.phone3].filter(Boolean).join(' · ')}</Text>
-                ) : null}
-                {c.phoneViber ? (
-                  <Text style={[styles.customerDetail, {color: c.viberOptOut ? '#c62828' : '#7360f2', fontWeight:'bold'}]}>
-                    {c.viberOptOut ? '🚫 ' : '📱 '}Viber: {c.phoneViber}{c.viberOptOut ? ' (απεγγράφηκε)' : ''}
-                  </Text>
-                ) : null}
+                <View style={{ flexDirection:'row', alignItems:'center', flexWrap:'wrap', gap:6, marginBottom:4 }}>
+                  <Text style={styles.customerName}>{c.name}</Text>
+                  {c.seller ? (
+                    <View style={{ backgroundColor:'#e3f2fd', borderColor:'#1565C0', borderWidth:1, borderRadius:6, paddingHorizontal:8, paddingVertical:2 }}>
+                      <Text style={{ color:'#1565C0', fontWeight:'bold', fontSize:12 }}>🏷 {resolveLabel(c.seller) || c.seller}</Text>
+                    </View>
+                  ) : null}
+                  {(()=>{
+                    const active = allOrders.filter(o => (o.customerId===c.id || o.customer===c.name) && o.status!=='SOLD' && o.status!=='STD_SOLD');
+                    const sold = allOrders.filter(o => (o.customerId===c.id || o.customer===c.name) && (o.status==='SOLD' || o.status==='STD_SOLD'));
+                    if (active.length === 0 && sold.length === 0) return null;
+                    return (
+                      <View style={{ flexDirection:'row', gap:4, alignItems:'center' }}>
+                        {active.length > 0 && (
+                          <View style={{ backgroundColor:'#8B0000', borderRadius:10, paddingHorizontal:7, paddingVertical:2, minWidth:22, alignItems:'center' }}>
+                            <Text style={{ color:'white', fontWeight:'bold', fontSize:12 }}>{active.length}</Text>
+                          </View>
+                        )}
+                        {sold.length > 0 && (
+                          <View style={{ backgroundColor:'#555', borderRadius:10, paddingHorizontal:7, paddingVertical:2, minWidth:22, alignItems:'center' }}>
+                            <Text style={{ color:'white', fontWeight:'bold', fontSize:11 }}>💰{sold.length}</Text>
+                          </View>
+                        )}
+                      </View>
+                    );
+                  })()}
+                </View>
+                {(()=>{
+                  const items = [
+                    c.phone && `📞 ${c.phone}`,
+                    c.phone2 && `📞 ${c.phone2}`,
+                    c.phone3 && `📞 ${c.phone3}`,
+                    c.phoneViber && (c.viberOptOut ? `🚫V ${c.phoneViber}` : `📱V ${c.phoneViber}`),
+                  ].filter(Boolean);
+                  return items.length ? <Text style={styles.customerDetail}>{items.join('   ')}</Text> : null;
+                })()}
                 {c.email ? <Text style={styles.customerDetail}>✉️ {c.email}</Text> : null}
                 {c.identifier ? <Text style={styles.customerDetail}>🏷 {c.identifier}</Text> : null}
                 {(c.city || c.profession) ? (
@@ -394,29 +445,13 @@ export default function CustomersScreen({ customers, setCustomers, isAdmin=false
                 <Text style={styles.customerDate}>📅 {fmtDate(c.createdAt)}</Text>
               </View>
               <View style={{gap:6}}>
-                <View style={{flexDirection:'row', alignItems:'center', gap:6}}>
-                  <TouchableOpacity
+                <TouchableOpacity
                     style={{backgroundColor:'#007AFF', paddingHorizontal:10, paddingVertical:6, borderRadius:6, alignItems:'center'}}
                     onPress={()=>setSelectedCustomerOrders(c)}>
-                    <Text style={{color:'white', fontSize:11, fontWeight:'bold'}}>📦 ΠΑΡΑΓΓΕΛΙΕΣ</Text>
+                    <Text style={{color:'white', fontSize:11, fontWeight:'bold'}}>
+                      📦 ΠΑΡΑΓΓΕΛΙΕΣ {(orderCountByCustomer[c.name] || 0) > 0 ? `(${orderCountByCustomer[c.name]})` : ''}
+                    </Text>
                   </TouchableOpacity>
-                  {(()=>{
-                    const cnt = orderCountByCustomer[c.name] || 0;
-                    return (
-                      <View style={{
-                        backgroundColor: cnt > 0 ? '#8B0000' : '#bbb',
-                        borderRadius: 12,
-                        minWidth: 24,
-                        height: 24,
-                        justifyContent: 'center',
-                        alignItems: 'center',
-                        paddingHorizontal: 6,
-                      }}>
-                        <Text style={{color:'white', fontSize:12, fontWeight:'bold'}}>{cnt}</Text>
-                      </View>
-                    );
-                  })()}
-                </View>
                 <TouchableOpacity
                   style={styles.deleteBtn}
                   onLongPress={() => deleteCustomer(c.id)}
@@ -572,6 +607,8 @@ const styles = StyleSheet.create({
   customerDate: { fontSize:11, color:'#999', marginTop:4 },
   deleteBtn: { padding:10, backgroundColor:'#ff4444', borderRadius:6, borderWidth:2, borderColor:'#cc0000' },
   deleteTxt: { color:'white', fontWeight:'bold', fontSize:16 },
+  printBtn: { padding:6, marginLeft:12 },
+  printTxt: { fontSize:22 },
   suggestBox: { flexDirection:'row', flexWrap:'wrap', gap:4, backgroundColor:'#fff8e1', padding:6, borderRadius:6, marginBottom:8, borderWidth:1, borderColor:'#ffe082' },
   suggestChip: { backgroundColor:'#fff', paddingHorizontal:10, paddingVertical:4, borderRadius:12, borderWidth:1, borderColor:'#ffc107' },
   suggestTxt: { fontSize:12, color:'#856404', fontWeight:'600' },

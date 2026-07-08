@@ -2217,7 +2217,7 @@ export default function CustomScreen({ customOrders, setCustomOrders, soldOrders
   const renderQtyBox = (o) => {
     const q = parseInt(o.qty)||1;
     if (q<=1) return null;
-    const canSplit = !locked && !isForeman && !isGuest;
+    const canSplit = isAdmin || (isForeman && !locked);
     return (
       <TouchableOpacity disabled={!canSplit}
         onPress={canSplit?()=>setSplitModal({visible:true, order:o}):undefined}
