@@ -217,8 +217,8 @@ export default function CaseScreen({ caseStock={}, setCaseStock, opsBasket=[], s
           const entry = stockMap[key] || { qty:0, reservations:[], pending:0 };
           const reserved = (entry.reservations||[]).reduce((s,r)=>r.oldCovered?s:s+(parseInt(r.qty)||1),0);
           const totalQ = parseInt(entry.qty)||0;
-          let _cum=0, readyDoors=0, greenDoors=0, redDoors=0, deferredDoors=0;
-          (entry.reservations||[]).forEach(r=>{ const q=parseInt(r.qty)||1; if(resDeferred(r)){deferredDoors+=q; return;} if(r.oldCovered){greenDoors+=q; return;} _cum+=q; const cov=_cum<=totalQ; if(readyNos.has(String(r.orderNo))) readyDoors+=q; else if(cov) greenDoors+=q; else redDoors+=q; });
+          let _rem=totalQ, readyDoors=0, greenDoors=0, redDoors=0, deferredDoors=0;
+          (entry.reservations||[]).forEach(r=>{ const q=parseInt(r.qty)||1; if(resDeferred(r)){deferredDoors+=q; return;} if(r.oldCovered){greenDoors+=q; return;} if(readyNos.has(String(r.orderNo))){readyDoors+=q; _rem-=q;} else if(q<=_rem){greenDoors+=q; _rem-=q;} else {redDoors+=q;} });
           const available = (entry.qty||0) - reserved;
           const pending = entry.pending || 0;
           const label = `${h}x${w} ${side==='ΑΡΙΣΤΕΡΗ'?'ΑΡ':'ΔΕ'}`;
@@ -264,12 +264,13 @@ export default function CaseScreen({ caseStock={}, setCaseStock, opsBasket=[], s
                   {hasReservations
                     ? (() => {
                         const totalQty = parseInt(entry.qty) || 0;
-                        let cum = 0;
+                        let _rem = totalQty;
                         return (entry.reservations||[]).map((r, i) => {
                           const deferred = resDeferred(r);
-                          if(!r.oldCovered && !deferred) cum += (parseInt(r.qty) || 1);
-                          const covered = r.oldCovered || cum <= totalQty;
+                          const q = parseInt(r.qty) || 1;
                           const isReady = readyNos.has(String(r.orderNo));
+                          const covered = !deferred && (r.oldCovered || isReady || q <= _rem);
+                          if (!deferred && !r.oldCovered && covered) _rem -= q;
                           const chipHL = stockHighlight?.kind === 'case' && String(r.orderNo ?? '') === String(stockHighlight.orderNo ?? '');
                           return (
                             <Text key={i} style={{
@@ -514,7 +515,7 @@ export default function CaseScreen({ caseStock={}, setCaseStock, opsBasket=[], s
               const remaining = totalQty<0 ? Math.abs(totalQty)-oldCount : 0;
               const canBorrowOld = isAdmin && remaining>0;
               const selDoors = oldSel.reduce((s,no)=>{ const r=(reservationEntry?.reservations||[]).find(x=>String(x.orderNo)===String(no)); return s+(parseInt(r?.qty)||1); },0);
-              let cum = 0;
+              let _rem = totalQty;
               return <>
                 {canBorrowOld && <Text style={{fontSize:12, color:'#e65100', textAlign:'center', marginBottom:6}}>Κάλυψη από παλιό στοκ — μέχρι {remaining} τεμ.</Text>}
                 <ScrollView style={{maxHeight:300, width:'100%'}}>
@@ -522,9 +523,9 @@ export default function CaseScreen({ caseStock={}, setCaseStock, opsBasket=[], s
                     ? <Text style={{color:'#999', textAlign:'center', padding:20}}>Δεν υπάρχουν δεσμεύσεις</Text>
                     : (reservationEntry?.reservations||[]).map((r,i) => {
                         const isOld = !!r.oldCovered;
-                        if(!isOld) cum += (parseInt(r.qty) || 1);
-                        const covered = isOld || cum <= totalQty;
                         const rq = parseInt(r.qty)||1;
+                        const covered = isOld || rq <= _rem;
+                        if(!isOld && covered) _rem -= rq;
                         const selected = oldSel.some(no=>String(no)===String(r.orderNo));
                         const showChk = canBorrowOld && !covered;
                         const canPick = selected || (selDoors+rq)<=remaining;
