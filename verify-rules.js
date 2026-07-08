@@ -89,6 +89,20 @@ const stockAvailable = (stockMap, key, now = Date.now()) => {
   return (parseInt(entry.qty) || 0) - reserved;
 };
 
+const stockCovers = (entry, orderNo, readyNos = null, now = Date.now()) => {
+  if (!entry) return false;
+  let rem = parseInt(entry.qty) || 0;
+  for (const r of (entry.reservations || [])) {
+    const match = String(r.orderNo) === String(orderNo);
+    if (r.oldCovered) { if (match) return true; continue; }
+    if (resDeferred(r, now)) { if (match) return false; continue; }
+    const q = parseInt(r.qty) || 1;
+    if ((readyNos && readyNos.has(String(r.orderNo))) || q <= rem) { if (match) return true; rem -= q; }
+    else if (match) return false;
+  }
+  return false;
+};
+
 const sameOrderNo = (a, b) => String(a ?? '') === String(b ?? '');
 
 // Αντίγραφο ξαναδέσμευσης στην επεξεργασία (CustomScreen.js saveOrderWith):
@@ -571,6 +585,34 @@ group('stockAvailable — αναβολή δέσμευσης (deferUntil)', () =>
   test('resDeferred: μέλλον → true', resDeferred({ deferUntil: now + DAY }, now), true);
   test('resDeferred: παρελθόν → false', resDeferred({ deferUntil: now - DAY }, now), false);
   test('resDeferred: χωρίς deferUntil → false', resDeferred({ qty: 1 }, now), false);
+});
+
+group('stockCovers — greedy κάλυψη (προσπερνά όσες δεν χωράνε)', () => {
+  const DAY = 86400000;
+  const now = 1_000_000_000_000;
+  const e = (qty, reservations) => ({ qty, reservations });
+  // Στοκ 2, πρώτη 6αρα δεν χωράει → κόκκινη· οι μονές μετά πρασινίζουν
+  const s2 = e(2, [{ orderNo: 'A', qty: 6 }, { orderNo: 'B', qty: 1 }, { orderNo: 'C', qty: 2 }, { orderNo: 'D', qty: 1 }]);
+  test('6αρα δεν χωράει σε στοκ 2 → false', stockCovers(s2, 'A'), false);
+  test('μονή Β χωράει (rem 2→1) → true', stockCovers(s2, 'B'), true);
+  test('C (2τεμ) δεν χωράει στο rem=1 → false', stockCovers(s2, 'C'), false);
+  test('μονή D χωράει (rem 1→0) → true', stockCovers(s2, 'D'), true);
+  // Στοκ 6, πρώτη 6αρα παίρνει προτεραιότητα, μικρές μετά κόκκινες
+  const s6 = e(6, [{ orderNo: 'A', qty: 6 }, { orderNo: 'B', qty: 1 }]);
+  test('6αρα χωράει σε στοκ 6 → true', stockCovers(s6, 'A'), true);
+  test('μονή μετά την 6αρα (rem 0) → false', stockCovers(s6, 'B'), false);
+  // oldCovered πάντα καλυμμένη, δεν καταναλώνει
+  const sOld = e(1, [{ orderNo: 'A', qty: 5, oldCovered: true }, { orderNo: 'B', qty: 1 }]);
+  test('oldCovered → true', stockCovers(sOld, 'A'), true);
+  test('μετά από oldCovered η μονή χωράει → true', stockCovers(sOld, 'B'), true);
+  // deferred δεν πιάνει στοκ ούτε καλύπτεται
+  const sDef = e(1, [{ orderNo: 'A', qty: 1, deferUntil: now + DAY }, { orderNo: 'B', qty: 1 }]);
+  test('deferred → false', stockCovers(sDef, 'A', null, now), false);
+  test('μετά από deferred η μονή χωράει → true', stockCovers(sDef, 'B', null, now), true);
+  // ready πιάνει στοκ πάντα (καλυμμένη)
+  const sReady = e(2, [{ orderNo: 'A', qty: 6 }, { orderNo: 'B', qty: 1 }]);
+  test('ready καλύπτεται πάντα → true', stockCovers(sReady, 'A', new Set(['A'])), true);
+  test('χωρίς entry → false', stockCovers(null, 'A'), false);
 });
 
 group('Ξαναδέσμευση στην επεξεργασία — θέση + σημαδάκι κάσας', () => {

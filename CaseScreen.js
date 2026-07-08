@@ -77,7 +77,7 @@ function QtyModal({ visible, title, onConfirm, onCancel }) {
   );
 }
 
-export default function CaseScreen({ caseStock={}, setCaseStock, opsBasket=[], setOpsBasket, stockHighlight=null, onClearSearchHighlight, locked=false, isAdmin=false, customOrders=[] }) {
+export default function CaseScreen({ caseStock={}, setCaseStock, opsBasket=[], setOpsBasket, stockHighlight=null, onClearSearchHighlight, locked=false, isAdmin=false, isForeman=false, customOrders=[] }) {
   const readyNos = React.useMemo(() => new Set(customOrders.filter(o=>o.status==='STD_READY').map(o=>String(o.orderNo))), [customOrders]);
   // Χρησιμοποιούμε απευθείας το κεντρικό state από App.js
   const baseMap = { ...initStockMap(), ...caseStock };
@@ -200,6 +200,19 @@ export default function CaseScreen({ caseStock={}, setCaseStock, opsBasket=[], s
     const msg = `Αναίρεση κάλυψης από παλιό στοκ για #${orderNo};`;
     if (Platform.OS==='web') { if (window.confirm(msg)) doIt(); }
     else Alert.alert('Αναίρεση', msg, [{text:'ΑΚΥΡΟ',style:'cancel'},{text:'ΝΑΙ',onPress:doIt}]);
+  };
+
+  const canReorder = (isAdmin || isForeman) && !locked;
+  const isMovable = (r) => !!r && !readyNos.has(String(r.orderNo)) && !r.oldCovered;
+  const moveReservation = async (key, index, dir) => {
+    const entry = baseMap[key]; if (!entry) return;
+    const res = [...(entry.reservations||[])];
+    const j = index + dir;
+    if (j < 0 || j >= res.length || !isMovable(res[index]) || !isMovable(res[j])) return;
+    [res[index], res[j]] = [res[j], res[index]];
+    const upd = { ...entry, reservations: res };
+    setCaseStock(prev => ({ ...prev, [key]: upd }));
+    await syncKey(key, upd);
   };
 
   const renderTable = (side, caseType) => {
@@ -516,12 +529,14 @@ export default function CaseScreen({ caseStock={}, setCaseStock, opsBasket=[], s
               const canBorrowOld = isAdmin && remaining>0;
               const selDoors = oldSel.reduce((s,no)=>{ const r=(reservationEntry?.reservations||[]).find(x=>String(x.orderNo)===String(no)); return s+(parseInt(r?.qty)||1); },0);
               let _rem = totalQty;
+              const resList = reservationEntry?.reservations || [];
               return <>
                 {canBorrowOld && <Text style={{fontSize:12, color:'#e65100', textAlign:'center', marginBottom:6}}>Κάλυψη από παλιό στοκ — μέχρι {remaining} τεμ.</Text>}
+                {canReorder && <Text style={{fontSize:11, color:'#1565C0', textAlign:'center', marginBottom:6}}>▲▼ Αλλαγή σειράς αναμονής</Text>}
                 <ScrollView style={{maxHeight:300, width:'100%'}}>
-                  {(reservationEntry?.reservations||[]).length === 0
+                  {resList.length === 0
                     ? <Text style={{color:'#999', textAlign:'center', padding:20}}>Δεν υπάρχουν δεσμεύσεις</Text>
-                    : (reservationEntry?.reservations||[]).map((r,i) => {
+                    : resList.map((r,i) => {
                         const isOld = !!r.oldCovered;
                         const rq = parseInt(r.qty)||1;
                         const covered = isOld || rq <= _rem;
@@ -529,11 +544,21 @@ export default function CaseScreen({ caseStock={}, setCaseStock, opsBasket=[], s
                         const selected = oldSel.some(no=>String(no)===String(r.orderNo));
                         const showChk = canBorrowOld && !covered;
                         const canPick = selected || (selDoors+rq)<=remaining;
+                        const upOk = canReorder && i>0 && isMovable(r) && isMovable(resList[i-1]);
+                        const downOk = canReorder && i<resList.length-1 && isMovable(r) && isMovable(resList[i+1]);
                         return (
                           <View key={i} style={{flexDirection:'row', alignItems:'center',
                             justifyContent:'space-between', padding:8,
                             borderBottomWidth:1, borderBottomColor:'#f0f0f0',
                             backgroundColor: covered ? '#f1f8f1' : 'white'}}>
+                            {canReorder && <View style={{marginRight:8}}>
+                              <TouchableOpacity disabled={!upOk} onPress={()=>moveReservation(showReservations, i, -1)} style={{opacity: upOk?1:0.2}}>
+                                <Text style={{fontSize:15, color:'#1565C0', fontWeight:'bold'}}>▲</Text>
+                              </TouchableOpacity>
+                              <TouchableOpacity disabled={!downOk} onPress={()=>moveReservation(showReservations, i, 1)} style={{opacity: downOk?1:0.2}}>
+                                <Text style={{fontSize:15, color:'#1565C0', fontWeight:'bold'}}>▼</Text>
+                              </TouchableOpacity>
+                            </View>}
                             {showChk && <TouchableOpacity disabled={!canPick} onPress={()=>setOldSel(prev=>selected?prev.filter(no=>String(no)!==String(r.orderNo)):[...prev,r.orderNo])}
                               style={{width:22, height:22, borderRadius:4, borderWidth:2, borderColor:selected?'#2e7d32':'#bbb', backgroundColor:selected?'#2e7d32':'#fff', alignItems:'center', justifyContent:'center', marginRight:8, opacity:canPick?1:0.4}}>
                               <Text style={{color:'#fff', fontWeight:'bold', fontSize:14}}>{selected?'✓':''}</Text>

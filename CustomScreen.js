@@ -6,7 +6,7 @@ const makeQrDataUrl = (text) => { const qr = qrcode(0, 'M'); qr.addData(text); q
 const SCREEN_WIDTH = Dimensions.get('window').width;
 import { logActivity } from './activityLog';
 import { fmtDate, fmtDateTime, parseDateStr, truthyBool, autoPriceLines, applyAutoPriceLines, DIPLI_MODELS, DIPLI_DEFAULT } from './utils';
-import { sasiKey, caseKey } from './stockUtils';
+import { sasiKey, caseKey, stockCovers } from './stockUtils';
 import { SellModal, SplitModal, ConfirmModal, DuplicateModal } from './CustomFormModals';
 import { HardwarePickerModal, LockPickerModal, CoatingsPickerModal, DatePickerModal, DipliModelPickerModal, MiscPickerModal, StavColumnPickerModal } from './CustomPickers';
 import { PrintPreviewModal, PHASES } from './PrintPreview';
@@ -1414,6 +1414,8 @@ export default function CustomScreen({ customOrders, setCustomOrders, soldOrders
   };
   useEffect(()=>{ setTimeout(()=>customerRef.current?.focus(), 300); }, []);
 
+  const readyNos = useMemo(() => new Set((customOrders||[]).filter(o=>o.status==='STD_READY').map(o=>String(o.orderNo))), [customOrders]);
+
   useEffect(() => {
     let updated = false;
     const pendingSync = [];
@@ -1428,19 +1430,8 @@ export default function CustomScreen({ customOrders, setCustomOrders, soldOrders
       // GUARD CLAUSE: Αν είναι ήδη STD_READY ή stdInProd===true, το κλειδώνουμε
       if (o.status === 'STD_READY' || o.stdInProd) return o;
 
-      // FIFO check: η παραγγελία καλύπτεται μόνο αν το αθροιστικό ως αυτήν <= stock
-      const checkStockFIFO = (stockMap, key, orderNo) => {
-        const entry = stockMap?.[key];
-        if (!entry) return false;
-        const totalQty = parseInt(entry.qty) || 0;
-        let cumulative = 0;
-        for (const r of (entry.reservations || [])) {
-          if (r.oldCovered) { if (r.orderNo === orderNo) return true; continue; }
-          cumulative += (parseInt(r.qty) || 1);
-          if (r.orderNo === orderNo) return cumulative <= totalQty;
-        }
-        return false;
-      };
+      // Κάλυψη (greedy, κοινή λογική με την οθόνη στοκ)
+      const checkStockFIFO = (stockMap, key, orderNo) => stockCovers(stockMap?.[key], orderNo, readyNos);
 
       // STD_BUILD: έλεγχος stock μόνο — η μετάβαση γίνεται μέσω confirmation modal στο commitTaskBasket
       if (o.status === 'STD_BUILD') return o;
@@ -2530,18 +2521,7 @@ export default function CustomScreen({ customOrders, setCustomOrders, soldOrders
     const today = new Date();
     const dateStr = `${String(today.getDate()).padStart(2,'0')}/${String(today.getMonth()+1).padStart(2,'0')}/${today.getFullYear()} ${String(today.getHours()).padStart(2,'0')}:${String(today.getMinutes()).padStart(2,'0')}`;
 
-    const checkStockFIFOLocal = (stockMap, key, orderNo) => {
-      const entry = stockMap?.[key];
-      if (!entry) return false;
-      const totalQty = parseInt(entry.qty)||0;
-      let cum = 0;
-      for (const r of (entry.reservations||[])) {
-        if (r.oldCovered) { if (r.orderNo===orderNo) return true; continue; }
-        cum += (parseInt(r.qty)||1);
-        if (r.orderNo===orderNo) return cum<=totalQty;
-      }
-      return false;
-    };
+    const checkStockFIFOLocal = (stockMap, key, orderNo) => stockCovers(stockMap?.[key], orderNo, readyNos);
 
     const qtyCell = (o) => `<td style="text-align:center;font-weight:900;font-size:16px;color:#cc0000">${parseInt(o.qty,10)>1?o.qty:''}</td>`;
     let rows = '';
@@ -2933,18 +2913,7 @@ export default function CustomScreen({ customOrders, setCustomOrders, soldOrders
   const stockOkFor = (order, newTasks) => {
     const sk = sasiKey(String(order.h), String(order.w), order.side);
     const ck = caseKey(String(order.h), String(order.w), order.side, order.caseType);
-    const checkFIFO = (stockMap, key) => {
-      const entry = stockMap?.[key];
-      if (!entry) return false;
-      const totalQty = parseInt(entry.qty)||0;
-      let cum = 0;
-      for (const r of (entry.reservations||[])) {
-        if (r.oldCovered) { if (r.orderNo===order.orderNo) return true; continue; }
-        cum += (parseInt(r.qty)||1);
-        if (r.orderNo===order.orderNo) return cum<=totalQty;
-      }
-      return false;
-    };
+    const checkFIFO = (stockMap, key) => stockCovers(stockMap?.[key], order.orderNo, readyNos);
     const isMoniB = (order.sasiType==='ΜΟΝΗ ΘΩΡΑΚΙΣΗ'||!order.sasiType);
     const caseReserved = !('case' in newTasks);
     const sasiReserved = isMoniB && !('sasi' in newTasks);
@@ -3103,18 +3072,7 @@ export default function CustomScreen({ customOrders, setCustomOrders, soldOrders
   const renderBuildCard = (o, { ependHorizontal=false }={}) => {
     const sk = sasiKey(String(o.h), String(o.w), o.side);
     const ck = caseKey(String(o.h), String(o.w), o.side, o.caseType);
-    const checkStock = (stockMap, key) => {
-      const entry = stockMap?.[key];
-      if (!entry) return false;
-      const totalQty = parseInt(entry.qty)||0;
-      let cum = 0;
-      for (const r of (entry.reservations||[])) {
-        if (r.oldCovered) { if (r.orderNo===o.orderNo) return true; continue; }
-        cum += (parseInt(r.qty)||1);
-        if (r.orderNo===o.orderNo) return cum<=totalQty;
-      }
-      return false;
-    };
+    const checkStock = (stockMap, key) => stockCovers(stockMap?.[key], o.orderNo, readyNos);
     const tasks = o.buildTasks||{};
     const hasSasiReserved = !('sasi' in tasks);
     const hasCaseReserved = !('case' in tasks);
@@ -3257,20 +3215,8 @@ export default function CustomScreen({ customOrders, setCustomOrders, soldOrders
   // orderNo από Firebase/reservations μπορεί να είναι number ενώ στις παραγγελίες string (ή το αντίστροφο)
   const sameOrderNo = (a, b) => String(a ?? '') === String(b ?? '');
 
-  /** Ίδια λογική με checkStockFIFO: αθροιστικό qty μέχρι την παραγγελία <= stock qty */
-  const fifoCoversOrder = (stockMap, key, orderNo) => {
-    if (key == null || key === '') return false;
-    const entry = stockMap?.[key];
-    if (!entry) return false;
-    const totalQty = parseInt(entry.qty, 10) || 0;
-    let cum = 0;
-    for (const r of (entry.reservations || [])) {
-      if (r.oldCovered) { if (sameOrderNo(r.orderNo, orderNo)) return true; continue; }
-      cum += (parseInt(r.qty, 10) || 1);
-      if (sameOrderNo(r.orderNo, orderNo)) return cum <= totalQty;
-    }
-    return false;
-  };
+  /** Κάλυψη (greedy, κοινή λογική με την οθόνη στοκ) */
+  const fifoCoversOrder = (stockMap, key, orderNo) => stockCovers(stockMap?.[key], orderNo, readyNos);
 
   const handleBorrowRequest = (order, stockType) => {
     if (isGuest) return;
@@ -6000,19 +5946,8 @@ export default function CustomScreen({ customOrders, setCustomOrders, soldOrders
                 if (isCoatingsOnlyBuild(o)) return renderBuildCard(o, { ependHorizontal:true });
                 const sk = sasiKey(String(o.h), String(o.w), o.side);
                 const ck = caseKey(String(o.h), String(o.w), o.side, o.caseType);
-                // ✅ FIFO: η παραγγελία καλύπτεται αν το αθροιστικό ως αυτήν <= stock
-                const checkStock = (stockMap, key, orderNo) => {
-                  const entry = stockMap?.[key];
-                  if (!entry) return false;
-                  const totalQty = parseInt(entry.qty) || 0;
-                  let cumulative = 0;
-                  for (const r of (entry.reservations || [])) {
-                    if (r.oldCovered) { if (r.orderNo === orderNo) return true; continue; }
-                    cumulative += (parseInt(r.qty) || 1);
-                    if (r.orderNo === orderNo) return cumulative <= totalQty;
-                  }
-                  return false;
-                };
+                // Κάλυψη (greedy, κοινή λογική με την οθόνη στοκ)
+                const checkStock = (stockMap, key, orderNo) => stockCovers(stockMap?.[key], orderNo, readyNos);
                 const hasSasi = checkStock(sasiStock, sk, o.orderNo);
                 const hasCase = checkStock(caseStock, ck, o.orderNo);
                 return renderStdCard(o, hasSasi, hasCase, true);
@@ -6021,19 +5956,8 @@ export default function CustomScreen({ customOrders, setCustomOrders, soldOrders
               // ΔΙΠΛΗ — έλεγχος με νέο stock
               const dipliCards = dipliOrders.map(o=>{
                 const ckD = caseKey(String(o.h), String(o.w), o.side, o.caseType);
-                // ✅ FIFO: η παραγγελία καλύπτεται αν το αθροιστικό ως αυτήν <= stock
-                const checkStock = (stockMap, key, orderNo) => {
-                  const entry = stockMap?.[key];
-                  if (!entry) return false;
-                  const totalQty = parseInt(entry.qty) || 0;
-                  let cumulative = 0;
-                  for (const r of (entry.reservations || [])) {
-                    if (r.oldCovered) { if (r.orderNo === orderNo) return true; continue; }
-                    cumulative += (parseInt(r.qty) || 1);
-                    if (r.orderNo === orderNo) return cumulative <= totalQty;
-                  }
-                  return false;
-                };
+                // Κάλυψη (greedy, κοινή λογική με την οθόνη στοκ)
+                const checkStock = (stockMap, key, orderNo) => stockCovers(stockMap?.[key], orderNo, readyNos);
                 const hasCase = checkStock(caseStock, ckD, o.orderNo);
                 return renderStdCard(o, false, hasCase, false);
               });
@@ -6294,18 +6218,7 @@ export default function CustomScreen({ customOrders, setCustomOrders, soldOrders
                       </TouchableOpacity>
                       {expanded.stdBuildDipli&&applyListSort(stdBuildDipliOrders,'dipli-build').map(o=>{
                         const ckD = caseKey(String(o.h), String(o.w), o.side, o.caseType);
-                        const checkStock = (stockMap, key) => {
-                          const entry = stockMap?.[key];
-                          if (!entry) return false;
-                          const totalQty = parseInt(entry.qty)||0;
-                          let cum = 0;
-                          for (const r of (entry.reservations||[])) {
-                            if (r.oldCovered) { if (r.orderNo===o.orderNo) return true; continue; }
-                            cum += (parseInt(r.qty)||1);
-                            if (r.orderNo===o.orderNo) return cum<=totalQty;
-                          }
-                          return false;
-                        };
+                        const checkStock = (stockMap, key) => stockCovers(stockMap?.[key], o.orderNo, readyNos);
                         const tasks = o.buildTasks||{};
                         const hasCaseReserved = !('case' in tasks);
                         const hasCaseOk = !hasCaseReserved || checkStock(caseStock, ckD);

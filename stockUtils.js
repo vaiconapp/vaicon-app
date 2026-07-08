@@ -16,3 +16,20 @@ export const stockAvailable = (stockMap, key, now = Date.now()) => {
   const reserved = (entry.reservations||[]).reduce((s,r) => resDeferred(r, now) ? s : s + (parseInt(r.qty)||1), 0);
   return (parseInt(entry.qty)||0) - reserved;
 };
+
+// Κάλυψη παραγγελίας (greedy): με τη σειρά των reservations, όσες χωράνε στο διαθέσιμο
+// στοκ πρασινίζουν — μια μεγάλη που δεν χωράει προσπερνιέται χωρίς να μπλοκάρει τις επόμενες.
+// oldCovered = καλυμμένη από παλιό στοκ, deferred = δεν πιάνει στοκ ακόμα, ready = πιάνει πάντα.
+export const stockCovers = (entry, orderNo, readyNos = null, now = Date.now()) => {
+  if (!entry) return false;
+  let rem = parseInt(entry.qty) || 0;
+  for (const r of (entry.reservations || [])) {
+    const match = String(r.orderNo) === String(orderNo);
+    if (r.oldCovered) { if (match) return true; continue; }
+    if (resDeferred(r, now)) { if (match) return false; continue; }
+    const q = parseInt(r.qty) || 1;
+    if ((readyNos && readyNos.has(String(r.orderNo))) || q <= rem) { if (match) return true; rem -= q; }
+    else if (match) return false;
+  }
+  return false;
+};
