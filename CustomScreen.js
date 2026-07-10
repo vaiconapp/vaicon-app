@@ -2738,9 +2738,12 @@ export default function CustomScreen({ customOrders, setCustomOrders, soldOrders
       const fora = o.side==='ΑΡΙΣΤΕΡΗ'?'ΑΡ':'ΔΕΞ';
       return `<tr>
         <td style="font-weight:bold;font-size:15px">${o.orderNo}</td>
-        <td>${o.customer||'—'}</td>
         <td style="text-align:center;font-weight:900;font-size:15px;color:#cc0000">${parseInt(o.qty,10)>1?o.qty:''}</td>
         <td style="font-weight:bold">${o.h}x${o.w} ${fora}</td>
+        <td style="text-align:center;font-weight:bold">${o.heightReduction||''}</td>
+        <td style="text-align:center;font-weight:bold">${o.installation==='ΝΑΙ'?'ΝΑΙ':''}</td>
+        <td style="text-align:center;font-weight:bold">${o.kypri==='ΝΑΙ'?'ΝΑΙ':''}</td>
+        <td>${o.lock||''}</td>
         <td style="font-size:11px;color:#555">${notesHtmlWithWarning(o.notes)}</td>
       </tr>`;
     }).join('');
@@ -2758,10 +2761,10 @@ export default function CustomScreen({ customOrders, setCustomOrders, soldOrders
         <h2 class="sub">📅 ${dateStr} &nbsp;|&nbsp; ${sorted.length} παραγγελίες</h2>
         <table>
           <colgroup>
-            <col style="width:10%"><col style="width:18%"><col style="width:7%"><col style="width:11%"><col style="width:54%">
+            <col style="width:9%"><col style="width:6%"><col style="width:13%"><col style="width:9%"><col style="width:9%"><col style="width:8%"><col style="width:16%"><col style="width:30%">
           </colgroup>
           <thead><tr>
-          <th>Νο</th><th>Πελάτης</th><th style="text-align:center">Τεμ.</th><th>Διάσταση</th><th>Παρατηρήσεις</th>
+          <th>Νο</th><th style="text-align:center">Τεμ.</th><th>Διάσταση</th><th style="text-align:center">Μείωση</th><th style="text-align:center">Μοντάρ.</th><th style="text-align:center">Κυπρί</th><th>Κλειδαριά</th><th>Παρατηρήσεις</th>
         </tr></thead><tbody>${rows}</tbody></table>
       </div>
     </body></html>`;
