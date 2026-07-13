@@ -652,6 +652,13 @@ export default function App() {
     setGlobalSearchPrintSelected(new Set(printableHitIndices));
   }, [printableHitIndices]);
 
+  // Επιλογή για εκτύπωση όλων ΕΚΤΟΣ αρχείου (τι «τρέχει»: έτοιμα + εν εξελίξει).
+  const selectActiveSearchHits = useCallback(() => {
+    setGlobalSearchPrintSelected(new Set(
+      effectiveSearchHits.map((h, i) => (h.order && !h.isSold) ? i : -1).filter((i) => i >= 0)
+    ));
+  }, [effectiveSearchHits]);
+
   const clearGlobalSearchPrintSelection = useCallback(() => {
     setGlobalSearchPrintSelected(new Set());
   }, []);
@@ -739,10 +746,11 @@ export default function App() {
         paradoseisSearchLogic
       );
       hits = [...hits].sort((a, b) => {
-        const ao = String(a.orderNo ?? '');
-        const bo = String(b.orderNo ?? '');
-        if (ao !== bo) return ao.localeCompare(bo, undefined, { numeric: true });
-        return a.where.localeCompare(b.where);
+        if (a.isSold !== b.isSold) return a.isSold ? 1 : -1;
+        const an = parseInt(a.orderNo, 10), bn = parseInt(b.orderNo, 10);
+        const av = Number.isNaN(an) ? Infinity : an, bv = Number.isNaN(bn) ? Infinity : bn;
+        if (av !== bv) return av - bv;
+        return String(a.orderNo ?? '').localeCompare(String(b.orderNo ?? ''), undefined, { numeric: true });
       });
       setGlobalSearchHits(hits);
       setGlobalSearchModalStaveraMode(false);
@@ -2165,6 +2173,9 @@ export default function App() {
                     <TouchableOpacity onPress={selectAllPrintableSearchHits} style={styles.searchModalSelectChip}>
                       <Text style={styles.searchModalSelectChipText}>Όλα ✓</Text>
                     </TouchableOpacity>
+                    <TouchableOpacity onPress={selectActiveSearchHits} style={[styles.searchModalSelectChip, { backgroundColor:'#2e7d32' }]}>
+                      <Text style={[styles.searchModalSelectChipText, { color:'#fff' }]}>Τρέχουσες ✓</Text>
+                    </TouchableOpacity>
                     <TouchableOpacity onPress={clearGlobalSearchPrintSelection} style={styles.searchModalSelectChip}>
                       <Text style={styles.searchModalSelectChipText}>Καθάρισμα</Text>
                     </TouchableOpacity>
@@ -2201,8 +2212,22 @@ export default function App() {
                   effectiveSearchHits.map((hit, i) => {
                     const canPrint = !!hit.order;
                     const isSel = globalSearchPrintSelected.has(i);
+                    const prev = effectiveSearchHits[i - 1];
+                    const showArchiveSep = hit.isSold && (!prev || !prev.isSold);
+                    const rowTint = hit.isSold ? '#eceff1'
+                      : hit.onHold ? '#fff8e1'
+                      : (hit.status === 'STD_READY' || hit.status === 'READY') ? '#e8f5e9'
+                      : (hit.status === 'STD_BUILD') ? '#fff3e0'
+                      : (hit.status === 'STD_PENDING' || hit.status === 'PENDING' || !hit.status) ? '#e3f2fd'
+                      : '#fff';
                     return (
-                      <View key={`${hit.id}-${i}-${hit.where}`} style={styles.searchHitRow}>
+                      <React.Fragment key={`${hit.id}-${i}-${hit.where}`}>
+                        {showArchiveSep ? (
+                          <View style={{ backgroundColor:'#455a64', paddingVertical:5, paddingHorizontal:10, marginTop:6, borderRadius:4 }}>
+                            <Text style={{ color:'#fff', fontWeight:'bold', fontSize:12 }}>🗂 ΑΡΧΕΙΟ (πουλημένες)</Text>
+                          </View>
+                        ) : null}
+                      <View style={[styles.searchHitRow, { backgroundColor: rowTint }]}>
                         <TouchableOpacity
                           style={styles.searchHitMain}
                           activeOpacity={0.7}
@@ -2216,7 +2241,11 @@ export default function App() {
                           }}
                         >
                           <Text style={styles.searchHitSummary}>{hit.summary}</Text>
-                          <Text style={styles.searchHitWhere}>{hit.where}</Text>
+                          <Text style={styles.searchHitWhere}>
+                            {String(hit.where || '').includes('Διπλή θωράκιση')
+                              ? (<>{String(hit.where).split('Διπλή θωράκιση')[0]}<Text style={{ fontWeight: 'bold' }}>Διπλή θωράκιση</Text></>)
+                              : hit.where}
+                          </Text>
                           {globalSearchModalStaveraMode && hit.order ? (
                             <Text style={styles.searchHitStaveraLine}>
                               Σταθερά: {staveraSearchBadgeLine(hit.order)}
@@ -2243,6 +2272,7 @@ export default function App() {
                           <Text style={styles.searchHitPrintBtnText}>🖨️</Text>
                         </TouchableOpacity>
                       </View>
+                      </React.Fragment>
                     );
                   })
                 )}
@@ -2467,7 +2497,7 @@ const styles = StyleSheet.create({
     borderRadius: 14,
     padding: 16,
     width: '100%',
-    maxWidth: 520,
+    maxWidth: 760,
     maxHeight: '88%',
     zIndex: 2,
     elevation: 10,

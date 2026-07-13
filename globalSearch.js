@@ -99,7 +99,7 @@ function buildUserEnteredSearchBlob(o) {
 
 function statusLabel(st) {
   const map = {
-    STD_PENDING: 'Σε αναμονή',
+    STD_PENDING: 'Καταχωρημένη',
     STD_BUILD: 'Κατασκευή',
     STD_READY: 'Έτοιμη',
     STD_SOLD: 'Πωλήθηκε',
@@ -129,6 +129,9 @@ function whereStd(o, isSold) {
       where: `Τυποποιημένες › Αρχείο πωλήσεων › ${md}`,
       tab: tabForStd(o),
     };
+  }
+  if (o.onHold) {
+    return { where: `Τυποποιημένες › ΣΕ ΑΝΑΜΟΝΗ › ${md}`, tab: tabForStd(o) };
   }
   const st = o.status || '';
   return {
@@ -190,7 +193,9 @@ function summaryLine(o) {
   const no = o.orderNo != null ? String(o.orderNo) : '—';
   const cust = o.customer ? ` · ${o.customer}` : '';
   const dim = o.h && o.w ? ` · ${o.h}×${o.w}` : o.size ? ` · ${o.size}` : '';
-  return `${no}${cust}${dim}`.trim();
+  const side = o.side ? ` ${o.side === 'ΑΡΙΣΤΕΡΗ' ? 'ΑΡ' : 'ΔΕΞ'}` : '';
+  const qty = parseInt(o.qty, 10) > 1 ? ` · ${o.qty}τεμ` : '';
+  return `${no}${cust}${dim}${side}${qty}`.trim();
 }
 
 /**
@@ -234,6 +239,9 @@ export function collectGlobalSearchHits(q1, otherQueries, pools, otherLogic = 'A
         where: meta.where,
         tab: meta.tab,
         hitType: type,
+        isSold,
+        status: o.status,
+        onHold: !!o.onHold,
         order: o,
         ...(stockMeta ? { stockMeta } : {}),
       });
@@ -247,6 +255,15 @@ export function collectGlobalSearchHits(q1, otherQueries, pools, otherLogic = 'A
   pushHits(caseOrders, false, 'case');
   pushHits(soldCaseOrders, true, 'case');
   pushHits(quotes, false, 'quote');
+
+  // Ταξινόμηση: πρώτα οι ενεργές (κατά αριθμό), μετά το αρχείο (κατά αριθμό).
+  const noNum = (v) => { const n = parseInt(v, 10); return Number.isNaN(n) ? Infinity : n; };
+  hits.sort((a, b) => {
+    if (a.isSold !== b.isSold) return a.isSold ? 1 : -1;
+    const an = noNum(a.orderNo), bn = noNum(b.orderNo);
+    if (an !== bn) return an - bn;
+    return String(a.orderNo ?? '').localeCompare(String(b.orderNo ?? ''), undefined, { numeric: true });
+  });
 
   return hits;
 }

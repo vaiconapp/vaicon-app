@@ -169,7 +169,10 @@ function globalSearchPrintStyles() {
   .status{margin:3px 0 1px 0;font-size:12px;}
   .status b{color:#333;}
   .details table{font-size:11px;}
-  .gsearch-slip{page-break-inside:avoid;margin:0 0 4px 0;padding:0 0 5px 0;border-bottom:1px dashed #bbb;}
+  .det{font-size:11px;line-height:1.35;margin:2px 0 0 0;color:#1a1a1a;}
+  .notes{font-size:11px;line-height:1.3;margin:2px 0 0 0;white-space:pre-wrap;color:#222;}
+  .dates{font-size:10px;line-height:1.25;margin:3px 0 0 0;padding-top:3px;border-top:1px solid #ccc;color:#333;}
+  .gsearch-slip{page-break-inside:avoid;margin:0 0 5px 0;padding:0 0 5px 0;border-bottom:1px dashed #bbb;}
   .gsearch-slip:last-child{border-bottom:none;padding-bottom:0;margin-bottom:0;}
   @media print{@page{size:A4;margin:8mm;}}
 </style>`;
@@ -207,7 +210,7 @@ function buildGlobalSearchOrderFragment(order, meta = {}) {
     : '—';
   const hrRaw = order.heightReduction != null ? String(order.heightReduction).trim() : '';
   const instRaw = order.installation != null ? String(order.installation).trim() : '';
-  const lbl = 'color:#1a1a1a;font-weight:bold;';
+  const lbl = 'color:#555;';
   const valR = 'color:#c62828;font-weight:bold;';
   const valB = 'color:#1a1a1a;font-weight:bold;';
 
@@ -223,8 +226,8 @@ function buildGlobalSearchOrderFragment(order, meta = {}) {
     : `<span style="${valB}">ΟΧΙ</span>`;
 
   let line2 = `${dimLine} · ${q}`;
-  line2 += ` · <span style="${lbl}">Μείωση ύψους</span> ${hrDisplay}`;
-  line2 += `<span style="display:inline-block;margin-left:14px;vertical-align:baseline;"><span style="${lbl}">Μοντάρισμα</span> ${instDisplay}</span>`;
+  line2 += ` · <span style="${lbl}">Μείωση</span> ${hrDisplay}`;
+  line2 += ` · <span style="${lbl}">Μοντάρισμα</span> ${instDisplay}`;
 
   const staveraLine = buildStaveraSearchPrintLine(order);
 
@@ -232,49 +235,45 @@ function buildGlobalSearchOrderFragment(order, meta = {}) {
     ? `<span style="font-weight:bold;font-size:15px;">${escapeHtml(no)}</span> <span style="color:#333;">· ${escapeHtml(cust)}</span>`
     : `<span style="font-weight:bold;font-size:15px;">${escapeHtml(no)}</span>`;
 
-  const statusGr = escapeHtml(statusLabelGreek(order.status));
-
-  const extraRows = [];
-  const addExtra = (label, val) => {
-    if (val == null || val === '') return;
-    const t = typeof val === 'string' ? val : String(val);
+  // Συμπυκνωμένα στοιχεία σε μία γραμμή (όλα τα δεδομένα, χωρίς πίνακα ανά πεδίο).
+  const detParts = [];
+  const addDet = (label, val) => {
+    const t = val == null ? '' : String(val);
     if (!t.trim()) return;
-    extraRows.push(
-      `<tr><td style="padding:2px 8px 2px 0;color:#555;width:38%;font-size:10px;vertical-align:top;">${escapeHtml(label)}</td><td style="padding:2px 0;font-size:11px;vertical-align:top;white-space:pre-wrap;">${escapeHtml(t)}</td></tr>`
-    );
+    detParts.push(`<span style="color:#555;">${escapeHtml(label)}:</span> <b>${escapeHtml(t.trim())}</b>`);
   };
-
-  if (order.sasiType) addExtra('Τύπος σασί', order.sasiType);
-  if (order.lock) addExtra('Κλειδαριά', order.lock);
-  if (order.hardware) addExtra('Χρώμα εξαρτημάτων', order.hardware);
-  if (order.caseType) addExtra('Τύπος κάσας', order.caseType);
-  if (order.caseMaterial) addExtra('Υλικό κάσας', order.caseMaterial);
+  if (order.lock) addDet('Κλειδαριά', order.lock);
+  if (order.hardware) addDet('Χρώμα εξαρτ.', order.hardware);
+  if (order.caseType) addDet('Κάσα', order.caseType);
+  if (order.caseMaterial) addDet('Υλικό', order.caseMaterial);
+  if (order.kypri && String(order.kypri).trim().toUpperCase() === 'ΝΑΙ') addDet('Κυπρί', 'ΝΑΙ');
+  const colName = order.stavColumn?.name ? String(order.stavColumn.name).replace('ΚΟΛΩΝΕΣ ΣΤΑΘΕΡΩΝ ', '').trim() : '';
+  if (colName) { const cq = String(order.stavColumn?.qty || '').trim(); addDet('Κολώνες', (cq ? cq + '× ' : '') + colName); }
   const coat = coatingsText(order);
-  if (coat) addExtra('Επενδύσεις', coat);
+  if (coat) addDet('Επενδύσεις', coat);
+  const detailsInline = detParts.length ? `<div class="det">${detParts.join(' · ')}</div>` : '';
 
   const notesTrim = order.notes != null ? String(order.notes).trim() : '';
-
-  const extraBlock =
-    extraRows.length > 0
-      ? `<div class="details"><table style="width:100%;margin-top:5px;border-collapse:collapse;">${extraRows.join('')}</table></div>`
-      : '';
-
-  const notesSep = extraRows.length > 0 ? 'border-top:1px solid #ccc;padding-top:5px;margin-top:6px;' : 'margin-top:6px;';
   const notesBlock = notesTrim
-    ? `<p style="${notesSep}font-size:11px;line-height:1.3;white-space:pre-wrap;color:#222;"><strong>Παρατηρήσεις:</strong> ${notesHtmlWithWarning(notesTrim)}</p>`
+    ? `<div class="notes"><strong>Παρατηρήσεις:</strong> ${notesHtmlWithWarning(notesTrim)}</div>`
     : '';
 
-  const datesBlock = buildOrderDatesTableHtml(order);
+  // Ημερομηνίες σε μία γραμμή.
+  const d1 = order.createdAt != null ? fmtDateTime(order.createdAt) : '—';
+  const d2 = fmtDeliveryLine(order.deliveryDate ?? order.delivery_date ?? order.DeliveryDate);
+  let d3Label = 'Έτοιμο/Πώληση', d3Val = '—';
+  if (order.soldAt != null) { d3Label = 'Πώληση'; d3Val = fmtDateTime(order.soldAt); }
+  else if (order.readyAt != null) { d3Label = 'Έτοιμο'; d3Val = fmtDateTime(order.readyAt); }
+  else if (order.prodAt != null) { d3Label = 'Έναρξη παραγ.'; d3Val = fmtDateTime(order.prodAt); }
+  const datesInline = `<div class="dates">Καταχ.: <b>${escapeHtml(d1)}</b> · Παράδοση: <b>${escapeHtml(d2)}</b> · ${escapeHtml(d3Label)}: <b>${escapeHtml(d3Val)}</b></div>`;
 
-  const html = `<h1>${title}</h1>
-<p class="where"><strong>Τοποθεσία στη λίστα:</strong> ${whereLine}</p>
-<div class="l1">${line1}</div>
+  const html = `<div class="l1">${line1}</div>
+<div class="where">${whereLine}</div>
 <div class="l2">${line2}</div>
 ${staveraLine}
-<p class="status"><b>Κατάσταση:</b> ${statusGr}</p>
-${extraBlock}
+${detailsInline}
 ${notesBlock}
-${datesBlock}`;
+${datesInline}`;
 
   return { title, html };
 }

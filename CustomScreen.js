@@ -774,6 +774,30 @@ export default function CustomScreen({ customOrders, setCustomOrders, soldOrders
       elevation: 10,
     };
   };
+  // DOM id στη φωτισμένη κάρτα, ώστε να κάνουμε scroll πάνω της μετά από αναζήτηση.
+  const hlId = (id) => (highlightOrderId != null && String(highlightOrderId) === String(id)) ? 'vaicon-hl' : undefined;
+  // Μετά από αναζήτηση: πήγαινε στη σωστή υπο-ενότητα ώστε να φαίνεται η κάρτα.
+  useEffect(() => {
+    if (highlightOrderId == null || !forcedTab) return;
+    const o = [...(customOrders||[]), ...(soldOrders||[])].find(x => String(x.id) === String(highlightOrderId));
+    if (!o) return;
+    let sec;
+    if (o.onHold) sec = 'hold';
+    else if (o.status === 'STD_READY') sec = 'ready';
+    else if (o.status === 'STD_SOLD') sec = 'sold';
+    else if (o.status === 'STD_BUILD') sec = 'build';
+    else sec = (forcedTab === 'ΜΟΝΗ') ? 'orders' : 'build';
+    setActiveSection(sec);
+  }, [highlightOrderId]);
+  useEffect(() => {
+    if (highlightOrderId == null || Platform.OS !== 'web') return;
+    let done = false;
+    const timers = [150, 400, 800, 1300].map(ms => setTimeout(() => {
+      if (done) return;
+      try { const el = document.getElementById('vaicon-hl'); if (el) { el.scrollIntoView({ behavior:'smooth', block:'center' }); done = true; } } catch {}
+    }, ms));
+    return () => timers.forEach(clearTimeout);
+  }, [highlightOrderId]);
 
   const syncToCloud = async (o) => {
     let lastErr;
@@ -1017,6 +1041,7 @@ export default function CustomScreen({ customOrders, setCustomOrders, soldOrders
           <Text style={{fontSize:14, fontWeight:'900', color:'#1a1a1a', minWidth:54}}>#{o.orderNo||'—'}</Text>
           <Text style={{fontSize:12, color:'#1a1a1a', fontWeight:'bold'}}>{o.h||'—'}×{o.w||'—'}</Text>
           <Text style={{fontSize:11, color:'#555'}}>{o.side||'—'}</Text>
+          {parseInt(o.qty,10)>1 ? <Text style={{fontSize:12, color:'#cc0000', fontWeight:'900'}}>{o.qty}τεμ</Text> : null}
           {isSpecial ? (o.armor ? <Text style={{fontSize:11, color:'#555'}}>{o.armor}</Text> : null)
                      : <Text style={{fontSize:11, color:'#555'}}>{o.sasiType==='ΔΙΠΛΗ ΘΩΡΑΚΙΣΗ'?'ΔΙΠΛΗ':'ΜΟΝΗ'}</Text>}
           <View style={{backgroundColor:tab.color, borderRadius:4, paddingHorizontal:6, paddingVertical:1, marginLeft:'auto'}}>
@@ -3194,7 +3219,7 @@ export default function CustomScreen({ customOrders, setCustomOrders, soldOrders
 
   // Κάρτα λίστας «ΣΕ ΑΝΑΜΟΝΗ»: πλήρη στοιχεία, μάτι ενεργοποίησης + διαγραφή.
   const renderHoldCard = (o) => (
-    <View key={o.id} style={[{backgroundColor:'#fff', borderRadius:8, marginBottom:6, borderLeftWidth:5, borderLeftColor:'#9e9e9e', elevation:2, padding:10}, searchHL(o.id)]}>
+    <View key={o.id} nativeID={hlId(o.id)} style={[{backgroundColor:'#fff', borderRadius:8, marginBottom:6, borderLeftWidth:5, borderLeftColor:'#9e9e9e', elevation:2, padding:10}, searchHL(o.id)]}>
       <View style={{flexDirection:'row', justifyContent:'space-between', alignItems:'flex-start'}}>
         <View style={{flex:1}}>
           <StdOrderDatesLine order={o} marginBottom={4} />
@@ -3268,7 +3293,7 @@ export default function CustomScreen({ customOrders, setCustomOrders, soldOrders
     const stockOk = hasCaseOk && hasSasiOk;
     const allDone = Object.keys(tasks).length>0 && Object.values(tasks).every(v=>v===true);
     return (
-      <View key={o.id} style={[{backgroundColor:'#fff', borderRadius:8, marginBottom:6, borderLeftWidth:5, borderLeftColor: allDone?'#00C851':'#e65100', elevation:2, padding:10}, searchHL(o.id)]}>
+      <View key={o.id} nativeID={hlId(o.id)} style={[{backgroundColor:'#fff', borderRadius:8, marginBottom:6, borderLeftWidth:5, borderLeftColor: allDone?'#00C851':'#e65100', elevation:2, padding:10}, searchHL(o.id)]}>
         <View style={{flexDirection:'row', justifyContent:'space-between', alignItems:'flex-start'}}>
           <View style={{flex:1, alignSelf:'stretch'}}>
           <View style={{flexDirection:'row'}}>
@@ -5683,7 +5708,7 @@ export default function CustomScreen({ customOrders, setCustomOrders, soldOrders
 
                 const cardBorder = '#8B0000';
                 return (
-                  <View key={o.id}
+                  <View key={o.id} nativeID={hlId(o.id)}
                     style={[{backgroundColor:'#fff', borderRadius:8, padding:10, marginBottom:8, borderLeftWidth:5, borderLeftColor:cardBorder, elevation:2}, searchHL(o.id)]}>
                     <View style={{flexDirection:'row', justifyContent:'space-between', alignItems:'flex-start'}}>
                       <View style={{flex:1, alignSelf:'stretch'}}>
@@ -5833,7 +5858,7 @@ export default function CustomScreen({ customOrders, setCustomOrders, soldOrders
 
               // Κάρτα ΕΤΟΙΜΑ ΑΠΟΘΗΚΗΣ
               const renderReadyCard = (o) => (
-                <View key={o.id} style={[{backgroundColor:'#e8f5e9', borderRadius:8, padding:10, marginBottom:8, borderLeftWidth:5, borderLeftColor:'#00C851', elevation:2}, searchHL(o.id)]}>
+                <View key={o.id} nativeID={hlId(o.id)} style={[{backgroundColor:'#e8f5e9', borderRadius:8, padding:10, marginBottom:8, borderLeftWidth:5, borderLeftColor:'#00C851', elevation:2}, searchHL(o.id)]}>
                   <View style={{flexDirection:'row', justifyContent:'space-between', alignItems:'flex-start'}}>
                     <View style={{flex:1, alignSelf:'stretch'}}>
                       <View style={{flexDirection:'row', flexWrap:'wrap', alignItems:'center', gap:8, marginBottom:4}}>
@@ -6017,7 +6042,7 @@ export default function CustomScreen({ customOrders, setCustomOrders, soldOrders
 
               // Κάρτα ΑΡΧΕΙΟ ΠΩΛΗΣΕΩΝ
               const renderSoldCard = (o) => (
-                <View key={o.id} style={[{backgroundColor:'#f5f5f5', borderRadius:8, padding:10, marginBottom:8, borderLeftWidth:5, borderLeftColor: o.fromMenon?'#7b1fa2':'#888', elevation:1}, searchHL(o.id)]}>
+                <View key={o.id} nativeID={hlId(o.id)} style={[{backgroundColor:'#f5f5f5', borderRadius:8, padding:10, marginBottom:8, borderLeftWidth:5, borderLeftColor: o.fromMenon?'#7b1fa2':'#888', elevation:1}, searchHL(o.id)]}>
                   <View style={{flexDirection:'row', justifyContent:'space-between', alignItems:'flex-start'}}>
                     <View style={{flex:1, alignSelf:'stretch'}}>
                       {/* Badge αν προέρχεται από ΜΕΝΟΝΤΑ */}
@@ -6503,7 +6528,7 @@ export default function CustomScreen({ customOrders, setCustomOrders, soldOrders
                         const stockOk = hasCaseOk;
                         const allDone = Object.keys(tasks).length>0 && Object.values(tasks).every(v=>v===true);
                         return (
-                          <View key={o.id} style={[{backgroundColor:'#fff', borderRadius:8, marginBottom:6, borderLeftWidth:5, borderLeftColor: allDone?'#00C851':'#e65100', elevation:2, padding:10}, searchHL(o.id)]}>
+                          <View key={o.id} nativeID={hlId(o.id)} style={[{backgroundColor:'#fff', borderRadius:8, marginBottom:6, borderLeftWidth:5, borderLeftColor: allDone?'#00C851':'#e65100', elevation:2, padding:10}, searchHL(o.id)]}>
                             <View style={{flexDirection:'row', justifyContent:'space-between', alignItems:'flex-start'}}>
                               <View style={{flex:1, alignSelf:'stretch'}}>
                                 <StdOrderDatesLine order={o} marginBottom={4} />
