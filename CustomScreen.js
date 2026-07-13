@@ -1450,6 +1450,19 @@ export default function CustomScreen({ customOrders, setCustomOrders, soldOrders
 
   const readyNos = useMemo(() => new Set((customOrders||[]).filter(o=>o.status==='STD_READY').map(o=>String(o.orderNo))), [customOrders]);
 
+  // Σπασμένα «παιδιά» μιας μάνας: πρόθεμα «root-0-» (αυτόνομη) ή «root-» (με παύλα).
+  const splitChildPrefix = (o) => { const n = String(o?.orderNo ?? ''); if (!n) return null; return n.includes('-') ? `${n}-` : `${n}-0-`; };
+  // Η μάνα έχει έστω ένα ΕΝΕΡΓΟ παιδί (όχι ακόμη στα ΕΤΟΙΜΑ/Αρχείο) → μπλοκάρεται να πάει στα ΕΤΟΙΜΑ.
+  const hasActiveChildren = (o) => {
+    const p = splitChildPrefix(o); if (!p) return false;
+    return (customOrders||[]).some(c => c && c.splitChild && String(c.orderNo).startsWith(p) && c.status !== 'STD_READY' && c.status !== 'STD_SOLD');
+  };
+  // Υπάρχει έστω ένα σπασμένο κομμάτι (οποιασδήποτε κατάστασης) στη λίστα → η μάνα δεν διαγράφεται.
+  const hasAnyChildren = (o) => {
+    const p = splitChildPrefix(o); if (!p) return false;
+    return (customOrders||[]).some(c => c && c.splitChild && String(c.orderNo).startsWith(p));
+  };
+
   useEffect(() => {
     let updated = false;
     const pendingSync = [];
@@ -1481,6 +1494,7 @@ export default function CustomScreen({ customOrders, setCustomOrders, soldOrders
           pendingSync.push(upd);
           return upd;
         } else {
+          if (hasActiveChildren(o)) return o; // η μάνα πάει στα ΕΤΟΙΜΑ τελευταία
           updated = true;
           const upd = {...o, status:'STD_READY', readyAt:Date.now(), staveraPendingAtReady:true};
           pendingSync.push(upd);
@@ -1495,6 +1509,7 @@ export default function CustomScreen({ customOrders, setCustomOrders, soldOrders
       const staveraPending = hasStavera && !o.staveraDone;
       const hasCaseOk2 = checkStockFIFO(caseStock, ck, o.orderNo);
       if(!hasCaseOk2) return o;
+      if(hasActiveChildren(o)) return o; // η μάνα πάει στα ΕΤΟΙΜΑ τελευταία
       updated = true;
       const upd2 = {...o, status:'STD_READY', readyAt:Date.now(), ...(staveraPending?{staveraPendingAtReady:true}:{})};
       pendingSync.push(upd2);
@@ -2261,7 +2276,7 @@ export default function CustomScreen({ customOrders, setCustomOrders, soldOrders
   };
 
   // Μοίρασμα δέσμευσης στοκ κατά το σπάσιμο: μειώνει την αρχική, προσθέτει νέα γραμμή
-  const splitStockReservation = async (path, key, oldNo, newNo, splitQty) => {
+  const splitStockReservation = async (path, key, oldNo, newNo, splitQty, remainNo=oldNo) => {
     const setStock = path==='sasi_stock' ? setSasiStock : setCaseStock;
     try {
       const data = await (await fetch(`${FIREBASE_URL}/${path}/${key}.json`)).json();
@@ -2272,7 +2287,7 @@ export default function CustomScreen({ customOrders, setCustomOrders, soldOrders
       const origQty = parseInt(orig.qty)||1;
       if (splitQty>=origQty) return;
       const reservations = [...data.reservations];
-      reservations.splice(idx, 1, {...orig, qty:origQty-splitQty}, {...orig, orderNo:newNo, qty:splitQty});
+      reservations.splice(idx, 1, {...orig, orderNo:remainNo, qty:origQty-splitQty}, {...orig, orderNo:newNo, qty:splitQty});
       const upd = {...data, reservations};
       setStock(prev=>({...prev,[key]:upd}));
       await fetch(`${FIREBASE_URL}/${path}/${key}.json`,{method:'PUT',body:JSON.stringify(upd)});
@@ -2284,20 +2299,31 @@ export default function CustomScreen({ customOrders, setCustomOrders, soldOrders
     const totalQty = parseInt(order.qty)||1;
     const qty = Math.max(1, Math.min(parseInt(peelQty)||0, totalQty-1));
     if (qty<1 || qty>=totalQty) return;
+    const parentNo = String(order.orderNo);
     const base = splitBaseNo(order.orderNo);
-    const nos = [...customOrders, ...soldOrders].map(o=>o.orderNo).concat(Object.keys(orderSeq));
-    const newNo = groupOrderNo(base, nextGroupSuffix(base, nos));
     const gId = order.groupId || `g${base}`;
-    // Νούμερο διαίρεσης (παρένθεση): κληρονομείται αν υπάρχει, αλλιώς επόμενο ελεύθερο στη ρίζα.
-    const srcTag = parseInt(order.splitTag, 10);
-    const divTag = Number.isFinite(srcTag) ? srcTag
-      : [...customOrders, ...soldOrders].filter(o => splitBaseNo(o.orderNo) === base).reduce((m, o) => { const t = parseInt(o.splitTag, 10); return Number.isFinite(t) && t > m ? t : m; }, 0) + 1;
+    const allNos = [...customOrders, ...soldOrders].map(o=>String(o.orderNo)).concat(Object.keys(orderSeq).map(String));
+    // Επόμενο ελεύθερο «root-N» (μόνο ακέραια άμεσα παιδιά).
+    const nextSiblingNo = (root) => {
+      const pre = root + '-'; let mx = 0;
+      for (const n of allNos) { if (n.startsWith(pre)) { const r = n.slice(pre.length); if (/^\d+$/.test(r)) { const v = parseInt(r,10); if (v>mx) mx=v; } } }
+      return `${root}-${mx + 1}`;
+    };
+    // Η μάνα ΔΕΝ μετονομάζεται. Μονοκόμματη ρίζα (χωρίς παύλα) → παιδιά "root-0-N"
+    // (το -0 δηλώνει αυτόνομη, χωρίς ομάδα). Πόρτα με παύλα → παιδιά "root-N".
+    const motherNo = parentNo;
+    const newNo = parentNo.includes('-') ? nextSiblingNo(parentNo) : nextSiblingNo(`${parentNo}-0`);
+    // Αρχική ποσότητα: μπαίνει/διατηρείται ΜΟΝΟ στη μάνα (όχι στα σπασμένα).
+    const motherOrig = order.origQty != null ? String(order.origQty) : String(totalQty);
     const clone = (v) => v ? JSON.parse(JSON.stringify(v)) : v;
-    const remaining = {...order, qty:String(totalQty-qty), groupId:gId, splitTag:divTag};
-    const newOrder = {...order, id:`${Date.now()}_s`, orderNo:newNo, qty:String(qty), groupId:gId, splitTag:divTag,
+    const remaining = {...order, orderNo: motherNo, qty:String(totalQty-qty), groupId:gId, origQty: motherOrig};
+    const newOrder = {...order, id:`${Date.now()}_s`, orderNo:newNo, qty:String(qty), groupId:gId,
       buildTasks: order.buildTasks?{...order.buildTasks}:order.buildTasks,
       moniPhases: clone(order.moniPhases), dipliPhases: clone(order.dipliPhases),
       coatingDetails: clone(order.coatingDetails) };
+    delete newOrder.splitTag;
+    delete newOrder.origQty;
+    newOrder.splitChild = true; // σπασμένο κομμάτι — δεν ξανασπάει (σπάει μόνο η αρχική/μάνα)
     const _cat = await loadCatalog();
     for (const o of [remaining, newOrder]) {
       o.priceList = withTail(applyAutoPriceLines(dropStaleStav(dropStaleStavCol(o.priceList), stavRuleNames(_cat)), await buildAutoLines(o, _cat)), o);
@@ -2306,10 +2332,10 @@ export default function CustomScreen({ customOrders, setCustomOrders, soldOrders
     setCustomOrders(prev => [newOrder, ...prev.map(o=>o.id===order.id?remaining:o)]);
     await syncToCloud(remaining);
     await syncToCloud(newOrder);
-    setOrderSeq(prev=>({...prev,[newNo]:1}));
-    try { await fetch(`${FIREBASE_URL}/order_seq.json`,{method:'PATCH',body:JSON.stringify({[newNo]:1})}); } catch {}
-    await splitStockReservation('sasi_stock', sasiKey(String(order.h),String(order.w),order.side), order.orderNo, newNo, qty);
-    await splitStockReservation('case_stock', caseKey(String(order.h),String(order.w),order.side,order.caseType), order.orderNo, newNo, qty);
+    setOrderSeq(prev=>({...prev,[newNo]:1,[motherNo]:1}));
+    try { await fetch(`${FIREBASE_URL}/order_seq.json`,{method:'PATCH',body:JSON.stringify({[newNo]:1,[motherNo]:1})}); } catch {}
+    await splitStockReservation('sasi_stock', sasiKey(String(order.h),String(order.w),order.side), order.orderNo, newNo, qty, motherNo);
+    await splitStockReservation('case_stock', caseKey(String(order.h),String(order.w),order.side,order.caseType), order.orderNo, newNo, qty, motherNo);
     await logActivity('ΤΥΠΟΠΟΙΗΜΕΝΗ','Σπάσιμο παραγγελίας',{orderNo:order.orderNo,customer:order.customer,size:`${order.h}x${order.w}`,qty:`${totalQty-qty}+${qty}`});
   };
 
@@ -2327,12 +2353,15 @@ export default function CustomScreen({ customOrders, setCustomOrders, soldOrders
   // Πλαίσιο τεμαχίων (>1): πατιέται για σπάσιμο (χεράκι στο web)
   const renderQtyBox = (o) => {
     const q = parseInt(o.qty)||1;
-    if (q<=1) return null;
-    const canSplit = isAdmin || (isForeman && !locked);
+    const orig = o.origQty != null ? (parseInt(o.origQty)||0) : 0;
+    const showOrig = orig > q; // μόνο στη μάνα (αρχική > τρέχουσα)
+    if (q<=1 && !showOrig) return null;
+    const canSplit = (isAdmin || (isForeman && !locked)) && q>1 && !o.splitChild;
     return (
       <TouchableOpacity disabled={!canSplit}
         onPress={canSplit?()=>setSplitModal({visible:true, order:o}):undefined}
-        style={{backgroundColor:'#fff', borderWidth:1.5, borderColor:'#cc0000', borderRadius:6, paddingHorizontal:7, paddingVertical:1, ...(canSplit&&Platform.OS==='web'?{cursor:'pointer'}:{})}}>
+        style={{flexDirection:'row', alignItems:'center', gap:5, backgroundColor:'#fff', borderWidth:1.5, borderColor:'#cc0000', borderRadius:6, paddingHorizontal:7, paddingVertical:1, ...(canSplit&&Platform.OS==='web'?{cursor:'pointer'}:{})}}>
+        {showOrig && <Text style={{fontSize:10, fontWeight:'normal', color:'#000'}}>αρχ. {orig}</Text>}
         <Text style={{fontSize:15, fontWeight:'900', color:'#cc0000'}}>{q}τεμ</Text>
       </TouchableOpacity>
     );
@@ -2606,6 +2635,11 @@ export default function CustomScreen({ customOrders, setCustomOrders, soldOrders
 
     const handleDeleteAndRelease = async (order) => {
     if (isGuest) return;
+    // Η αρχική (μάνα) δεν διαγράφεται όσο υπάρχουν σπασμένα κομμάτια της.
+    if (hasAnyChildren(order)) {
+      notify('Δεν γίνεται', 'Η αρχική παραγγελία δεν διαγράφεται όσο υπάρχουν σπασμένα κομμάτια της.\nΔιάγραψε/ολοκλήρωσε πρώτα τα σπασμένα.');
+      return;
+    }
     // Διαγραφή από το UI
     setCustomOrders(prev => prev.filter(o => o.id !== order.id));
     // Διαγραφή από το Firebase
@@ -2615,6 +2649,18 @@ export default function CustomScreen({ customOrders, setCustomOrders, soldOrders
     if (order.orderType === 'ΤΥΠΟΠΟΙΗΜΕΝΗ') {
       const isMoni = (order.sasiType === 'ΜΟΝΗ ΘΩΡΑΚΙΣΗ' || !order.sasiType) && !order.lock;
       await removeStockReservation(order.orderNo, order.h, order.w, order.side, order.caseType, isMoni);
+    }
+    // Διαγραφή σπασμένου παιδιού → προσαρμογή «αρχικής» στη μάνα (και καθαρισμός αν δεν μένουν παιδιά).
+    if (order.splitChild) {
+      const mother = (customOrders||[]).find(m => m.id!==order.id && m.origQty!=null && String(order.orderNo).startsWith(splitChildPrefix(m)||'\u0000'));
+      if (mother) {
+        const stillHasChild = (customOrders||[]).some(c => c.id!==order.id && c.splitChild && String(c.orderNo).startsWith(splitChildPrefix(mother)));
+        let upd;
+        if (!stillHasChild) { upd = {...mother}; delete upd.origQty; }
+        else { upd = {...mother, origQty: String(Math.max(parseInt(mother.qty)||0, (parseInt(mother.origQty)||0) - (parseInt(order.qty)||0))) }; }
+        setCustomOrders(prev => prev.map(o=>o.id===mother.id?upd:o));
+        await syncToCloud(upd);
+      }
     }
   };
 
@@ -3151,10 +3197,16 @@ export default function CustomScreen({ customOrders, setCustomOrders, soldOrders
   ) : null;
   // Κουμπί «προς αποθήκη»: πράσινο βελάκι — εμφανίζεται όταν η παραγγελία ολοκληρώθηκε + υπάρχει stock.
   const renderToReadyBtn = (o, onPress) => (
+    hasActiveChildren(o) ? (
+      <View style={{backgroundColor:'#cccccc', paddingHorizontal:8, paddingVertical:6, borderRadius:5, alignItems:'center', minWidth:96, opacity:0.8}}>
+        <Text style={{color:'#fff', fontSize:9, fontWeight:'bold', textAlign:'center'}}>⏳ περιμένει σπασμένα</Text>
+      </View>
+    ) : (
     <TouchableOpacity onPress={onPress || (()=>confirmSendToReady(o))}
       style={{backgroundColor:'#00C851', paddingHorizontal:8, paddingVertical:6, borderRadius:5, alignItems:'center', minWidth:96}}>
       <Text style={{color:'white', fontSize:11, fontWeight:'bold'}}>➜ προς αποθήκη</Text>
     </TouchableOpacity>
+    )
   );
   // Read mode: ίδιο βελάκι, μη-πατήσιμο + αναβοσβήνει για να ξεχωρίζει η έτοιμη παραγγελία.
   const renderToReadyInfo = (o) => (
