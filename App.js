@@ -1092,6 +1092,7 @@ export default function App() {
           setCustomOrders, setSoldOrders, setSasiOrders, setSoldSasiOrders,
           setCaseOrders, setSoldCaseOrders, setCustomers, setCoatings,
           setDipliSasiStock, setLocks, setSasiStock, setCaseStock, setQuotes,
+          setMisc, setCylinders,
           setLoading, setActivityRefreshKey, isSeller, sellerKey,
         });
       } catch (e) {

@@ -98,7 +98,7 @@ export function subscribeFirebaseRealtime(setters) {
   const finish = () => { if (!done) { done = true; setLoading(false); } };
 
   let readyCount = 0;
-  const TOTAL_PATHS = 10;
+  const TOTAL_PATHS = 12;
   const onFirstSnapshot = () => {
     readyCount++;
     if (readyCount >= TOTAL_PATHS) finish();
@@ -164,6 +164,12 @@ export function subscribeFirebaseRealtime(setters) {
   mk('case_stock', v => S.setCaseStock(v || {}));
   mk('std_quotes', data => {
     S.setQuotes(data ? Object.keys(data).map(key => ({ id: key, ...data[key] })) : []);
+  });
+  mk('misc', data => {
+    if (S.setMisc) S.setMisc(data ? Object.keys(data).map(key => ({ id: key, ...data[key] })) : []);
+  });
+  mk('cylinders', data => {
+    if (S.setCylinders) S.setCylinders(data ? Object.keys(data).map(key => ({ id: key, ...data[key] })) : []);
   });
 
   unsubs.push(onValue(ref(db, 'activity_log'), () => {
