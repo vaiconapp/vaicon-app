@@ -1133,21 +1133,7 @@ export default function App() {
     return () => sub.remove();
   }, [menuOpen, showActivity, showCoatings, showLocks, showCylinders, showMisc, showCustomers, tabIndex, staveraFilterModalVisible, globalSearchModalVisible, closeGlobalSearchModal, incomingMsg, unreadPrompt, showInbox, showMessages]);
 
-  useEffect(() => {
-    let alive = true;
-    (async () => {
-      try {
-        const [c, m] = await Promise.all([
-          fetch(`${FIREBASE_URL}/cylinders.json`).then(r => r.ok ? r.json() : null),
-          fetch(`${FIREBASE_URL}/misc.json`).then(r => r.ok ? r.json() : null),
-        ]);
-        if (!alive) return;
-        setCylinders(c ? Object.keys(c).map(k => ({ id: k, ...c[k] })) : []);
-        setMisc(m ? Object.keys(m).map(k => ({ id: k, ...m[k] })) : []);
-      } catch {}
-    })();
-    return () => { alive = false; };
-  }, []);
+  // (Τα «διάφορα»/«αφαλοί» φορτώνονται πλέον μέσα στο fetchData — μετά τη σύνδεση, ορατά σε όλους.)
 
   // ΠΡΟΣΩΡΙΝΟ: εφάπαξ γέμισμα ΑΦΑΛΩΝ & ΔΙΑΦΟΡΩΝ από PDF — μόνο αφού συνδεθεί ο admin.
   const seededRef = useRef(false);
@@ -1168,11 +1154,13 @@ export default function App() {
       if (!r.ok) throw new Error(`Firebase error ${r.status}: ${url}`);
       return r.json();
     });
+    // Ανεκτικό fetch για καταλόγους (διάφορα/αφαλοί): αν αποτύχει, δεν ρίχνει όλο το φόρτωμα.
+    const softFetch = (url) => fetch(url, { signal }).then(r => r.ok ? r.json() : null).catch(() => null);
     // Πωλητής: φέρνει από τη βάση ΜΟΝΟ τα δικά του (seller == sellerKey).
     const sellerQ = (isSeller && sellerKey) ? `?orderBy=${encodeURIComponent('"seller"')}&equalTo=${encodeURIComponent(`"${sellerKey}"`)}` : '';
     try {
       const [
-        dataStd, data2, data3, data4, data5, data6, data7, dataSasiStock, dataCaseStock, dataQuotes
+        dataStd, data2, data3, data4, data5, data6, data7, dataSasiStock, dataCaseStock, dataQuotes, dataMisc, dataCyl
       ] = await Promise.all([
         fetchJSON(`${FIREBASE_URL}/std_orders.json${sellerQ}`),
         fetchJSON(`${FIREBASE_URL}/sasi_orders.json`),
@@ -1184,6 +1172,8 @@ export default function App() {
         fetchJSON(`${FIREBASE_URL}/sasi_stock.json`),
         fetchJSON(`${FIREBASE_URL}/case_stock.json`),
         fetchJSON(`${FIREBASE_URL}/std_quotes.json${sellerQ}`),
+        softFetch(`${FIREBASE_URL}/misc.json`),
+        softFetch(`${FIREBASE_URL}/cylinders.json`),
       ]);
 
       applyFetchedBundle(
@@ -1196,6 +1186,9 @@ export default function App() {
           dataStd, data2, data3, data4, data5, data6, data7, dataSasiStock, dataCaseStock, dataQuotes,
         }
       );
+      // Κατάλογοι «διάφορα»/«αφαλοί» — φορτώνονται μετά τη σύνδεση, όπως οι κλειδαριές (ορατά σε όλους).
+      if (dataMisc !== null) setMisc(dataMisc ? Object.keys(dataMisc).map(k => ({ id: k, ...dataMisc[k] })) : []);
+      if (dataCyl !== null) setCylinders(dataCyl ? Object.keys(dataCyl).map(k => ({ id: k, ...dataCyl[k] })) : []);
       setActivityRefreshKey(k => k + 1);
     } catch (error) {
       if (error.name !== 'AbortError') {
