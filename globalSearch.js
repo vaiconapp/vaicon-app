@@ -121,6 +121,10 @@ function tabForStd(o) {
   return 'customMoni';
 }
 
+// Ίδιος κανόνας με τη λίστα (CustomScreen): «μόνο επενδύσεις» build εμφανίζεται στις ΚΑΤΑΧΩΡΗΜΕΝΕΣ, όχι στο ΠΡΟΣ ΚΑΤΑΣΚΕΥΗ.
+const isOversizeStd = (o) => (o.sasiType === 'ΜΟΝΗ ΘΩΡΑΚΙΣΗ' || !o.sasiType) && (String(o.h) === '223' || String(o.w) === '83');
+const isCoatingsOnlyStd = (o) => o.status === 'STD_BUILD' && !isOversizeStd(o) && o.buildTasks && Object.keys(o.buildTasks).length > 0 && Object.keys(o.buildTasks).every(k => k.startsWith('epend') || k === 'montage');
+
 /** Τυποποιημένη (std_orders) — μία εγγραφή ανά παραγγελία· όχι κατάλογος Παραδόσεις (αποφυγή διπλών). */
 function whereStd(o, isSold) {
   const md = monoDipli(o);
@@ -134,8 +138,11 @@ function whereStd(o, isSold) {
     return { where: `Τυποποιημένες › ΣΕ ΑΝΑΜΟΝΗ › ${md}`, tab: tabForStd(o) };
   }
   const st = o.status || '';
+  const isMoni = o.sasiType !== 'ΔΙΠΛΗ ΘΩΡΑΚΙΣΗ';
+  let label = statusLabel(st);
+  if (isMoni && (isCoatingsOnlyStd(o) || (st === 'STD_READY' && o.staveraPendingAtReady))) label = 'Καταχωρημένη';
   return {
-    where: `Τυποποιημένες › ${statusLabel(st)} › ${md}`,
+    where: `Τυποποιημένες › ${label} › ${md}`,
     tab: tabForStd(o),
   };
 }

@@ -792,9 +792,9 @@ export default function CustomScreen({ customOrders, setCustomOrders, soldOrders
     if (!o) return;
     let sec;
     if (o.onHold) sec = 'hold';
-    else if (o.status === 'STD_READY') sec = 'ready';
+    else if (o.status === 'STD_READY') sec = ((forcedTab === 'ΜΟΝΗ') && o.staveraPendingAtReady) ? 'orders' : 'ready';
     else if (o.status === 'STD_SOLD') sec = 'sold';
-    else if (o.status === 'STD_BUILD') sec = 'build';
+    else if (o.status === 'STD_BUILD') sec = ((forcedTab === 'ΜΟΝΗ') && isCoatingsOnlyBuild(o)) ? 'orders' : 'build';
     else sec = (forcedTab === 'ΜΟΝΗ') ? 'orders' : 'build';
     setActiveSection(sec);
   }, [highlightOrderId]);
