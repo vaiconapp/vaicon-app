@@ -5,7 +5,7 @@ import { fmtDate } from './utils';
 import { printHTML } from './printUtils';
 import { phoneKey, normTxt, custSortKey, findDuplicateCustomers } from './formatHelpers';
 
-const INIT = { name: '', phone: '', phone2: '', phone3: '', phoneViber: '', email: '', identifier: '', city: '', profession: '', seller: '' };
+const INIT = { name: '', phone: '', phone2: '', phone3: '', phoneViber: '', email: '', identifier: '', city: '', agency: false, profession: '', seller: '' };
 
 export default function CustomersScreen({ customers, setCustomers, isAdmin=false, onClose, prefillName, onCustomerAdded, allOrders=[], setCustomOrders, setSoldOrders, sellers=[], currentUserName='', resolveLabel=(u)=>u }) {
   const [form, setForm] = useState(prefillName ? { ...INIT, name: prefillName } : INIT);
@@ -174,7 +174,7 @@ export default function CustomersScreen({ customers, setCustomers, isAdmin=false
     setForm({
       name: c.name || '', phone: c.phone || '', phone2: c.phone2 || '', phone3: c.phone3 || '',
       phoneViber: c.phoneViber || '', email: c.email || '', identifier: c.identifier || '',
-      city: c.city || '', profession: c.profession || '', seller: c.seller || '',
+      city: c.city || '', agency: !!c.agency, profession: c.profession || '', seller: c.seller || '',
     });
     setEditingId(c.id);
     scrollRef.current?.scrollTo({ y: 0, animated: true });
@@ -314,6 +314,11 @@ export default function CustomersScreen({ customers, setCustomers, isAdmin=false
                 </View>
               )}
             </View>
+            <TouchableOpacity onPress={()=>setForm(f=>({...f, agency:!f.agency}))}
+              style={[styles.input, { width:100, alignSelf:'flex-start', flexDirection:'row', alignItems:'center', justifyContent:'center', gap:4, backgroundColor: form.agency?'#e8f5e9':'#fff', borderColor: form.agency?'#2e7d32':'#ddd' }]}>
+              <Text style={{ fontSize:15 }}>{form.agency?'✅':'⬜'}</Text>
+              <Text style={{ fontSize:12, fontWeight:'bold', color: form.agency?'#2e7d32':'#888' }}>Πρακτ.</Text>
+            </TouchableOpacity>
             <View style={{ flex:1 }}>
               <TextInput style={[styles.input, { marginBottom: professionSuggestions.length ? 0 : 8 }]} placeholder="Επάγγελμα" value={form.profession} onChangeText={v => setForm({...form, profession:v})} />
               {professionSuggestions.length > 0 && (
@@ -425,6 +430,11 @@ export default function CustomersScreen({ customers, setCustomers, isAdmin=false
                       </View>
                     );
                   })()}
+                  {c.agency && (
+                    <View style={{ backgroundColor:'#FFC107', borderRadius:4, paddingHorizontal:8, paddingVertical:3 }}>
+                      <Text style={{ color:'#5d4037', fontWeight:'bold', fontSize:11 }}>🏢 ΠΑΡΑΔΟΣΗ ΣΕ ΠΡΑΚΤΟΡΕΙΟ</Text>
+                    </View>
+                  )}
                 </View>
                 {(()=>{
                   const items = [

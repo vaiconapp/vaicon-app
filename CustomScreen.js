@@ -22,7 +22,7 @@ import MiniCalendar from './MiniCalendar';
 
 const STD_HEIGHTS = ['208','213','218','223'];
 const STD_WIDTHS  = ['83','88','93','98'];
-const INIT_FORM   = { customer:'', orderNo:'', h:'', w:'', hinges:'2', qty:'1', glassDim:'', glassNotes:'', armor:'ΜΟΝΗ', side:'ΔΕΞΙΑ', lock:'', cylinder:'', notes:'', status:'PENDING', hardware:'', installation:'ΟΧΙ', placement:'ΟΧΙ', caseType:'ΚΛΕΙΣΤΟΥ ΤΥΠΟΥ', caseMaterial:'DKP', deliveryDate:'', sasiType:'ΜΟΝΗ ΘΩΡΑΚΙΣΗ', dipliModel:'', coatings:[], coatingDetails:{}, stavera:[], stavColumn:null, heightReduction:'', kypri:'ΟΧΙ', misc:[], priceList:[], priceDiscount:'', priceLog:[], priceNote:'' };
+const INIT_FORM   = { customer:'', orderNo:'', h:'', w:'', hinges:'2', qty:'1', glassDim:'', glassNotes:'', armor:'ΜΟΝΗ', side:'ΔΕΞΙΑ', lock:'', cylinder:'', notes:'', status:'PENDING', hardware:'', installation:'ΟΧΙ', placement:'ΟΧΙ', caseType:'ΚΛΕΙΣΤΟΥ ΤΥΠΟΥ', caseMaterial:'DKP', deliveryDate:'', sasiType:'ΜΟΝΗ ΘΩΡΑΚΙΣΗ', dipliModel:'', coatings:[], coatingDetails:{}, stavera:[], stavColumn:null, heightReduction:'', kypri:'ΟΧΙ', misc:[], packaging:false, agency:false, priceList:[], priceDiscount:'', priceLog:[], priceNote:'' };
 
 /** Ετικέτες σταδίων κατασκευής — με/χωρίς εικονίδιο, με δυναμική ετικέτα ανά επένδυση (epend{i}) */
 const STD_TASK_LABELS_ICON  = { stavera:'📐 Σταθερό', lock:'🔒 Κλειδαριά', heightReduction:'📏 Μείωση', montage:'🪛 Μοντάρ.', sasi:'🔧 Σασί', kypri:'🪟 Κυπρί', case:'📦 Κάσα', oversize:'📦 223/83' };
@@ -644,6 +644,15 @@ export default function CustomScreen({ customOrders, setCustomOrders, soldOrders
   const [splitModal, setSplitModal] = useState({ visible:false, order:null });
   const [readyConfirmModal, setReadyConfirmModal] = useState({ visible:false, order:null, sasiItem:null, caseItem:null });
   const [confirmModal, setConfirmModal] = useState({ visible:false, title:'', message:'', confirmText:'', onConfirm:null });
+  const [shipModal, setShipModal] = useState({ visible:false, kind:'', hits:[] });
+  const [shipSel, setShipSel] = useState(new Set());
+  const openShipModal = (kind) => {
+    const field = kind === 'ΣΥΣΚΕΥΑΣΙΑ' ? 'packaging' : 'agency';
+    const list = (customOrders || []).filter(o => (o.status==='STD_BUILD'||o.status==='STD_READY'||o.status==='PROD') && !o.onHold && o[field]).sort((a,b)=>(parseInt(a.orderNo)||0)-(parseInt(b.orderNo)||0));
+    if (!list.length) { setConfirmModal({ visible:true, title:kind, message:'Δεν υπάρχουν παραγγελίες.', confirmText:'ΟΚ', onConfirm:null }); return; }
+    setShipSel(new Set(list.map((_,i)=>i)));
+    setShipModal({ visible:true, kind, hits:list });
+  };
   const [taskBasket, setTaskBasket] = useState(null);
   const [smsToast, setSmsToast] = useState({ visible:false, text:'', kind:'ok' });
   const [coatDetailsModal, setCoatDetailsModal] = useState({ visible:false, order:null });
@@ -1177,7 +1186,9 @@ export default function CustomScreen({ customOrders, setCustomOrders, soldOrders
     : l === 'heightReduction' ? !!String(src.heightReduction || '').trim()
     : l === 'hinges3' ? extraHinges(src) > 0
     : l === 'pihaki' ? pihakiCount(src) > 0
-    : l === 'galva' ? (!!src.caseMaterial && src.caseMaterial !== 'DKP') : false;
+    : l === 'galva' ? (!!src.caseMaterial && src.caseMaterial !== 'DKP')
+    : l === 'packaging' ? !!src.packaging
+    : l === 'agency' ? !!src.agency : false;
   // Αυτόματες χρεώσεις από τις τρέχουσες επιλογές + ζωντανές τιμές μενού/τιμοκαταλόγου.
   const loadCatalog = async () => { try { const c = await (await fetch(`${FIREBASE_URL}/price_catalog.json`)).json(); return c ? Object.values(c) : []; } catch { return []; } };
   const stavRuleNames = (cat) => (cat || []).filter(e => e && e.hasRule && (e.ruleKind === 'glass' || e.ruleKind === 'design')).map(e => String(e.name || '').trim()).filter(Boolean);
@@ -1230,11 +1241,23 @@ export default function CustomScreen({ customOrders, setCustomOrders, soldOrders
     ? [...list, { label: 'Τοποθέτηση', value: '', qty: '1' }] : list;
   // Καθαρίζει παλιές γραμμές «Κολώνες σταθερών» (όταν αλλάζει χρώμα) — η τρέχουσα ξαναμπαίνει από το buildAutoLines.
   const dropStaleStavCol = (list) => (Array.isArray(list) ? list : []).filter(l => !(misc || []).some(m => m && m.link === 'stavCol' && m.name === String(l?.label || '').trim()));
+  // Αφαιρεί αυτόματες χρεώσεις «δεμένων» ειδών (συσκευασία/πρακτορείο) όταν το αντίστοιχο κουμπί ξετσεκαριστεί.
+  const dropInactiveLinks = (list, src) => (Array.isArray(list) ? list : []).filter(l => {
+    const lab = String(l?.label || '').trim();
+    const m = (misc || []).find(x => x && (x.link === 'packaging' || x.link === 'agency') && x.name === lab);
+    return !m || linkActive(src, m.link);
+  });
+  // Συσκευασία & έξοδα πρακτορείου: πάντα στο τέλος της λίστας (άσχετα πότε μπήκαν).
+  const tailLinks = (list) => {
+    const arr = Array.isArray(list) ? list : [];
+    const has = (link, l) => (misc || []).some(x => x && x.link === link && x.name === String(l?.label || '').trim());
+    return [...arr.filter(l => !has('packaging', l) && !has('agency', l)), ...arr.filter(l => has('packaging', l)), ...arr.filter(l => has('agency', l))];
+  };
   // Ανοίγει το πλαίσιο τιμών με ενημερωμένες αυτόματες χρεώσεις (προσθέτει μόνο όσες λείπουν).
   const openPriceModal = async (order) => {
     const src = order || customForm;
     const cat = await loadCatalog();
-    const merged = withTail(applyAutoPriceLines(dropStaleStav(dropStaleStavCol(src.priceList || []), stavRuleNames(cat)), await buildAutoLines(src, cat)), src);
+    const merged = tailLinks(withTail(applyAutoPriceLines(dropInactiveLinks(dropStaleStav(dropStaleStavCol(src.priceList || []), stavRuleNames(cat)), src), await buildAutoLines(src, cat)), src));
     if (order) {
       const before = order.priceList || [];
       const isArchive = order.status === 'SOLD' || soldOrders.some(o => o.id === order.id);
@@ -1255,6 +1278,37 @@ export default function CustomScreen({ customOrders, setCustomOrders, soldOrders
   );
 
   // Κουμπί εγγράφου πελάτη (φωτό με QR) + κουμπί τιμών — μέσα στην κάρτα, όπως vaicon-eidikes.
+  // Εναλλαγή συσκευασίας/πρακτορείου από την κάρτα — ενημερώνει και τη χρέωση (μπαίνει/βγαίνει).
+  const toggleOrderShip = async (order, field) => {
+    const on = !order[field];
+    const names = (misc || []).filter(x => x && x.link === field).map(x => x.name);
+    let pl = (order.priceList || []).filter(l => !names.includes(String(l?.label || '').trim()));
+    if (on) {
+      const doors = parseInt(order.qty, 10) > 0 ? parseInt(order.qty, 10) : 1;
+      for (const it of (misc || []).filter(x => x && x.link === field)) {
+        const price = parseFloat(String(it.price).replace(',', '.'));
+        if (!isNaN(price) && price > 0) pl.push({ label: it.name, value: String(it.price), qty: String(doors), def: String(it.price) });
+      }
+    }
+    pl = tailLinks(pl);
+    const priceTotal = priceFinalTotal(pl, order.priceDiscount);
+    const priceLog = appendPriceLog(order.priceLog, priceTotal, pl.length > 0);
+    const upd = { ...order, [field]: on, priceList: pl, priceTotal, priceLog };
+    setCustomOrders(prev => prev.map(o => o.id === order.id ? upd : o));
+    setSoldOrders(prev => prev.map(o => o.id === order.id ? upd : o));
+    try { await fetch(`${FIREBASE_URL}/std_orders/${order.id}.json`, { method: 'PATCH', body: JSON.stringify({ [field]: on, priceList: pl, priceTotal, priceLog }) }); } catch {}
+  };
+  const renderShipBoxes = (order, ro = false) => {
+    const mk = (field, label) => {
+      const on = !!order[field];
+      const st = { flexDirection: 'row', alignItems: 'center', gap: 3, backgroundColor: on ? '#e8f5e9' : '#f0f0f0', borderRadius: 6, paddingVertical: 6, paddingHorizontal: 8, borderWidth: 1.5, borderColor: on ? '#00C851' : '#ccc' };
+      const inner = (<><Text style={{ fontSize: 12 }}>{on ? '✅' : '⬜'}</Text><Text style={{ fontSize: 11, fontWeight: 'bold', color: on ? '#2e7d32' : '#9e9e9e' }}>{label}</Text></>);
+      return ro
+        ? <View key={field} style={st}>{inner}</View>
+        : <TouchableOpacity key={field} onPress={() => setConfirmModal({ visible: true, title: 'Επιβεβαίωση', message: `Αλλαγή «${label}» σε ${on ? 'ΟΧΙ' : 'ΝΑΙ'};`, confirmText: 'ΝΑΙ, ΑΛΛΑΓΗ', onConfirm: () => toggleOrderShip(order, field) })} style={st}>{inner}</TouchableOpacity>;
+    };
+    return <View style={{ flexDirection: 'row', gap: 6 }}>{mk('packaging', 'Συσκευασία')}{mk('agency', 'Πρακτορείο')}</View>;
+  };
   const renderDocButton = (order) => {
     if (isGuest && !locked) return null;
     const ro = locked;
@@ -1306,6 +1360,7 @@ export default function CustomScreen({ customOrders, setCustomOrders, soldOrders
             </TouchableOpacity>
           );
         })()}
+        {renderShipBoxes(order, locked || isSeller || isForeman)}
       </View>
     );
   };
@@ -1440,6 +1495,18 @@ export default function CustomScreen({ customOrders, setCustomOrders, soldOrders
     const next = computeAutoNo();
     setCustomForm(f => f.orderNo === next ? f : { ...f, orderNo: next });
   }, [crossOrderNos, orderSeq, customOrders, soldOrders, editingOrder, orderNoAuto, customForm.orderNo]);
+
+  // Φάση 2: πελάτης «πρακτορείο» → αυτόματο τσεκ σε Συσκευασία + Πρακτορείο (μία φορά ανά επιλογή· ξετσεκάρεται χειροκίνητα).
+  const agencyAutoRef = useRef(null);
+  useEffect(() => {
+    if (editingOrder || editingQuote) return;
+    const c = selectedCustomer;
+    if (!c) { agencyAutoRef.current = null; return; }
+    if (c.agency && agencyAutoRef.current !== c.id) {
+      agencyAutoRef.current = c.id;
+      setCustomForm(f => ({ ...f, packaging: true, agency: true }));
+    }
+  }, [selectedCustomer, editingOrder, editingQuote]);
 
   const blurAll = () => {
     Object.values(staveraHRefs.current).forEach(r=>r?.blur());
@@ -3779,6 +3846,73 @@ export default function CustomScreen({ customOrders, setCustomOrders, soldOrders
     }
   };
 
+  // Χαρτί ΣΥΣΚΕΥΑΣΙΑ / ΠΡΑΚΤΟΡΕΙΟ — μπλοκ ανά παραγγελία (ίδιο με τις ειδικές).
+  const buildShipPrintHTML = (orders, kind) => {
+    const esc = (s) => String(s==null?'':s).replace(/[&<>]/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;'}[c]));
+    const today = new Date();
+    const dateStr = `${String(today.getDate()).padStart(2,'0')}/${String(today.getMonth()+1).padStart(2,'0')}/${today.getFullYear()}`;
+    const slips = [...orders].sort((a,b)=>(parseInt(a.orderNo)||0)-(parseInt(b.orderNo)||0)).map(o => {
+      const c = findCustomerOf(o) || {};
+      const phone = [c.phone, c.phone2, c.phone3].filter(Boolean).join('  ·  ');
+      const addr = c.city || '';
+      const base = o.orderNo || '—';
+      const det = [];
+      const add = (l,v) => { const t=v==null?'':String(v).trim(); if(t) det.push(`<span class="lbl">${l}:</span> <b>${esc(t)}</b>`); };
+      add('Διάσταση', `${o.h||'—'}×${o.w||'—'}`);
+      const qtyBig = parseInt(o.qty,10)>1 ? `<div class="qty">${esc(o.qty)} ΤΕΜΑΧΙΑ</div>` : '';
+      const stav = (o.stavera||[]).filter(s=>s&&s.dim).map(s=>(s.qty?`${s.qty}τεμ `:'')+[s.dim,s.design,s.color].filter(Boolean).join(' ')).join(' | ');
+      if (stav) add('Σταθερά', stav);
+      const col = o.stavColumn?.name ? String(o.stavColumn.name).replace('ΚΟΛΩΝΕΣ ΣΤΑΘΕΡΩΝ ','').trim() : '';
+      if (col) add('Κολώνες', (o.stavColumn?.qty?`${o.stavColumn.qty}× `:'')+col);
+      add('Φορά', o.side==='ΑΡΙΣΤΕΡΗ'?'ΑΡΙΣΤΕΡΗ':'ΔΕΞΙΑ');
+      add('Θωράκιση', (o.sasiType||'').includes('ΔΙΠΛΗ')?'ΔΙΠΛΗ':'ΜΟΝΗ');
+      if (o.kypri==='ΝΑΙ') add('Κυπρί','ΝΑΙ');
+      const glass = [o.glassDim,o.glassNotes].filter(Boolean).join(' ');
+      if (glass) add('Τζάμι', glass);
+      if (o.hardware) add('Χρ. Εξαρτ.', o.hardware);
+      const coat = (o.coatings||[]).filter(n=>n&&String(n).trim()).join(', ');
+      if (coat) add('Επένδυση', coat);
+      const notes = o.notes!=null?String(o.notes).trim():'';
+      return `<article class="slip">
+        <div class="head">
+          <div class="l1"><span class="no">${esc(base)}</span> <span class="cust">${esc(o.customer||c.name||'—')}</span></div>
+          ${phone?`<div class="ph">📞 ${esc(phone)}</div>`:''}
+          ${addr?`<div class="addr">📍 ${esc(addr)}</div>`:''}
+        </div>
+        ${qtyBig}
+        ${det.length?`<div class="det">${det.join(' · ')}</div>`:''}
+        ${notes?`<div class="notes"><b>Παρατηρήσεις:</b> ${esc(notes)}</div>`:''}
+        ${kind==='ΠΡΑΚΤΟΡΕΙΟ'?'':`<div class="phase"><span class="lbl">Φάση:</span> <b>${esc(getOrderTabInfo(o).label)}</b></div>`}
+      </article>`;
+    }).join('');
+    return `<!DOCTYPE html><html><head><meta charset="utf-8"><title>VAICON — ${esc(kind)}</title><style>
+      body{font-family:Arial,Helvetica,sans-serif;margin:8mm;color:#111;font-size:12px;}
+      h1{font-size:16px;margin:0 0 8px 0;}
+      .slip{page-break-inside:avoid;padding:6px 0;border-bottom:1px dashed #999;}
+      .slip:last-child{border-bottom:none;}
+      .head{margin-bottom:2px;}
+      .head .l1{display:flex;flex-wrap:wrap;align-items:baseline;gap:14px;}
+      .head .no{font-size:38px;font-weight:900;letter-spacing:1px;}
+      .head .cust{font-size:30px;font-weight:bold;}
+      .head .ph{font-size:28px;color:#0d47a1;font-weight:900;margin-top:2px;}
+      .head .addr{font-size:22px;color:#222;font-weight:bold;margin-top:2px;}
+      .qty{font-size:24px;font-weight:900;color:#c62828;margin-top:3px;}
+      .det{margin-top:3px;font-size:12px;line-height:1.4;}
+      .det .lbl{color:#555;}
+      .notes{margin-top:3px;font-size:12px;white-space:pre-wrap;}
+      .phase{margin-top:3px;font-size:12px;color:#1a1a1a;}
+      @media print{@page{size:A4;margin:8mm;}}
+    </style></head><body>
+      <h1>🖨️ ${esc(kind)} — ${dateStr} (${orders.length})</h1>
+      ${slips}
+    </body></html>`;
+  };
+  const handleShipPrint = async (orders, kind) => {
+    if (!orders.length) return;
+    try { await printHTML(buildShipPrintHTML(orders, kind), `VAICON — ${kind}`); }
+    catch(e) { Alert.alert('Σφάλμα','Δεν δημιουργήθηκε το PDF.'); }
+  };
+
   // Εκτύπωση τυποποιημένων — με στήλες ΚΑΣΑ/ΣΑΣΙ/ΜΟΝΤΑΡΙΣΜΑ
   const handleStdPrint = async (orders, title, caseReady, sasiReady, isMounting=true) => {
     if (!orders.length) return Alert.alert("Προσοχή","Δεν υπάρχουν παραγγελίες για εκτύπωση.");
@@ -4478,6 +4612,54 @@ export default function CustomScreen({ customOrders, setCustomOrders, soldOrders
         </View>
       </Modal>
 
+      {shipModal.visible && (
+        <View style={[{position:'absolute', top:0, left:0, right:0, bottom:0, backgroundColor:'rgba(0,0,0,0.5)', justifyContent:'center', alignItems:'center', zIndex:2000}, Platform.OS==='web'?{position:'fixed'}:{}]}>
+          <View style={{backgroundColor:'#fff', borderRadius:14, padding:16, width:'100%', maxWidth:760, maxHeight:'88%'}}>
+            <View style={{flexDirection:'row', alignItems:'center', justifyContent:'space-between', marginBottom:8}}>
+              <Text style={{fontSize:17, fontWeight:'bold', color:'#1a1a1a'}}>🖨️ {shipModal.kind} ({shipModal.hits.length})</Text>
+            </View>
+            <View style={{flexDirection:'row', alignItems:'center', gap:8, marginBottom:8, flexWrap:'wrap'}}>
+              <TouchableOpacity onPress={()=>setShipSel(new Set(shipModal.hits.map((_,i)=>i)))} style={{backgroundColor:'#eee', borderRadius:8, paddingHorizontal:10, paddingVertical:6}}><Text style={{fontWeight:'bold', color:'#555', fontSize:13}}>Όλα ✓</Text></TouchableOpacity>
+              <TouchableOpacity onPress={()=>setShipSel(new Set())} style={{backgroundColor:'#eee', borderRadius:8, paddingHorizontal:10, paddingVertical:6}}><Text style={{fontWeight:'bold', color:'#555', fontSize:13}}>Καθάρισμα</Text></TouchableOpacity>
+              <TouchableOpacity disabled={shipSel.size===0} onPress={()=>{ const orders=[...shipSel].sort((a,b)=>a-b).map(i=>shipModal.hits[i]).filter(Boolean); if(orders.length){ handleShipPrint(orders, shipModal.kind); setShipModal({visible:false,kind:'',hits:[]}); } }} style={{backgroundColor: shipSel.size?'#1565C0':'#ccc', borderRadius:8, paddingHorizontal:10, paddingVertical:6, marginLeft:'auto'}}><Text style={{fontWeight:'bold', color:'#fff', fontSize:13}}>Εκτύπωση ({shipSel.size}) 🖨️</Text></TouchableOpacity>
+            </View>
+            <ScrollView style={{maxHeight:420}}>
+              {shipModal.hits.map((o,i)=>{
+                const tab=getOrderTabInfo(o); const isSel=shipSel.has(i);
+                const tint=o.status==='STD_READY'?'#e8f5e9':'#fff3e0';
+                const coat=(o.coatings||[]).filter(n=>n&&String(n).trim()).join(', ');
+                const c=findCustomerOf(o)||{}; const phones=[c.phone,c.phone2,c.phone3].filter(Boolean); const addr=c.city||'';
+                return (
+                  <View key={o.id+'-'+i} style={{flexDirection:'row', alignItems:'flex-start', gap:8, padding:8, borderBottomWidth:1, borderBottomColor:'#eee', backgroundColor:tint}}>
+                    <TouchableOpacity onPress={()=>setShipSel(p=>{const n=new Set(p); n.has(i)?n.delete(i):n.add(i); return n;})} style={{width:26, alignItems:'center', paddingTop:2}}><Text style={{fontSize:20, color:'#1565C0'}}>{isSel?'☑':'☐'}</Text></TouchableOpacity>
+                    <View style={{flex:1}}>
+                      <View style={{flexDirection:'row', alignItems:'center', gap:8, flexWrap:'wrap'}}>
+                        <Text style={{fontSize:16, fontWeight:'900', color:'#1a1a1a'}}>{o.orderNo||'—'}</Text>
+                        <Text style={{fontSize:14, fontWeight:'bold', color:'#333'}}>{o.customer||'—'}</Text>
+                        {addr?<Text style={{fontSize:12, color:'#333'}}>📍 {addr}</Text>:null}
+                        <View style={{backgroundColor:tab.color, borderRadius:4, paddingHorizontal:6, paddingVertical:1, marginLeft:'auto'}}><Text style={{color:'#fff', fontWeight:'bold', fontSize:10}}>{tab.label}</Text></View>
+                      </View>
+                      {phones.length?<Text style={{fontSize:18, color:'#0d47a1', fontWeight:'900', marginTop:2}}>📞 {phones.join('   ·   ')}</Text>:null}
+                      <View style={{flexDirection:'row', alignItems:'center', gap:6, flexWrap:'wrap', marginTop:2}}>
+                        <Text style={{fontSize:13, color:'#1a1a1a', fontWeight:'bold'}}>{o.h||'—'}×{o.w||'—'}</Text>
+                        <Text style={{fontSize:12, color:'#555'}}>{o.side==='ΑΡΙΣΤΕΡΗ'?'ΑΡ':'ΔΕ'}</Text>
+                        <Text style={{fontSize:12, color:'#555'}}>{(o.sasiType||'').includes('ΔΙΠΛΗ')?'Δ/Θ':'Μ/Θ'}</Text>
+                        {parseInt(o.qty,10)>1 ? <Text style={{fontSize:12, color:'#cc0000', fontWeight:'900'}}>{o.qty}τεμ</Text> : null}
+                        {o.kypri==='ΝΑΙ'?<Text style={{fontSize:11, color:'#6a1b9a', fontWeight:'bold'}}>ΚΥΠΡΙ</Text>:null}
+                        {coat?<Text style={{fontSize:11, color:'#b8860b', fontWeight:'bold'}} numberOfLines={1}>🎨 {coat}</Text>:null}
+                      </View>
+                    </View>
+                  </View>
+                );
+              })}
+            </ScrollView>
+            <TouchableOpacity onPress={()=>setShipModal({visible:false,kind:'',hits:[]})} style={{backgroundColor:'#1a1a1a', borderRadius:10, padding:12, alignItems:'center', marginTop:10}}>
+              <Text style={{color:'white', fontWeight:'bold'}}>ΚΛΕΙΣΙΜΟ</Text>
+            </TouchableOpacity>
+          </View>
+        </View>
+      )}
+
       {/* ══ ΚΥΡΙΟ ΠΕΡΙΕΧΟΜΕΝΟ ══ */}
       <View style={{flex:1}}>
       <SellModal visible={sellModal.visible} totalQty={sellModal.totalQty} onConfirm={handleSellConfirm} onCancel={()=>setSellModal({visible:false,orderId:null,totalQty:1})} />
@@ -5169,6 +5351,18 @@ export default function CustomScreen({ customOrders, setCustomOrders, soldOrders
                 </TouchableOpacity>
               </View>
             )}
+            <View style={{flexDirection:'row', gap:6, alignItems:'flex-end', marginLeft:48}}>
+              <TouchableOpacity onPress={()=>setCustomForm(f=>{ const on=!f.packaging; let pl=f.priceList||[]; if(!on){ const names=(misc||[]).filter(x=>x&&x.link==='packaging').map(x=>x.name); pl=pl.filter(l=>!names.includes(String(l?.label||'').trim())); } return {...f, packaging:on, priceList:pl}; })}
+                style={{flexDirection:'row', alignItems:'center', justifyContent:'center', gap:5, height:48, backgroundColor: customForm.packaging?'#e8f5e9':'#f0f0f0', borderRadius:8, paddingHorizontal:10, borderWidth:2, borderColor: customForm.packaging?'#00C851':'#cccccc'}}>
+                <Text style={{fontSize:15}}>{customForm.packaging?'✅':'⬜'}</Text>
+                <Text style={{fontSize:13, fontWeight:'bold', color: customForm.packaging?'#2e7d32':'#9e9e9e'}}>Συσκευασία</Text>
+              </TouchableOpacity>
+              <TouchableOpacity onPress={()=>setCustomForm(f=>{ const on=!f.agency; let pl=f.priceList||[]; if(!on){ const names=(misc||[]).filter(x=>x&&x.link==='agency').map(x=>x.name); pl=pl.filter(l=>!names.includes(String(l?.label||'').trim())); } return {...f, agency:on, priceList:pl}; })}
+                style={{flexDirection:'row', alignItems:'center', justifyContent:'center', gap:5, height:48, backgroundColor: customForm.agency?'#e8f5e9':'#f0f0f0', borderRadius:8, paddingHorizontal:12, borderWidth:2, borderColor: customForm.agency?'#00C851':'#cccccc'}}>
+                <Text style={{fontSize:15}}>{customForm.agency?'✅':'⬜'}</Text>
+                <Text style={{fontSize:13, fontWeight:'bold', color: customForm.agency?'#2e7d32':'#9e9e9e'}}>Πρακτορείο</Text>
+              </TouchableOpacity>
+            </View>
             {/* ── ΠΡΟΣΦΟΡΑ: κουμπιά στο ύψος του αριθμού (η προσφορά δεν παίρνει αριθμό) ── */}
             {!editingOrder && !groupState && (
               <View style={{flex:1, alignItems:'flex-end', justifyContent:'flex-end'}}>
@@ -6836,6 +7030,16 @@ export default function CustomScreen({ customOrders, setCustomOrders, soldOrders
               onPickDay={(ts)=>setDayModal({visible:true, ts})}
             />
           </View>
+          {!isSeller && (
+            <View style={{marginTop:12, flexDirection:'row', gap:6}}>
+              <TouchableOpacity style={{flex:1, backgroundColor:'#00838f', borderRadius:8, padding:11, alignItems:'center'}} onPress={()=>openShipModal('ΣΥΣΚΕΥΑΣΙΑ')}>
+                <Text style={{color:'white', fontWeight:'bold', fontSize:12}} numberOfLines={1}>🖨️ ΣΥΣΚΕΥΑΣΙΑ</Text>
+              </TouchableOpacity>
+              <TouchableOpacity style={{flex:1, backgroundColor:'#5d4037', borderRadius:8, padding:11, alignItems:'center'}} onPress={()=>openShipModal('ΠΡΑΚΤΟΡΕΙΟ')}>
+                <Text style={{color:'white', fontWeight:'bold', fontSize:12}} numberOfLines={1}>🖨️ ΠΡΑΚΤΟΡΕΙΟ</Text>
+              </TouchableOpacity>
+            </View>
+          )}
           </ScrollView>
         </View>
       )}

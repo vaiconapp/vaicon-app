@@ -30,6 +30,8 @@ const MISC = [
   { name: 'ΚΟΛΩΝΕΣ ΣΤΑΘΕΡΩΝ RAL', price: '60', link: 'stavCol' },
   { name: 'ΚΟΛΩΝΕΣ ΣΤΑΘΕΡΩΝ ΜΑΤ/ΣΑΜΠΛΕ', price: '65', link: 'stavCol' },
   { name: 'ΚΟΛΩΝΕΣ ΣΤΑΘΕΡΩΝ ΞΥΛΟΥ', price: '70', link: 'stavCol' },
+  { name: 'ΣΥΣΚΕΥΑΣΙΑ', price: '', link: 'packaging' },
+  { name: 'ΕΞΟΔΑ ΠΡΑΚΤΟΡΕΙΟΥ', price: '', link: 'agency' },
 ];
 
 async function seedNode(node, items, setItems) {
@@ -39,7 +41,7 @@ async function seedNode(node, items, setItems) {
     const found = list.find(e => e && N(e.name) === N(it.name));
     if (found) {
       const patch = {};
-      if (String(found.price || '').trim() !== it.price) patch.price = it.price;
+      if (it.price !== '' && String(found.price || '').trim() !== it.price) patch.price = it.price;
       if (it.link && found.link == null) patch.link = it.link;
       if (Object.keys(patch).length) {
         list = list.map(e => e.id === found.id ? { ...e, ...patch } : e);
