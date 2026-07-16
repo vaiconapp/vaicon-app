@@ -403,6 +403,15 @@ const RIGHT_TABS = [
 ];
 
 export default function App() {
+  // Αυτόματο ζουμ: σε μικρό παράθυρο σμικρύνει αναλογικά τα πάντα (κουμπιά+γράμματα) ώστε να μην πέφτουν το ένα πάνω στο άλλο· σε πλήρη οθόνη μένει στο κανονικό.
+  useEffect(() => {
+    if (Platform.OS !== 'web') return;
+    const DESIGN_WIDTH = 2000;
+    const apply = () => { try { document.body.style.zoom = String(Math.min(1, window.innerWidth / DESIGN_WIDTH)); } catch {} };
+    apply();
+    window.addEventListener('resize', apply);
+    return () => window.removeEventListener('resize', apply);
+  }, []);
   const pendingUserInfoRef = useRef(null);
   const [pendingLogin, setPendingLogin] = useState(null);
   // Με Firebase Auth, η αλήθεια έρχεται από το watchAuth (παρακάτω). Αλλιώς, από το localStorage.
