@@ -674,11 +674,32 @@ export default function App() {
     setGlobalSearchPrintSelected(new Set());
   }, []);
 
+  const searchListRef = useRef(null);
+  const searchRowYRef = useRef({});
+  const lastSearchHitIdRef = useRef(null);
+  const [bannerBlink, setBannerBlink] = useState(true);
+  // Πλήρες κλείσιμο: καθαρίζει τα πάντα (φεύγει και το μπάνερ).
   const closeGlobalSearchModal = useCallback(() => {
     setGlobalSearchPrintSelected(new Set());
     setGlobalSearchModalStaveraMode(false);
     setGlobalSearchModalVisible(false);
+    setGlobalSearchHits([]);
   }, []);
+  // Προσωρινό κρύψιμο: κρατά αποτελέσματα + τσεκαρίσματα, εμφανίζεται μπάνερ επαναφοράς.
+  const minimizeGlobalSearchModal = useCallback(() => setGlobalSearchModalVisible(false), []);
+  useEffect(() => {
+    if (!globalSearchModalVisible || Platform.OS !== 'web') return;
+    const id = lastSearchHitIdRef.current;
+    if (id == null) return;
+    const t = setTimeout(() => { try { const y = searchRowYRef.current[String(id)]; if (y != null && searchListRef.current?.scrollTo) searchListRef.current.scrollTo({ y: Math.max(0, y - 40), animated: false }); } catch {} }, 60);
+    return () => clearTimeout(t);
+  }, [globalSearchModalVisible]);
+  useEffect(() => {
+    const shown = !globalSearchModalVisible && effectiveSearchHits.length > 0;
+    if (!shown) return;
+    const id = setInterval(() => setBannerBlink((b) => !b), 550);
+    return () => clearInterval(id);
+  }, [globalSearchModalVisible, effectiveSearchHits.length]);
 
   const printSelectedSearchResults = async () => {
     const picked = [...globalSearchPrintSelected]
@@ -1136,7 +1157,7 @@ export default function App() {
         return true;
       }
       if (globalSearchModalVisible) {
-        closeGlobalSearchModal();
+        minimizeGlobalSearchModal();
         return true;
       }
       if (tabIndex !== 0) { setTabIndex(0); return true; }
@@ -2160,7 +2181,7 @@ export default function App() {
             <TouchableOpacity
               style={styles.searchBackdrop}
               activeOpacity={1}
-              onPress={closeGlobalSearchModal}
+              onPress={minimizeGlobalSearchModal}
             />
             <View style={styles.searchModalBox} pointerEvents="box-none">
               <View style={styles.searchModalHeaderRow}>
@@ -2212,7 +2233,7 @@ export default function App() {
                   </TouchableOpacity>
                 </View>
               ) : null}
-              <ScrollView style={{ maxHeight: 420 }} keyboardShouldPersistTaps="handled">
+              <ScrollView ref={searchListRef} style={{ maxHeight: 420 }} keyboardShouldPersistTaps="handled">
                 {effectiveSearchHits.length === 0 ? (
                   <Text style={{ textAlign: 'center', color: '#888', padding: 20 }}>
                     {globalSearchModalStaveraMode
@@ -2238,17 +2259,20 @@ export default function App() {
                             <Text style={{ color:'#fff', fontWeight:'bold', fontSize:12 }}>🗂 ΑΡΧΕΙΟ (πουλημένες)</Text>
                           </View>
                         ) : null}
-                      <View style={[styles.searchHitRow, { backgroundColor: rowTint }]}>
+                      <View
+                        onLayout={(e) => { searchRowYRef.current[String(hit.id)] = e.nativeEvent.layout.y; }}
+                        style={[styles.searchHitRow, { backgroundColor: rowTint }, String(lastSearchHitIdRef.current) === String(hit.id) && { borderWidth: 2, borderColor: '#007AFF' }]}>
                         <TouchableOpacity
                           style={styles.searchHitMain}
                           activeOpacity={0.7}
                           onPress={() => {
                             const live = resolveLiveStdOrder(hit, customOrders);
+                            lastSearchHitIdRef.current = hit.id;
                             setGlobalSearchHighlightOrderId(String(live?.id ?? hit.id));
                             setGlobalSearchStockMeta(hit.stockMeta || null);
                             const ix = TABS.indexOf(hit.tab);
                             if (ix >= 0) setTabIndex(ix);
-                            closeGlobalSearchModal();
+                            minimizeGlobalSearchModal();
                           }}
                         >
                           <Text style={styles.searchHitSummary}>{hit.summary}</Text>
@@ -2292,6 +2316,17 @@ export default function App() {
                 <Text style={{ color: 'white', fontWeight: 'bold' }}>ΚΛΕΙΣΙΜΟ</Text>
               </TouchableOpacity>
             </View>
+          </View>
+        ) : null}
+
+        {!globalSearchModalVisible && effectiveSearchHits.length > 0 ? (
+          <View style={[{ position:'absolute', bottom:16, right:16, zIndex:1500, flexDirection:'row', alignItems:'center', backgroundColor: bannerBlink ? '#d32f2f' : '#ff8a80', borderRadius:14, paddingLeft:16, paddingRight:8, paddingVertical:14, borderWidth:2, borderColor:'#fff', elevation:10, shadowColor:'#000', shadowOpacity:0.35, shadowRadius:8 }, Platform.OS === 'web' && { position:'fixed' }]}>
+            <TouchableOpacity onPress={() => setGlobalSearchModalVisible(true)}>
+              <Text style={{ color:'#fff', fontWeight:'900', fontSize:17 }}>🔍 Αποτελέσματα ({effectiveSearchHits.length})</Text>
+            </TouchableOpacity>
+            <TouchableOpacity onPress={closeGlobalSearchModal} style={{ marginLeft:12, width:30, height:30, borderRadius:15, backgroundColor:'rgba(255,255,255,0.3)', alignItems:'center', justifyContent:'center' }}>
+              <Text style={{ color:'#fff', fontWeight:'900', fontSize:16 }}>✕</Text>
+            </TouchableOpacity>
           </View>
         ) : null}
 
