@@ -3,11 +3,20 @@ import { Modal, View, Text, TouchableOpacity, ScrollView, TextInput, Dimensions 
 import { sortCoatingsGrouped } from './formatHelpers';
 import { DIPLI_MODELS, DIPLI_DEFAULT } from './utils';
 
+// Θέση dropdown κάτω από το κουμπί, με διόρθωση για το ζουμ (document.body.style.zoom).
+// Το measureInWindow δίνει συντεταγμένες μετά το ζουμ· τις γυρνάμε σε συντεταγμένες CSS.
+const anchorPos = (anchor, W, above=false) => {
+  if (!anchor) return { left: 6, top: 80 };
+  let z = 1; try { z = parseFloat(document.body.style.zoom) || 1; } catch {}
+  const sw = Dimensions.get('window').width / z;
+  const ax = anchor.x / z, ay = anchor.y / z, ah = anchor.h / z;
+  return { left: Math.max(6, Math.min(ax, sw - W - 6)), top: above ? Math.max(6, ay - 24) : ay + ah + 2 };
+};
+
 export function DipliModelPickerModal({ visible, onClose, anchor, customForm, setCustomForm }) {
   const sel = customForm.dipliModel || DIPLI_DEFAULT;
-  const W = 260, sw = Dimensions.get('window').width;
-  const left = anchor ? Math.max(6, Math.min(anchor.x, sw - W - 6)) : 6;
-  const top = anchor ? anchor.y + anchor.h + 2 : 80;
+  const W = 260;
+  const { left, top } = anchorPos(anchor, W);
   return (
     <Modal visible={visible} transparent animationType="fade" onRequestClose={onClose}>
       <TouchableOpacity activeOpacity={1} onPress={onClose} style={{flex:1}}>
@@ -32,9 +41,8 @@ export function DipliModelPickerModal({ visible, onClose, anchor, customForm, se
 export function StavColumnPickerModal({ visible, onClose, anchor, customForm, setCustomForm, items }) {
   const sel = customForm.stavColumn?.name || '';
   const ordered = [...(items||[])].sort((a,b)=>(a.order??a.createdAt)-(b.order??b.createdAt));
-  const W = 280, sw = Dimensions.get('window').width;
-  const left = anchor ? Math.max(6, Math.min(anchor.x, sw - W - 6)) : 6;
-  const top = anchor ? anchor.y + anchor.h + 2 : 80;
+  const W = 280;
+  const { left, top } = anchorPos(anchor, W);
   const choose = (name) => { setCustomForm({...customForm, stavColumn: name ? { name, qty: customForm.stavColumn?.qty || '1' } : null}); onClose(); };
   return (
     <Modal visible={visible} transparent animationType="fade" onRequestClose={onClose}>
@@ -69,9 +77,8 @@ export function StavColumnPickerModal({ visible, onClose, anchor, customForm, se
 }
 
 export function HardwarePickerModal({ visible, onClose, anchor, customForm, setCustomForm, showCustomHardwareInput, setShowCustomHardwareInput, customHardwareText, setCustomHardwareText }) {
-  const W = 240, sw = Dimensions.get('window').width;
-  const left = anchor ? Math.max(6, Math.min(anchor.x, sw - W - 6)) : 6;
-  const top = anchor ? anchor.y + anchor.h + 2 : 80;
+  const W = 240;
+  const { left, top } = anchorPos(anchor, W);
   const confirmCustom = () => { if (customHardwareText.trim()) setCustomForm({...customForm,hardware:customHardwareText.trim()}); setShowCustomHardwareInput(false); onClose(); };
   return (
     <Modal visible={visible} transparent animationType="fade" onRequestClose={onClose}>
@@ -108,9 +115,8 @@ export function MiscPickerModal({ visible, onClose, anchor, customForm, setCusto
   const selSet = new Set(sel);
   const ordered = [...(items||[])].sort((a,b)=>(a.order??a.createdAt)-(b.order??b.createdAt));
   const selFirst = [...ordered.filter(i=>selSet.has(i.name)), ...ordered.filter(i=>!selSet.has(i.name))];
-  const W = 320, sw = Dimensions.get('window').width;
-  const left = anchor ? Math.max(6, Math.min(anchor.x, sw - W - 6)) : 6;
-  const top = anchor ? anchor.y + anchor.h + 2 : 80;
+  const W = 320;
+  const { left, top } = anchorPos(anchor, W);
   const toggle = (name) => { const cur = customForm.misc || []; setCustomForm({...customForm, misc: cur.includes(name) ? cur.filter(x=>x!==name) : [...cur, name]}); };
   return (
     <Modal visible={visible} transparent animationType="fade" onRequestClose={onClose}>
@@ -146,9 +152,8 @@ export function LockPickerModal({ visible, onClose, anchor, customForm, setCusto
   const [cylText, setCylText] = useState('');
   useEffect(() => { if (visible) { setLockText(customForm.lock || ''); setCylText(customForm.cylinder || ''); } }, [visible]);
   const ordered = (arr) => [...(arr||[])].sort((a,b)=>(a.order??a.createdAt)-(b.order??b.createdAt));
-  const W = Math.min(480, Dimensions.get('window').width - 12), sw = Dimensions.get('window').width;
-  const left = anchor ? Math.max(6, Math.min(anchor.x, sw - W - 6)) : 6;
-  const top = anchor ? Math.max(6, anchor.y - 24) : 80;
+  const W = Math.min(480, Dimensions.get('window').width - 12);
+  const { left, top } = anchorPos(anchor, W, true);
   const row = (sel, name, onPress, key, price) => (
     <TouchableOpacity key={key}
       style={{paddingVertical:7,paddingHorizontal:9,borderBottomWidth:1,borderBottomColor:'#eee',flexDirection:'row',alignItems:'center',justifyContent:'space-between',backgroundColor:sel?'#FBEEEE':'#fff'}}
@@ -196,9 +201,8 @@ export function LockPickerModal({ visible, onClose, anchor, customForm, setCusto
 }
 
 export function CoatingsPickerModal({ visible, onClose, anchor, customForm, setCustomForm, coatings }) {
-  const W = 340, sw = Dimensions.get('window').width;
-  const left = anchor ? Math.max(6, Math.min(anchor.x, sw - W - 6)) : 6;
-  const top = anchor ? anchor.y + anchor.h + 2 : 80;
+  const W = 340;
+  const { left, top } = anchorPos(anchor, W);
   return (
     <Modal visible={visible} transparent animationType="fade" onRequestClose={onClose}>
       <TouchableOpacity activeOpacity={1} onPress={onClose} style={{flex:1}}>

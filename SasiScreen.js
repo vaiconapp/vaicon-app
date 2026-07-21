@@ -386,6 +386,12 @@ export default function SasiScreen({ sasiStock={}, setSasiStock, opsBasket=[], s
     return s+(av<0?av:0);
   },0),0);
   const negLeft=sumNeg('ΑΡΙΣΤΕΡΗ'), negRight=sumNeg('ΔΕΞΙΑ');
+  // Καθαρό πλεόνασμα ανά πλευρά: σύνολο τεμαχίων αποθήκης − σύνολο παραγγελιών (εμφανίζεται μόνο αν >0).
+  const sumSurplus = (side) => HEIGHTS.reduce((t,h)=>t+WIDTHS.reduce((s,w)=>{
+    const e=stockMap[stockKey(h,w,side)]||{qty:0,reservations:[]};
+    return s+(e.qty||0)-(e.reservations||[]).reduce((a,r)=>r.oldCovered?a:a+(parseInt(r.qty)||1),0);
+  },0),0);
+  const posLeft=sumSurplus('ΑΡΙΣΤΕΡΗ'), posRight=sumSurplus('ΔΕΞΙΑ');
 
   return (
     <View style={{flex:1, backgroundColor:'#f5f5f5', flexDirection:'row'}}>
@@ -429,10 +435,12 @@ export default function SasiScreen({ sasiStock={}, setSasiStock, opsBasket=[], s
           <View style={{flexDirection:'row', justifyContent:'space-around'}}>
             <View style={{alignItems:'center', flex:1}}>
               <Text style={styles.negLabel}>ΑΡΙΣΤΕΡΕΣ</Text>
+              {isAdmin && posLeft>0 && <Text style={styles.posNum}>+{posLeft}</Text>}
               <Text style={[styles.negNum, {color: negLeft<0?'#ff1744':'#2e7d32'}]}>{negLeft}</Text>
             </View>
             <View style={{alignItems:'center', flex:1}}>
               <Text style={styles.negLabel}>ΔΕΞΙΕΣ</Text>
+              {isAdmin && posRight>0 && <Text style={styles.posNum}>+{posRight}</Text>}
               <Text style={[styles.negNum, {color: negRight<0?'#ff1744':'#2e7d32'}]}>{negRight}</Text>
             </View>
           </View>
@@ -697,4 +705,5 @@ const styles = StyleSheet.create({
   negTitle: { color:'#888', fontSize:11, fontWeight:'bold', textAlign:'center', marginBottom:6, letterSpacing:1 },
   negLabel: { color:'#888', fontSize:11, fontWeight:'bold' },
   negNum: { fontSize:34, fontWeight:'900' },
+  posNum: { fontSize:13, fontWeight:'900', color:'#2e7d32' },
 });
