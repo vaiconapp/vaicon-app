@@ -22,7 +22,7 @@ import MiniCalendar from './MiniCalendar';
 
 const STD_HEIGHTS = ['208','213','218','223'];
 const STD_WIDTHS  = ['83','88','93','98'];
-const INIT_FORM   = { customer:'', orderNo:'', h:'', w:'', hinges:'2', qty:'1', glassDim:'', glassNotes:'', armor:'ΜΟΝΗ', side:'ΔΕΞΙΑ', lock:'', cylinder:'', notes:'', status:'PENDING', hardware:'', installation:'ΟΧΙ', placement:'ΟΧΙ', caseType:'ΚΛΕΙΣΤΟΥ ΤΥΠΟΥ', caseMaterial:'DKP', deliveryDate:'', sasiType:'ΜΟΝΗ ΘΩΡΑΚΙΣΗ', dipliModel:'', coatings:[], coatingDetails:{}, stavera:[], stavColumn:null, heightReduction:'', kypri:'ΟΧΙ', misc:[], packaging:false, agency:false, priceList:[], priceDiscount:'', priceLog:[], priceNote:'' };
+const INIT_FORM   = { customer:'', reference:'', orderNo:'', h:'', w:'', hinges:'2', qty:'1', glassDim:'', glassNotes:'', armor:'ΜΟΝΗ', side:'ΔΕΞΙΑ', lock:'', cylinder:'', notes:'', status:'PENDING', hardware:'', installation:'ΟΧΙ', placement:'ΟΧΙ', caseType:'ΚΛΕΙΣΤΟΥ ΤΥΠΟΥ', caseMaterial:'DKP', deliveryDate:'', sasiType:'ΜΟΝΗ ΘΩΡΑΚΙΣΗ', dipliModel:'', coatings:[], coatingDetails:{}, stavera:[], stavColumn:null, heightReduction:'', kypri:'ΟΧΙ', misc:[], packaging:false, agency:false, priceList:[], priceDiscount:'', priceLog:[], priceNote:'' };
 
 /** Ετικέτες σταδίων κατασκευής — με/χωρίς εικονίδιο, με δυναμική ετικέτα ανά επένδυση (epend{i}) */
 const STD_TASK_LABELS_ICON  = { stavera:'📐 Σταθερό', lock:'🔒 Κλειδαριά', heightReduction:'📏 Μείωση', montage:'🪛 Μοντάρ.', sasi:'🔧 Σασί', kypri:'🪟 Κυπρί', case:'📦 Κάσα', oversize:'📦 223/83' };
@@ -358,17 +358,18 @@ const stdOrderLines = (o) => {
     o.notes ? `Σημ: ${o.notes}` : null,
   ];
 };
+const refTag = (o) => { const r = String(o?.reference || '').trim(); return r ? `(${r}) ` : ''; };
 const buildOrderMessage = (o) => [
   `Γεια σας ${o.customer||''},`,
   '',
-  `Καταχωρήσαμε την παραγγελία σας Νο ${o.orderNo||'-'}`,
+  `Καταχωρήσαμε την παραγγελία σας ${refTag(o)}Νο ${o.orderNo||'-'}`,
   ...stdOrderLines(o),
   '',
   'Παρακαλούμε ελέγξτε τα παραπάνω στοιχεία. Μετά την έναρξη παραγωγής δεν είναι δυνατές αλλαγές και η εταιρεία δεν φέρει ευθύνη για τυχόν διαφορές.',
   '',
   'Ευχαριστούμε — VAICON',
 ].filter(v => v !== null).join('\n');
-const buildReadyMessage = (o) => `VAICON: Η ΠΑΡΑΓΓΕΛΙΑ ΝΟ ${o.orderNo||'-'} ΕΙΝΑΙ ΕΤΟΙΜΗ. ΩΡΕΣ ΠΑΡΑΛΑΒΗΣ: ΕΡΓΑΣΙΜΕΣ 08:00-15:30.`;
+const buildReadyMessage = (o, ref='') => `VAICON: Η ΠΑΡΑΓΓΕΛΙΑ ${ref}ΝΟ ${o.orderNo||'-'} ΕΙΝΑΙ ΕΤΟΙΜΗ. ΩΡΕΣ ΠΑΡΑΛΑΒΗΣ: ΕΡΓΑΣΙΜΕΣ 08:00-15:30.`;
 const buildSmsOrderMessage = (o) => {
   const d = new Date(o?.createdAt || Date.now());
   const dt = `${String(d.getDate()).padStart(2,'0')}/${String(d.getMonth()+1).padStart(2,'0')}/${d.getFullYear()}`;
@@ -379,7 +380,7 @@ const buildOrderEmail = (o) => [
   '',
   'Σας ευχαριστούμε για την παραγγελία σας. Ακολουθούν αναλυτικά τα στοιχεία της, όπως καταχωρήθηκαν:',
   '',
-  `Αρ. παραγγελίας: ${o.orderNo||'-'}`,
+  `Αρ. παραγγελίας: ${refTag(o)}${o.orderNo||'-'}`,
   ...stdOrderLines(o),
   '',
   'Παρακαλούμε ελέγξτε προσεκτικά τα παραπάνω στοιχεία. Μετά την έναρξη της παραγωγής δεν είναι δυνατές αλλαγές και η εταιρεία δεν φέρει ευθύνη για τυχόν διαφορές.',
@@ -389,13 +390,26 @@ const buildOrderEmail = (o) => [
 const buildReadyEmail = (o) => [
   'Αγαπητοί συνεργάτες,',
   '',
-  `Σας ενημερώνουμε ότι η παραγγελία σας Νο ${o.orderNo||'-'} είναι έτοιμη προς παραλαβή.`,
-  'Ώρες παραλαβής: εργάσιμες 08:00-16:00.',
+  `Σας ενημερώνουμε ότι η παραγγελία σας ${refTag(o)}Νο ${o.orderNo||'-'} είναι έτοιμη προς παραλαβή.`,
+  'Ώρες παραλαβής: εργάσιμες 08:00-15:30.',
   '',
   COMPANY_SIGNATURE,
 ].join('\n');
+// Ευχαριστήριο πώλησης — «X από Y» μόνο σε μερική· αλλιώς σκέτο πλήθος.
+const saleQtyPhrase = (x, y) => x >= y ? `${x} ${x === 1 ? 'τεμάχιο' : 'τεμάχια'}` : `${x} από ${y} τεμάχια`;
+const buildSaleMessage = (no, cust, phrase, ref='') => [
+  `Γεια σας ${cust||''},`, '',
+  `Σας ευχαριστούμε που μας εμπιστευτήκατε! Παραλάβατε από την παραγγελία ${ref}Νο ${no}: ${phrase}.`,
+  'Είμαστε πάντα στη διάθεσή σας.', '', 'Ευχαριστούμε — VAICON',
+].join('\n');
+const buildSaleEmail = (no, cust, phrase, ref='') => [
+  'Αγαπητοί συνεργάτες,', '',
+  `Σας ευχαριστούμε που μας εμπιστευτήκατε! Παραλάβατε από την παραγγελία ${ref}Νο ${no}: ${phrase}.`,
+  'Είμαστε πάντα στη διάθεσή σας.', '', COMPANY_SIGNATURE,
+].join('\n');
+const buildSaleSms = (no, phrase) => `VAICON: Ευχαριστούμε! Παραλάβατε από την παραγγελία Νο ${no}: ${phrase}.`;
 const isReadyStatus = (o) => o?.status === 'STD_READY';
-const messageFor = (o) => isReadyStatus(o) ? buildReadyMessage(o) : buildOrderMessage(o);
+const messageFor = (o) => isReadyStatus(o) ? buildReadyMessage(o, refTag(o)) : buildOrderMessage(o);
 const smsMessageFor = (o) => isReadyStatus(o) ? buildReadyMessage(o) : buildSmsOrderMessage(o);
 const emailMessageFor = (o) => isReadyStatus(o) ? buildReadyEmail(o) : buildOrderEmail(o);
 const openEmail = (email, msg, orderNo) => {
@@ -1957,7 +1971,7 @@ export default function CustomScreen({ customOrders, setCustomOrders, soldOrders
     if (!ok) return; // διακόπηκε από modal (π.χ. πελάτης) — ο χρήστης ξαναπατάει
     const next = { ...gs, count: seq };
     setGroupState(next);
-    setCustomForm(f => ({ ...INIT_FORM, customer: f.customer, customerId: f.customerId, orderNo: isSeller ? '' : groupOrderNo(next.base, next.count + 1) }));
+    setCustomForm(f => ({ ...INIT_FORM, customer: f.customer, customerId: f.customerId, reference: f.reference, orderNo: isSeller ? '' : groupOrderNo(next.base, next.count + 1) }));
     notify('➕ Πόρτα αποθηκεύτηκε', isSeller
       ? 'Συμπλήρωσε την επόμενη πόρτα ή πάτησε «Αποθήκευση» για να ολοκληρώσεις.'
       : `Αποθηκεύτηκε ${orderNo}. Συμπλήρωσε την επόμενη πόρτα.`);
@@ -2065,7 +2079,7 @@ export default function CustomScreen({ customOrders, setCustomOrders, soldOrders
     const ok = await saveQuote(overrides, { groupId: gq.groupId, groupSeq: seq, final: false });
     if (!ok) return;
     setQuoteGroup({ ...gq, count: seq });
-    setCustomForm(f => ({ ...INIT_FORM, customer: f.customer, customerId: f.customerId }));
+    setCustomForm(f => ({ ...INIT_FORM, customer: f.customer, customerId: f.customerId, reference: f.reference }));
     notify('➕ Πόρτα προσφοράς', 'Συμπλήρωσε την επόμενη πόρτα ή πάτησε «Καταχώρηση προσφοράς».');
   };
   const doFinalSaveQuote = async (overrides = null) => {
@@ -2351,11 +2365,44 @@ export default function CustomScreen({ customOrders, setCustomOrders, soldOrders
     }
   };
 
+  // Αρχικό σύνολο τεμαχίων παραγγελίας (μετράει και τα ήδη πουλημένα αδέρφια).
+  const saleFamilyTotal = (o) => {
+    const all = [...customOrders, ...soldOrders];
+    const fam = o.groupId
+      ? all.filter(x => x.groupId === o.groupId)
+      : all.filter(x => !x.groupId && splitBaseNo(String(x.orderNo)) === splitBaseNo(String(o.orderNo)));
+    return fam.reduce((s, x) => s + (parseInt(x.qty) || 1), 0) || (parseInt(o.qty) || 1);
+  };
+  // Ευχαριστήριο πώλησης — μόνο στα κανάλια που έχουν ήδη σταλεί (✓).
+  const sendSaleThanks = async (order, qtySold, famTotal) => {
+    const c = findCustomerOf(order); if (!c) return;
+    const notif = order.notified || {};
+    const no = splitBaseNo(String(order.orderNo));
+    const phrase = saleQtyPhrase(qtySold, famTotal);
+    const ref = refTag(order);
+    if (notif.viber && pickViberPhone(c) && !c.viberOptOut) await sendViberViaYuboto(pickViberPhone(c), buildSaleMessage(no, order.customer, phrase, ref), order.id, c.id);
+    if (notif.email && c.email) openEmail(c.email, buildSaleEmail(no, order.customer, phrase, ref), no);
+    if (notif.sms && pickSmsPhone(c)) await sendSmsViaYuboto(pickSmsPhone(c), buildSaleSms(no, phrase), order.id);
+  };
+  const maybeSaleThanks = async (order, qtySold, famTotal) => {
+    const c = findCustomerOf(order); const notif = order.notified || {};
+    const chans = [];
+    if (notif.viber && c && pickViberPhone(c) && !c.viberOptOut) chans.push('Viber');
+    if (notif.email && c && c.email) chans.push('Email');
+    if (notif.sms && c && pickSmsPhone(c)) chans.push('SMS');
+    if (!chans.length) return;
+    const ask = Platform.OS === 'web'
+      ? window.confirm(`Να σταλεί ευχαριστήριο μήνυμα στον πελάτη; (${chans.join(', ')})`)
+      : await new Promise(res => Alert.alert('Ευχαριστήριο', `Αποστολή σε: ${chans.join(', ')};`, [{ text: 'ΟΧΙ', onPress: () => res(false) }, { text: 'ΝΑΙ', onPress: () => res(true) }]));
+    if (ask) await sendSaleThanks(order, qtySold, famTotal);
+  };
+
   const applyStdSale = async (order, sellQty) => {
     if (isGuest || !order) return;
     const now=Date.now();
     const totalQty=parseInt(order.qty)||1;
     const qty=Math.max(1,Math.min(parseInt(sellQty)||0,totalQty));
+    const famTotal=saleFamilyTotal(order);
     const partial=qty<totalQty;
     const isMoni=(order.sasiType==='ΜΟΝΗ ΘΩΡΑΚΙΣΗ'||!order.sasiType)&&!order.lock;
     const adjustStock=async(stockMap,setStock,key,path)=>{
@@ -2383,6 +2430,7 @@ export default function CustomScreen({ customOrders, setCustomOrders, soldOrders
     if (isMoni) await adjustStock(sasiStock,setSasiStock,sasiKey(String(order.h),String(order.w),order.side),'sasi_stock');
     await adjustStock(caseStock,setCaseStock,caseKey(String(order.h),String(order.w),order.side,order.caseType),'case_stock');
     await logActivity('ΤΥΠΟΠΟΙΗΜΕΝΗ', partial?'Πώληση (μερική)':'Πώληση', { orderNo: order.orderNo, customer: order.customer, size: `${order.h}x${order.w}`, qty: partial?`${qty}/${totalQty}`:String(qty) });
+    await maybeSaleThanks(order, qty, famTotal);
   };
 
   const handleSellConfirm = async (sellQty) => {
@@ -5251,8 +5299,9 @@ export default function CustomScreen({ customOrders, setCustomOrders, soldOrders
             <View style={vstyles.cardHeader}><Text style={vstyles.cardHeaderTxt}>👤  ΣΤΟΙΧΕΙΑ ΠΑΡΑΓΓΕΛΙΑΣ</Text></View>
             <View style={vstyles.cardBody}>
 
-          {/* ΠΕΛΑΤΗΣ */}
-          <View style={{marginBottom:8,zIndex:100}}>
+          {/* ΠΕΛΑΤΗΣ + ΑΝΑΦΟΡΑ */}
+          <View style={{marginBottom:8,zIndex:100, flexDirection:'row', gap:8, alignItems:'flex-start'}}>
+            <View style={{flex:2, zIndex:100}}>
             {selectedCustomer ? (
               <TouchableOpacity style={styles.selectedCustomerBox} onPress={()=>setShowCustomerInfo(true)}>
                 <View style={{flex:1}}>
@@ -5297,6 +5346,11 @@ export default function CustomScreen({ customOrders, setCustomOrders, soldOrders
                 )}
               </>
             )}
+            </View>
+            <View style={{flex:1}}>
+              <TextInput style={styles.input} placeholder="Αναφορά" value={customForm.reference||''}
+                onChangeText={v=>setCustomForm(f=>({...f, reference:v}))} />
+            </View>
           </View>
 
           {/* MODAL ΕΠΑΛΗΘΕΥΣΗΣ */}

@@ -42,6 +42,7 @@ const USER_ENTERED_ORDER_KEYS = [
   'orderType',
   'status',
   'sasiType',
+  'reference',
   'h',
   'w',
   'hinges',
@@ -198,10 +199,13 @@ function orderMatches(o, q1, otherQueries, otherLogic = 'AND') {
 
 function summaryLine(o) {
   const no = o.orderNo != null ? String(o.orderNo) : '—';
-  const cust = o.customer ? ` · ${o.customer}` : '';
+  const ref = String(o.reference || '').trim();
+  const cust = o.customer ? ` · ${o.customer}${ref ? ` (${ref})` : ''}` : (ref ? ` · (${ref})` : '');
   const dim = o.h && o.w ? ` · ${o.h}×${o.w}` : o.size ? ` · ${o.size}` : '';
   const side = o.side ? ` ${o.side === 'ΑΡΙΣΤΕΡΗ' ? 'ΑΡ' : 'ΔΕΞ'}` : '';
-  const qty = parseInt(o.qty, 10) > 1 ? ` · ${o.qty}τεμ` : '';
+  const q = parseInt(o.qty, 10) || 1;
+  const orig = o.origQty != null ? (parseInt(o.origQty, 10) || 0) : 0;
+  const qty = orig > q ? ` · αρχ.${orig} ${q}τεμ` : (q > 1 ? ` · ${q}τεμ` : '');
   return `${no}${cust}${dim}${side}${qty}`.trim();
 }
 

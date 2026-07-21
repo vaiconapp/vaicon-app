@@ -677,6 +677,7 @@ export default function App() {
   const searchListRef = useRef(null);
   const searchRowYRef = useRef({});
   const lastSearchHitIdRef = useRef(null);
+  const globalSearchQueryRef = useRef(null); // {mode:'std'|'stavera', ...} — για ζωντανό ξαναϋπολογισμό στο ξανάνοιγμα
   const [bannerBlink, setBannerBlink] = useState(true);
   // Πλήρες κλείσιμο: καθαρίζει τα πάντα (φεύγει και το μπάνερ).
   const closeGlobalSearchModal = useCallback(() => {
@@ -687,6 +688,16 @@ export default function App() {
   }, []);
   // Προσωρινό κρύψιμο: κρατά αποτελέσματα + τσεκαρίσματα, εμφανίζεται μπάνερ επαναφοράς.
   const minimizeGlobalSearchModal = useCallback(() => setGlobalSearchModalVisible(false), []);
+  // Ξανάνοιγμα από το μπάνερ: ξαναϋπολογίζει τα αποτελέσματα με τα τρέχοντα δεδομένα (ανανεώνει θέσεις).
+  const reopenGlobalSearchModal = useCallback(() => {
+    const q = globalSearchQueryRef.current;
+    try {
+      const pools = { customOrders, soldOrders, sasiOrders, soldSasiOrders, caseOrders, soldCaseOrders, quotes };
+      if (q?.mode === 'stavera') setGlobalSearchHits(collectStaveraOrdersHits(pools, q.filterMode));
+      else if (q?.mode === 'std') setGlobalSearchHits(collectGlobalSearchHits(q.q1, q.qOther, pools, q.logic));
+    } catch (e) { console.error(e); }
+    setGlobalSearchModalVisible(true);
+  }, [customOrders, soldOrders, sasiOrders, soldSasiOrders, caseOrders, soldCaseOrders, quotes]);
   useEffect(() => {
     if (!globalSearchModalVisible || Platform.OS !== 'web') return;
     const id = lastSearchHitIdRef.current;
@@ -734,6 +745,7 @@ export default function App() {
         },
         filterMode
       );
+      globalSearchQueryRef.current = { mode: 'stavera', filterMode };
       setGlobalSearchHits(hits);
       setGlobalSearchModalStaveraMode(true);
       setGlobalSearchPrintSelected(new Set());
@@ -784,6 +796,7 @@ export default function App() {
         if (av !== bv) return av - bv;
         return String(a.orderNo ?? '').localeCompare(String(b.orderNo ?? ''), undefined, { numeric: true });
       });
+      globalSearchQueryRef.current = { mode: 'std', q1, qOther, logic: paradoseisSearchLogic };
       setGlobalSearchHits(hits);
       setGlobalSearchModalStaveraMode(false);
       setGlobalSearchPrintSelected(new Set());
@@ -2321,7 +2334,7 @@ export default function App() {
 
         {!globalSearchModalVisible && effectiveSearchHits.length > 0 ? (
           <View style={[{ position:'absolute', bottom:16, right:16, zIndex:1500, flexDirection:'row', alignItems:'center', backgroundColor: bannerBlink ? '#d32f2f' : '#ff8a80', borderRadius:14, paddingLeft:16, paddingRight:8, paddingVertical:14, borderWidth:2, borderColor:'#fff', elevation:10, shadowColor:'#000', shadowOpacity:0.35, shadowRadius:8 }, Platform.OS === 'web' && { position:'fixed' }]}>
-            <TouchableOpacity onPress={() => setGlobalSearchModalVisible(true)}>
+            <TouchableOpacity onPress={reopenGlobalSearchModal}>
               <Text style={{ color:'#fff', fontWeight:'900', fontSize:17 }}>🔍 Αποτελέσματα ({effectiveSearchHits.length})</Text>
             </TouchableOpacity>
             <TouchableOpacity onPress={closeGlobalSearchModal} style={{ marginLeft:12, width:30, height:30, borderRadius:15, backgroundColor:'rgba(255,255,255,0.3)', alignItems:'center', justifyContent:'center' }}>
