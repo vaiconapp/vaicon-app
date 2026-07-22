@@ -974,6 +974,15 @@ export default function CustomScreen({ customOrders, setCustomOrders, soldOrders
     const labels = { viber:'Viber', email:'Email', sms:'SMS' };
     showSmsToast(`Αφαιρέθηκε σημείωση ${labels[channel]||channel} από #${order.orderNo||'?'}`, 'info');
   };
+  const toggleNotified = async (orderId, channel) => {
+    if (isGuest) return;
+    const order = [...customOrders, ...soldOrders].find(o => o.id === orderId);
+    if (!order) return;
+    if (order?.notified?.[channel]) return clearNotified(orderId, channel);
+    await markNotified(orderId, channel);
+    const labels = { viber:'Viber', email:'Email', sms:'SMS' };
+    showSmsToast(`Ενεργοποιήθηκε ${labels[channel]||channel} στο #${order.orderNo||'?'} (χωρίς αποστολή)`, 'info');
+  };
   const pickViberPhone = (c) => c?.phoneViber || '';
   const pickSmsPhone = (c) => [c?.phone, c?.phone2, c?.phone3, c?.phoneViber].find(isGreekMobile) || '';
 
@@ -1196,7 +1205,7 @@ export default function CustomScreen({ customOrders, setCustomOrders, soldOrders
       return null;
     };
     const Tag = isSeller ? View : TouchableOpacity;
-    const tapProps = (ch, act) => isSeller ? {} : { onPress:act, onLongPress:()=>clearNotified(order.id,ch), delayLongPress:2000 };
+    const tapProps = (ch, act) => isSeller ? {} : { onPress:act, onLongPress:()=>toggleNotified(order.id,ch), delayLongPress:2000 };
     return (
       <View style={{justifyContent:'center', paddingLeft:22, marginLeft:22, borderLeftWidth:1, borderLeftColor:'#e0e0e0', gap:8, minWidth:130}}>
         <Tag disabled={!viberOk} {...tapProps('viber',()=>confirmSend('viber',order,()=>notifyViber(order)))} style={{backgroundColor: viberBlocked?'#b71c1c':(viberOk?'#7360f2':'#ddd'), borderRadius:10, paddingVertical:11, paddingHorizontal:14, alignItems:'center'}}>
