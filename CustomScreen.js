@@ -988,34 +988,39 @@ export default function CustomScreen({ customOrders, setCustomOrders, soldOrders
     const target = stripAccentsTxt(String(o.customer).trim().toLowerCase());
     return (customers||[]).find(c => c.name && stripAccentsTxt(c.name.trim().toLowerCase()) === target);
   };
+  const phaseOf = (o) => {
+    const s = o?.status;
+    if (s==='SOLD'||s==='STD_SOLD') return 'sold';
+    if (s==='READY'||s==='STD_READY') return 'ready';
+    return 'reg';
+  };
+  const chLog = (v) => (v && typeof v==='object')
+    ? { legacy:v.legacy||[], reg:v.reg||[], ready:v.ready||[], sold:v.sold||[] }
+    : (typeof v==='number' ? { legacy:[v], reg:[], ready:[], sold:[] } : { legacy:[], reg:[], ready:[], sold:[] });
+  const chLogHas = (v) => { const l=chLog(v); return !!(l.legacy.length||l.reg.length||l.ready.length||l.sold.length); };
+  const nSD = (ts) => ts?`${String(new Date(ts).getDate()).padStart(2,'0')}/${String(new Date(ts).getMonth()+1).padStart(2,'0')}`:'';
+  const recordNotify = (notified, phase, ch) => { const cur=chLog(notified?.[ch]); return { ...(notified||{}), [ch]: { ...cur, [phase]:[...cur[phase], Date.now()] } }; };
   const markNotified = async (orderId, channel) => {
     const order = [...customOrders, ...soldOrders].find(o => o.id === orderId);
     if (!order) return;
-    const patch = { ...order, notified: { ...(order.notified||{}), [channel]: Date.now() } };
+    const patch = { ...order, notified: recordNotify(order.notified, phaseOf(order), channel) };
     setCustomOrders(prev => prev.map(o => o.id===orderId ? patch : o));
     setSoldOrders(prev => prev.map(o => o.id===orderId ? patch : o));
     await syncToCloud(patch);
-  };
-  const clearNotified = async (orderId, channel) => {
-    if (isGuest) return;
-    const order = customOrders.find(o => o.id === orderId);
-    if (!order?.notified?.[channel]) return;
-    const newNotified = { ...order.notified };
-    delete newNotified[channel];
-    const upd = { ...order, notified: newNotified };
-    setCustomOrders(prev => prev.map(o => o.id === orderId ? upd : o));
-    await syncToCloud(upd);
-    const labels = { viber:'Viber', email:'Email', sms:'SMS' };
-    showSmsToast(`Αφαιρέθηκε σημείωση ${labels[channel]||channel} από #${order.orderNo||'?'}`, 'info');
   };
   const toggleNotified = async (orderId, channel) => {
     if (isGuest) return;
     const order = [...customOrders, ...soldOrders].find(o => o.id === orderId);
     if (!order) return;
-    if (order?.notified?.[channel]) return clearNotified(orderId, channel);
-    await markNotified(orderId, channel);
+    const phase = phaseOf(order);
+    const cur = chLog(order.notified?.[channel]);
+    const has = cur[phase].length;
+    const patch = { ...order, notified: { ...(order.notified||{}), [channel]: { ...cur, [phase]: has ? cur[phase].slice(0,-1) : [...cur[phase], Date.now()] } } };
+    setCustomOrders(prev => prev.map(o => o.id===orderId ? patch : o));
+    setSoldOrders(prev => prev.map(o => o.id===orderId ? patch : o));
+    await syncToCloud(patch);
     const labels = { viber:'Viber', email:'Email', sms:'SMS' };
-    showSmsToast(`Ενεργοποιήθηκε ${labels[channel]||channel} στο #${order.orderNo||'?'} (χωρίς αποστολή)`, 'info');
+    showSmsToast(has ? `Αφαιρέθηκε σημείωση ${labels[channel]||channel} από #${order.orderNo||'?'}` : `Ενεργοποιήθηκε ${labels[channel]||channel} στο #${order.orderNo||'?'} (χωρίς αποστολή)`, 'info');
   };
   const pickViberPhone = (c) => c?.phoneViber || '';
   const pickSmsPhone = (c) => [c?.phone, c?.phone2, c?.phone3, c?.phoneViber].find(isGreekMobile) || '';
@@ -1218,6 +1223,27 @@ export default function CustomScreen({ customOrders, setCustomOrders, soldOrders
       },
     });
   };
+  const renderNotifyLines = (v, mark=null) => {
+    if (!chLogHas(v)) return mark;
+    const l = chLog(v);
+    const line = (num, arr) => arr.length ? <Text key={num||'x'} style={{color:'#fff', fontSize:11, textAlign:'center'}}>{num?`(${num}) `:''}{arr.map(nSD).join(' ')}</Text> : null;
+    return <View style={{alignItems:'center'}}>{line(null,l.legacy)}{line(1,l.reg)}{line(2,l.ready)}{line(3,l.sold)}{mark}</View>;
+  };
+  const renderNotifyBadge = (order) => {
+    const rows = [['viber','Viber'],['email','Email'],['sms','SMS']].map(([ch,label]) => {
+      const l = chLog(order.notified?.[ch]); const parts = [];
+      if (l.legacy.length) parts.push(l.legacy.map(nSD).join(' '));
+      if (l.reg.length)   parts.push('(1) '+l.reg.map(nSD).join(' '));
+      if (l.ready.length) parts.push('(2) '+l.ready.map(nSD).join(' '));
+      if (l.sold.length)  parts.push('(3) '+l.sold.map(nSD).join(' '));
+      return parts.length ? { label, text: parts.join('  ') } : null;
+    }).filter(Boolean);
+    return (
+      <View style={{marginTop:6, minHeight:46, backgroundColor:'#eceff1', borderRadius:6, padding:6, width:150}}>
+        {rows.length ? rows.map((r,i)=>(<Text key={i} style={{fontSize:10, color:'#455a64', flexWrap:'wrap'}}><Text style={{fontWeight:'bold'}}>{r.label}:</Text> {r.text}</Text>)) : <Text style={{fontSize:10, color:'#b0bec5'}}>—</Text>}
+      </View>
+    );
+  };
   // Κάθετη στήλη κουμπιών ειδοποίησης (Viber/Email/SMS) — τέρμα δεξιά της κάρτας,
   // όπως στο vaicon-eidikes.
   const renderNotifyColumn = (order) => {
@@ -1230,7 +1256,6 @@ export default function CustomScreen({ customOrders, setCustomOrders, soldOrders
     // Εμφανίζονται πάντα (για ομοιομορφία)· τα μη διαθέσιμα κανάλια μένουν ανενεργά/γκρι.
     const notif = order.notified || {};
     const msgStatus = order.msgStatus || {};
-    const shortDate = (ts) => ts ? `${String(new Date(ts).getDate()).padStart(2,'0')}/${String(new Date(ts).getMonth()+1).padStart(2,'0')}` : '';
     const statusMark = (ch) => {
       const s = msgStatus[ch]?.status;
       if (s==='read') return <Text style={{color:'#4fc3f7', fontSize:10, fontWeight:'bold'}}>✓✓</Text>;
@@ -1243,17 +1268,17 @@ export default function CustomScreen({ customOrders, setCustomOrders, soldOrders
     return (
       <View style={{justifyContent:'center', paddingLeft:22, marginLeft:22, borderLeftWidth:1, borderLeftColor:'#e0e0e0', gap:8, minWidth:130}}>
         <Tag disabled={!viberOk} {...tapProps('viber',()=>confirmSend('viber',order,()=>notifyViber(order)))} style={{backgroundColor: viberBlocked?'#b71c1c':(viberOk?'#7360f2':'#ddd'), borderRadius:10, paddingVertical:11, paddingHorizontal:14, alignItems:'center'}}>
-          <Text style={{color:'white', fontSize:15, fontWeight:'bold'}}>{viberBlocked?'🚫 ':notif.viber?'✓ ':'📞 '}Viber</Text>
-          {!viberBlocked && notif.viber ? <View style={{flexDirection:'row', alignItems:'center', gap:3}}><Text style={{color:'#fff', fontSize:11}}>{shortDate(notif.viber)}</Text>{statusMark('viber')}</View> : null}
+          <Text style={{color:'white', fontSize:15, fontWeight:'bold'}}>{viberBlocked?'🚫 ':chLogHas(notif.viber)?'✓ ':'📞 '}Viber</Text>
+          {!viberBlocked ? renderNotifyLines(notif.viber, statusMark('viber')) : null}
           {viberBlocked ? <Text style={{color:'#fff', fontSize:11}}>απεγγράφηκε</Text> : null}
         </Tag>
         <Tag disabled={!emailOk} {...tapProps('email',()=>confirmSend('email',order,()=>notifyEmail(order)))} style={{backgroundColor: emailOk?'#0288d1':'#ddd', borderRadius:10, paddingVertical:11, paddingHorizontal:14, alignItems:'center'}}>
-          <Text style={{color:'white', fontSize:15, fontWeight:'bold'}}>{notif.email?'✓ ':'✉️ '}Email</Text>
-          {notif.email ? <Text style={{color:'#fff', fontSize:11}}>{shortDate(notif.email)}</Text> : null}
+          <Text style={{color:'white', fontSize:15, fontWeight:'bold'}}>{chLogHas(notif.email)?'✓ ':'✉️ '}Email</Text>
+          {renderNotifyLines(notif.email)}
         </Tag>
         <Tag disabled={!smsOk} {...tapProps('sms',()=>confirmSend('sms',order,()=>notifySms(order)))} style={{backgroundColor: smsOk?'#1565C0':'#ddd', borderRadius:10, paddingVertical:11, paddingHorizontal:14, alignItems:'center'}}>
-          <Text style={{color:'white', fontSize:15, fontWeight:'bold'}}>{notif.sms?'✓ ':'📱 '}SMS</Text>
-          {notif.sms ? <View style={{flexDirection:'row', alignItems:'center', gap:3}}><Text style={{color:'#fff', fontSize:11}}>{shortDate(notif.sms)}</Text>{statusMark('sms')}</View> : null}
+          <Text style={{color:'white', fontSize:15, fontWeight:'bold'}}>{chLogHas(notif.sms)?'✓ ':'📱 '}SMS</Text>
+          {renderNotifyLines(notif.sms, statusMark('sms'))}
         </Tag>
       </View>
     );
@@ -2423,16 +2448,20 @@ export default function CustomScreen({ customOrders, setCustomOrders, soldOrders
     const no = splitBaseNo(String(order.orderNo));
     const phrase = saleQtyPhrase(qtySold, famTotal);
     const ref = refTag(order);
-    if (notif.viber && pickViberPhone(c) && !c.viberOptOut) await sendViberViaYuboto(pickViberPhone(c), buildSaleMessage(no, order.customer, phrase, ref), order.id, c.id);
-    if (notif.email && c.email) openEmail(c.email, buildSaleEmail(no, order.customer, phrase, ref), no);
-    if (notif.sms && pickSmsPhone(c)) await sendSmsViaYuboto(pickSmsPhone(c), buildSaleSms(no, phrase), order.id);
+    let upd = order.notified || {};
+    if (chLogHas(notif.viber) && pickViberPhone(c) && !c.viberOptOut) { await sendViberViaYuboto(pickViberPhone(c), buildSaleMessage(no, order.customer, phrase, ref), order.id, c.id); upd = recordNotify(upd,'sold','viber'); }
+    if (chLogHas(notif.email) && c.email) { openEmail(c.email, buildSaleEmail(no, order.customer, phrase, ref), no); upd = recordNotify(upd,'sold','email'); }
+    if (chLogHas(notif.sms) && pickSmsPhone(c)) { await sendSmsViaYuboto(pickSmsPhone(c), buildSaleSms(no, phrase), order.id); upd = recordNotify(upd,'sold','sms'); }
+    const patch = { ...order, notified: upd };
+    setSoldOrders(prev => prev.map(o => o.id===order.id ? patch : o));
+    await syncToCloud(patch);
   };
   const maybeSaleThanks = async (order, qtySold, famTotal) => {
     const c = findCustomerOf(order); const notif = order.notified || {};
     const chans = [];
-    if (notif.viber && c && pickViberPhone(c) && !c.viberOptOut) chans.push('Viber');
-    if (notif.email && c && c.email) chans.push('Email');
-    if (notif.sms && c && pickSmsPhone(c)) chans.push('SMS');
+    if (chLogHas(notif.viber) && c && pickViberPhone(c) && !c.viberOptOut) chans.push('Viber');
+    if (chLogHas(notif.email) && c && c.email) chans.push('Email');
+    if (chLogHas(notif.sms) && c && pickSmsPhone(c)) chans.push('SMS');
     if (!chans.length) return;
     const ask = Platform.OS === 'web'
       ? window.confirm(`Να σταλεί ευχαριστήριο μήνυμα στον πελάτη; (${chans.join(', ')})`)
@@ -2473,7 +2502,7 @@ export default function CustomScreen({ customOrders, setCustomOrders, soldOrders
     if (isMoni) await adjustStock(sasiStock,setSasiStock,sasiKey(String(order.h),String(order.w),order.side),'sasi_stock');
     await adjustStock(caseStock,setCaseStock,caseKey(String(order.h),String(order.w),order.side,order.caseType),'case_stock');
     await logActivity('ΤΥΠΟΠΟΙΗΜΕΝΗ', partial?'Πώληση (μερική)':'Πώληση', { orderNo: order.orderNo, customer: order.customer, size: `${order.h}x${order.w}`, qty: partial?`${qty}/${totalQty}`:String(qty) });
-    await maybeSaleThanks(order, qty, famTotal);
+    await maybeSaleThanks(soldEntry, qty, famTotal);
   };
 
   const handleSellConfirm = async (sellQty) => {
@@ -3643,11 +3672,10 @@ export default function CustomScreen({ customOrders, setCustomOrders, soldOrders
         </View>}
         {canHold && (() => {
           const notif = o.notified || {};
-          const sd = (ts)=> ts?`${String(new Date(ts).getDate()).padStart(2,'0')}/${String(new Date(ts).getMonth()+1).padStart(2,'0')}`:'';
-          const chip = (label, ts, color, icon) => (
-            <View style={{backgroundColor: ts?color:'#e0e0e0', borderRadius:10, paddingVertical:9, paddingHorizontal:14, alignItems:'center'}}>
-              <Text style={{color: ts?'#fff':'#888', fontSize:14, fontWeight:'bold'}}>{ts?'✓ ':icon+' '}{label}</Text>
-              {ts?<Text style={{color:'#fff', fontSize:11}}>{sd(ts)}</Text>:null}
+          const chip = (label, v, color, icon) => (
+            <View style={{backgroundColor: chLogHas(v)?color:'#e0e0e0', borderRadius:10, paddingVertical:9, paddingHorizontal:14, alignItems:'center'}}>
+              <Text style={{color: chLogHas(v)?'#fff':'#888', fontSize:14, fontWeight:'bold'}}>{chLogHas(v)?'✓ ':icon+' '}{label}</Text>
+              {renderNotifyLines(v)}
             </View>
           );
           return (
@@ -6610,7 +6638,8 @@ export default function CustomScreen({ customOrders, setCustomOrders, soldOrders
                       <View style={{marginTop:'auto'}}>{renderDocButton(o)}</View>
                     </View>
                     {renderSaleNote(o)}
-                    {!locked&&<View style={{gap:4, marginLeft:8}}>
+                    <View style={{marginLeft:8}}>
+                    {!locked&&<View style={{gap:4}}>
                       {o.fromMenon ? (
                         /* Παραγγελία από ΜΕΝΟΝΤΑ: μόνο επιστροφή στα ΜΕΝΟΝΤΑ */
                         <TouchableOpacity
@@ -6741,6 +6770,8 @@ export default function CustomScreen({ customOrders, setCustomOrders, soldOrders
                         </View>
                       )}
                     </View>}
+                    {renderNotifyBadge(o)}
+                    </View>
                   </View>
                 </View>
               );
