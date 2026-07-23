@@ -315,6 +315,37 @@ const renderNotesWithWarning = (notes, baseStyle, prefix='Σημ: ') => {
 //  Viber/SMS στέλνονται μέσω Netlify functions (Yuboto)· Email μέσω mailto.
 // ════════════════════════════════════════════════════════════
 const stripAccentsTxt = (s) => String(s||'').normalize('NFD').replace(/[\u0300-\u036f]/g,'');
+
+// ── Σύνολο υλικών (v1: επενδύσεις ανά χρώμα + κάσα/προφίλ/πηχάκι 2,5/πόρτα) ──
+const CASE_PER_DOOR = 2.5;
+const normalizeCoatName = (name) => stripAccentsTxt(String(name||'').toUpperCase())
+  .replace(/ΕΞΩΤΕΡΙΚ[ΑΟΗ]?/g,' ').replace(/ΕΣΩΤΕΡΙΚ[ΑΟΗ]?/g,' ')
+  .replace(/ΕΞΩ/g,' ').replace(/ΕΣΩΤ/g,' ').replace(/ΜΕΣΑ/g,' ')
+  .replace(/\s+/g,' ').trim();
+const materialTotals = (orders) => {
+  const coatings = {};
+  let caseOpen=0, caseClosed=0, profExo=0, profMesa=0, pihaki=0;
+  for (const o of (orders||[])) {
+    const doors = parseInt(o.qty,10) || 1;
+    let hasExo=false, hasMesa=false, hasPihaki=false;
+    for (const name of (o.coatings||[])) {
+      if (!name || !String(name).trim()) continue;
+      const key = normalizeCoatName(name); if (!key) continue;
+      (coatings[key] = coatings[key] || { label:key, qty:0 }).qty += doors;
+      const t = getCoatingType(name);
+      if (t==='EXO') hasExo=true;
+      else if (t==='MESA') { hasMesa=true; if (o.coatingDetails?.[name]?.pihaki) hasPihaki=true; }
+    }
+    if (String(o.caseType||'').includes('ΑΝΟΙΧΤΟΥ')) caseOpen += doors*CASE_PER_DOOR;
+    else caseClosed += doors*CASE_PER_DOOR;
+    if (hasExo) profExo += doors*CASE_PER_DOOR;
+    if (hasMesa) profMesa += doors*CASE_PER_DOOR;
+    if (hasPihaki) pihaki += doors*CASE_PER_DOOR;
+  }
+  const coatingList = Object.values(coatings).sort((a,b)=>a.label.localeCompare(b.label,'el'));
+  return { coatings: coatingList, caseOpen, caseClosed, profExo, profMesa, pihaki };
+};
+
 const normalizePhone = (p) => {
   const d = String(p||'').replace(/\D/g,'');
   if (!d) return '';
@@ -737,6 +768,8 @@ export default function CustomScreen({ customOrders, setCustomOrders, soldOrders
   const [coatPrintOpen, setCoatPrintOpen] = useState(false);
   const [placePrintOpen, setPlacePrintOpen] = useState(false);
   const [placeSelected, setPlaceSelected] = useState({});
+  const [materialsOpen, setMaterialsOpen] = useState(false);
+  const [matExcluded, setMatExcluded] = useState({});
   const [buildFilterPos, setBuildFilterPos] = useState({ x:0, y:0 });
   const bfIsDragging = useRef(false);
   const bfDragStart = useRef({});
@@ -745,6 +778,7 @@ export default function CustomScreen({ customOrders, setCustomOrders, soldOrders
     kypri:{done:false,undone:false}, montage:{done:false,undone:false}, stavera:{done:false,undone:false}, oversize:{done:false,undone:false},
     ependExo:{done:false,undone:false}, ependMesa:{done:false,undone:false},
   });
+  const [bfExcluded, setBfExcluded] = useState({});
   const handleBuildFilterDragStart = (e) => {
     e.preventDefault?.();
     bfIsDragging.current = true;
@@ -2485,11 +2519,15 @@ export default function CustomScreen({ customOrders, setCustomOrders, soldOrders
     // Η μάνα ΔΕΝ μετονομάζεται. Μονοκόμματη ρίζα (χωρίς παύλα) → παιδιά "root-0-N"
     // (το -0 δηλώνει αυτόνομη, χωρίς ομάδα). Πόρτα με παύλα → παιδιά "root-N".
     const motherNo = parentNo;
-    const newNo = parentNo.includes('-') ? nextSiblingNo(parentNo) : nextSiblingNo(`${parentNo}-0`);
+    // Ρίζα αρίθμησης: σπάσιμο σπασμένου κομματιού αριθμείται σαν να σπάει η μαμά (ίδια ρίζα → επόμενο αδερφάκι).
+    const root = order.splitChild ? parentNo.replace(/-\d+$/, '') : (parentNo.includes('-') ? parentNo : `${parentNo}-0`);
+    const newNo = nextSiblingNo(root);
     // Αρχική ποσότητα: μπαίνει/διατηρείται ΜΟΝΟ στη μάνα (όχι στα σπασμένα).
     const motherOrig = order.origQty != null ? String(order.origQty) : String(totalQty);
     const clone = (v) => v ? JSON.parse(JSON.stringify(v)) : v;
-    const remaining = {...order, orderNo: motherNo, qty:String(totalQty-qty), groupId:gId, origQty: motherOrig};
+    const remaining = order.splitChild
+      ? {...order, orderNo: motherNo, qty:String(totalQty-qty), groupId:gId}
+      : {...order, orderNo: motherNo, qty:String(totalQty-qty), groupId:gId, origQty: motherOrig};
     const newOrder = {...order, id:`${Date.now()}_s`, orderNo:newNo, qty:String(qty), groupId:gId,
       buildTasks: order.buildTasks?{...order.buildTasks}:order.buildTasks,
       moniPhases: clone(order.moniPhases), dipliPhases: clone(order.dipliPhases),
@@ -2529,7 +2567,7 @@ export default function CustomScreen({ customOrders, setCustomOrders, soldOrders
     const orig = o.origQty != null ? (parseInt(o.origQty)||0) : 0;
     const showOrig = orig > q; // μόνο στη μάνα (αρχική > τρέχουσα)
     if (q<=1 && !showOrig) return null;
-    const canSplit = (isAdmin || (isForeman && !locked)) && q>1 && !o.splitChild;
+    const canSplit = (isAdmin || (isForeman && !locked)) && q>1;
     return (
       <TouchableOpacity disabled={!canSplit}
         onPress={canSplit?()=>setSplitModal({visible:true, order:o}):undefined}
@@ -3045,13 +3083,15 @@ export default function CustomScreen({ customOrders, setCustomOrders, soldOrders
     const orders = bfTab==='ΔΙΠΛΗ' ? stdBuildDipliOrders : stdBuildMoniOrders;
     const title = bfTab==='ΔΙΠΛΗ' ? 'ΔΙΠΛΗ ΘΩΡΑΚΙΣΗ' : 'ΜΟΝΗ ΘΩΡΑΚΙΣΗ';
     const matches = buildFilterMatch(orders);
-    const toggle = (task, state) => setBuildFilterSel(prev => {
+    const finalMatches = matches.filter(o => !bfExcluded[o.id]);
+    const allSel = matches.length>0 && matches.every(o => !bfExcluded[o.id]);
+    const toggle = (task, state) => { setBfExcluded({}); setBuildFilterSel(prev => {
       const wasOn = prev[task]?.[state];
       const cleared = {};
       for (const [k] of BF_STAGES) cleared[k] = { done:false, undone:false };
       if (!wasOn) cleared[task][state] = true;
       return cleared;
-    });
+    }); };
     const cbox = (task, state, label, color) => (
       <TouchableOpacity style={{flexDirection:'row',alignItems:'center',gap:5}} onPress={()=>toggle(task,state)}>
         <View style={{width:18,height:18,borderRadius:4,borderWidth:2,borderColor:buildFilterSel[task][state]?'#00C851':'#bbb',backgroundColor:buildFilterSel[task][state]?'#00C851':'white',alignItems:'center',justifyContent:'center'}}>
@@ -3085,20 +3125,36 @@ export default function CustomScreen({ customOrders, setCustomOrders, soldOrders
           ))}
           </ScrollView>
           <View style={{flexDirection:'row',alignItems:'center',justifyContent:'space-between',marginTop:4,borderTopWidth:1,borderTopColor:'#f0d9c6',paddingTop:8}}>
-            <Text style={{fontWeight:'bold',color:'#e65100',fontSize:13}}>Ταιριάζουν: {matches.length}</Text>
-            <TouchableOpacity disabled={!matches.length}
-              style={{backgroundColor: matches.length?'#e65100':'#ccc',paddingHorizontal:12,paddingVertical:6,borderRadius:6}}
-              onPress={()=>{ const c=buildFilterTitle(); handleSelectionPrint(matches, c?`${title} — ${c}`:title); }}>
+            <Text style={{fontWeight:'bold',color:'#e65100',fontSize:13}}>Επιλεγμένες: {finalMatches.length}/{matches.length}</Text>
+            <TouchableOpacity disabled={!finalMatches.length}
+              style={{backgroundColor: finalMatches.length?'#e65100':'#ccc',paddingHorizontal:12,paddingVertical:6,borderRadius:6}}
+              onPress={()=>{ const c=buildFilterTitle(); handleSelectionPrint(finalMatches, c?`${title} — ${c}`:title); }}>
               <Text style={{color:'white',fontWeight:'bold',fontSize:12}}>🖨️ ΕΚΤΥΠΩΣΗ</Text>
             </TouchableOpacity>
           </View>
-          {matches.length>0&&(
+          {matches.length>0&&(<>
+            <TouchableOpacity style={{flexDirection:'row',alignItems:'center',gap:6,marginTop:8}}
+              onPress={()=>setBfExcluded(allSel ? Object.fromEntries(matches.map(o=>[o.id,true])) : {})}>
+              <View style={{width:16,height:16,borderRadius:4,borderWidth:2,borderColor:allSel?'#00C851':'#bbb',backgroundColor:allSel?'#00C851':'white',alignItems:'center',justifyContent:'center'}}>
+                {allSel&&<Text style={{color:'white',fontWeight:'bold',fontSize:10}}>✓</Text>}
+              </View>
+              <Text style={{fontSize:12,fontWeight:'bold',color:'#333'}}>Επιλογή όλων</Text>
+            </TouchableOpacity>
             <ScrollView style={{maxHeight:220,marginTop:6}}>
-              {matches.map(o=>(
-                <Text key={o.id} style={{fontSize:12,color:'#444',marginTop:2}}>#{o.orderNo} — {o.customer||'—'} — {o.h}x{o.w}</Text>
-              ))}
+              {matches.map(o=>{
+                const sel=!bfExcluded[o.id];
+                return (
+                  <TouchableOpacity key={o.id} style={{flexDirection:'row',alignItems:'center',gap:6,paddingVertical:3}}
+                    onPress={()=>setBfExcluded(p=>{ const n={...p}; if(n[o.id]) delete n[o.id]; else n[o.id]=true; return n; })}>
+                    <View style={{width:16,height:16,borderRadius:4,borderWidth:2,borderColor:sel?'#00C851':'#bbb',backgroundColor:sel?'#00C851':'white',alignItems:'center',justifyContent:'center'}}>
+                      {sel&&<Text style={{color:'white',fontWeight:'bold',fontSize:10}}>✓</Text>}
+                    </View>
+                    <Text style={{fontSize:12,color:'#444',flex:1}}>#{o.orderNo} — {o.customer||'—'} — {o.h}x{o.w}</Text>
+                  </TouchableOpacity>
+                );
+              })}
             </ScrollView>
-          )}
+          </>)}
         </View>
       </View>
     );
@@ -3219,6 +3275,108 @@ export default function CustomScreen({ customOrders, setCustomOrders, soldOrders
                 style={{backgroundColor: selected.length?'#1a1a2e':'#ccc', paddingHorizontal:12, paddingVertical:6, borderRadius:6}}
                 onPress={async()=>{ const list=[...selected].sort((a,b)=>(parseInt(a.orderNo)||0)-(parseInt(b.orderNo)||0)); await handleStdPrint(list,'ΜΟΝΗ ΘΩΡΑΚΙΣΗ — ΜΟΝΤΑΡΙΣΜΑΤΑ',caseReady,sasiReady); }}>
                 <Text style={{color:'#FFD600', fontWeight:'bold', fontSize:12}}>🖨️ ΕΚΤΥΠΩΣΗ</Text>
+              </TouchableOpacity>
+            </View>
+          </>)}
+        </View>
+      </View>
+    );
+  };
+
+  // ── Σύνολο Υλικών: εκτύπωση + πινακάκι ──
+  const matFmt = (n) => String(Math.round(n*10)/10).replace('.', ',');
+  const handleMaterialsPrint = (totals, count) => {
+    const today = new Date();
+    const dateStr = `${String(today.getDate()).padStart(2,'0')}/${String(today.getMonth()+1).padStart(2,'0')}/${today.getFullYear()} ${String(today.getHours()).padStart(2,'0')}:${String(today.getMinutes()).padStart(2,'0')}`;
+    const row = (label, val) => val>0 ? `<tr><td>${label}</td><td style="text-align:right;font-weight:900">${matFmt(val)}</td></tr>` : '';
+    const coatRows = totals.coatings.map(c=>row(c.label, c.qty)).join('');
+    const partRows = row('Κάσα ΚΛΕΙΣΤΗ', totals.caseClosed)+row('Κάσα ΑΝΟΙΧΤΗ', totals.caseOpen)+row('Προφίλ Εξωτερικό', totals.profExo)+row('Προφίλ Εσωτερικό', totals.profMesa)+row('Πηχάκι', totals.pihaki);
+    const html = `<!DOCTYPE html><html><head><meta charset="utf-8"><style>
+      body{font-family:Arial,sans-serif;margin:0;color:#000;}
+      table{width:100%;border-collapse:collapse;font-size:15px;}
+      td{padding:6px 8px;border-bottom:1px solid #000;}
+      h1{font-size:16px;margin-bottom:2px;} h2.sub{font-size:11px;color:#555;margin:0 0 8px;}
+      h3{font-size:14px;margin:14px 0 4px;border-bottom:2px solid #000;padding-bottom:2px;}
+      @media print{@page{size:A4 portrait;margin:12mm;}*{-webkit-print-color-adjust:exact;print-color-adjust:exact;}}
+    </style></head><body><div style="padding:12px;">
+      <h1>VAICON — ΣΥΝΟΛΟ ΥΛΙΚΩΝ</h1>
+      <h2 class="sub">📅 ${dateStr} &nbsp;|&nbsp; ${count} παραγγελίες</h2>
+      ${coatRows?`<h3>ΕΠΕΝΔΥΣΕΙΣ</h3><table>${coatRows}</table>`:''}
+      ${partRows?`<h3>ΚΑΣΕΣ / ΠΡΟΦΙΛ</h3><table>${partRows}</table>`:''}
+    </div></body></html>`;
+    if (Platform.OS==='web') {
+      const win = window.open('','_blank');
+      if (!win) return Alert.alert('Σφάλμα','Επιτρέψτε τα pop-ups.');
+      win.document.write(html); win.document.close(); win.focus(); win.onafterprint=()=>win.close(); win.print();
+    }
+  };
+  const renderMaterialsPanel = () => {
+    const selected = materialsPool.filter(o => !matExcluded[o.id]);
+    const allSel = materialsPool.length>0 && selected.length===materialsPool.length;
+    const totals = materialTotals(selected);
+    const totalRow = (label, val) => val>0 ? (
+      <View key={label} style={{flexDirection:'row', justifyContent:'space-between', paddingVertical:2}}>
+        <Text style={{fontSize:12, color:'#333'}}>{label}</Text>
+        <Text style={{fontSize:12, fontWeight:'900', color:'#2e7d32'}}>{matFmt(val)} τεμ.</Text>
+      </View>
+    ) : null;
+    const cbox = (on) => (
+      <View style={{width:16,height:16,borderRadius:4,borderWidth:2,borderColor:on?'#00C851':'#bbb',backgroundColor:on?'#00C851':'white',alignItems:'center',justifyContent:'center'}}>
+        {on&&<Text style={{color:'white',fontWeight:'bold',fontSize:10}}>✓</Text>}
+      </View>
+    );
+    return (
+      <View style={{position:'absolute', top:60, right:14, width:360, backgroundColor:'#f1f8f1', borderWidth:1, borderColor:'#2e7d32', borderRadius:8, zIndex:2000, elevation:24, shadowColor:'#000', shadowOffset:{width:0,height:6}, shadowOpacity:0.3, shadowRadius:12}}>
+        <View style={{flexDirection:'row', justifyContent:'space-between', alignItems:'center', paddingHorizontal:10, paddingVertical:8, backgroundColor:'#2e7d32', borderTopLeftRadius:8, borderTopRightRadius:8}}>
+          <Text style={{color:'#fff', fontWeight:'bold', fontSize:13}}>🧱 ΣΥΝΟΛΟ ΥΛΙΚΩΝ</Text>
+          <TouchableOpacity onPress={()=>setMaterialsOpen(false)}><Text style={{color:'#fff', fontSize:18, fontWeight:'bold', paddingHorizontal:4}}>✕</Text></TouchableOpacity>
+        </View>
+        <View style={{padding:10}}>
+          {materialsPool.length===0 ? (
+            <Text style={{textAlign:'center', color:'#999', paddingVertical:8}}>Δεν υπάρχουν ενεργές παραγγελίες.</Text>
+          ) : (<>
+            <View style={{borderWidth:1, borderColor:'#c8e6c9', borderRadius:6, padding:8, backgroundColor:'#fff', marginBottom:8}}>
+              {totals.coatings.length>0 && <Text style={{fontSize:12, fontWeight:'900', color:'#1b5e20', marginBottom:2}}>ΕΠΕΝΔΥΣΕΙΣ</Text>}
+              {totals.coatings.map(c => totalRow(c.label, c.qty))}
+              {totals.coatings.length>0 && <View style={{height:1, backgroundColor:'#e0e0e0', marginVertical:4}} />}
+              {totalRow('Κάσα ΚΛΕΙΣΤΗ', totals.caseClosed)}
+              {totalRow('Κάσα ΑΝΟΙΧΤΗ', totals.caseOpen)}
+              {totalRow('Προφίλ Εξωτερικό', totals.profExo)}
+              {totalRow('Προφίλ Εσωτερικό', totals.profMesa)}
+              {totalRow('Πηχάκι', totals.pihaki)}
+            </View>
+            <TouchableOpacity style={{flexDirection:'row', alignItems:'center', gap:6, marginBottom:4}}
+              onPress={()=>setMatExcluded(allSel ? Object.fromEntries(materialsPool.map(o=>[o.id,true])) : {})}>
+              {cbox(allSel)}
+              <Text style={{fontSize:12, fontWeight:'bold', color:'#333'}}>Επιλογή όλων ({selected.length}/{materialsPool.length})</Text>
+            </TouchableOpacity>
+            <ScrollView style={{maxHeight:180}}>
+              <View style={{flexDirection:'row', flexWrap:'wrap'}}>
+                {materialsPool.map(o=>{
+                  const sel=!matExcluded[o.id];
+                  const chip = (
+                    <View key={o.id} style={{flexDirection:'row', alignItems:'center', backgroundColor: sel?'#e8f5e9':'#f0f0f0', borderWidth:1, borderColor: sel?'#66bb6a':'#ccc', borderRadius:6, paddingVertical:3, paddingLeft:8, paddingRight: hasAnyCoatingDetails(o)?3:8, margin:2}}>
+                      <TouchableOpacity onPress={()=>setMatExcluded(p=>{ const n={...p}; if(n[o.id]) delete n[o.id]; else n[o.id]=true; return n; })}>
+                        <Text style={{fontSize:12, fontWeight:'bold', color: sel?'#1b5e20':'#aaa', textDecorationLine: sel?'none':'line-through'}}>{o.orderNo}</Text>
+                      </TouchableOpacity>
+                      {hasAnyCoatingDetails(o) && (
+                        <TouchableOpacity onPress={()=>setCoatDetailsModal({visible:true,order:o})} style={{marginLeft:4,backgroundColor:'#d32f2f',borderRadius:4,width:16,height:16,alignItems:'center',justifyContent:'center'}}>
+                          <Text style={{color:'white',fontWeight:'900',fontSize:11,lineHeight:13}}>i</Text>
+                        </TouchableOpacity>
+                      )}
+                    </View>
+                  );
+                  return Platform.OS==='web'
+                    ? React.createElement('div', { key:o.id, title:`${o.customer||'—'}${o.h?`  ${o.h}x${o.w}`:''}`, style:{ display:'inline-flex' } }, chip)
+                    : chip;
+                })}
+              </View>
+            </ScrollView>
+            <View style={{flexDirection:'row', alignItems:'center', justifyContent:'flex-end', marginTop:8, borderTopWidth:1, borderTopColor:'#c8e6c9', paddingTop:8}}>
+              <TouchableOpacity disabled={!selected.length}
+                style={{backgroundColor: selected.length?'#2e7d32':'#ccc', paddingHorizontal:12, paddingVertical:6, borderRadius:6}}
+                onPress={()=>handleMaterialsPrint(totals, selected.length)}>
+                <Text style={{color:'white', fontWeight:'bold', fontSize:12}}>🖨️ ΕΚΤΥΠΩΣΗ</Text>
               </TouchableOpacity>
             </View>
           </>)}
@@ -4425,6 +4583,8 @@ export default function CustomScreen({ customOrders, setCustomOrders, soldOrders
   const readyOrders = useMemo(() => baseCustom.filter(o=>o.orderType==='ΤΥΠΟΠΟΙΗΜΕΝΗ'&&(o.sasiType==='ΜΟΝΗ ΘΩΡΑΚΙΣΗ'||!o.sasiType)&&o.status==='STD_READY').sort((a,b)=>(parseInt(a.orderNo)||0)-(parseInt(b.orderNo)||0)), [baseCustom]);
   const moniSoldOrders = useMemo(() => [...baseCustom, ...baseSold].filter(o=>o.orderType==='ΤΥΠΟΠΟΙΗΜΕΝΗ'&&(o.sasiType==='ΜΟΝΗ ΘΩΡΑΚΙΣΗ'||!o.sasiType)&&o.status==='STD_SOLD').sort((a,b)=>(b.soldAt||0)-(a.soldAt||0)), [baseCustom, baseSold]);
   const dipliReadyOrders = useMemo(() => baseCustom.filter(o=>o.orderType==='ΤΥΠΟΠΟΙΗΜΕΝΗ'&&o.sasiType==='ΔΙΠΛΗ ΘΩΡΑΚΙΣΗ'&&o.status==='STD_READY').sort((a,b)=>(parseInt(a.orderNo)||0)-(parseInt(b.orderNo)||0)), [baseCustom]);
+  // Ενεργές παραγγελίες για «Σύνολο Υλικών» (όλες ΜΟΝΗ+ΔΙΠΛΗ, όχι έτοιμες/πουλημένες/αναμονή/προσφορές)
+  const materialsPool = useMemo(() => baseCustom.filter(o=>o.orderType==='ΤΥΠΟΠΟΙΗΜΕΝΗ'&&o.status!=='STD_READY'&&o.status!=='STD_SOLD'&&o.status!=='QUOTE'&&!o.isQuote).sort((a,b)=>(parseInt(a.orderNo)||0)-(parseInt(b.orderNo)||0)), [baseCustom]);
   const dipliSoldOrders = useMemo(() => [...baseCustom, ...baseSold].filter(o=>o.orderType==='ΤΥΠΟΠΟΙΗΜΕΝΗ'&&o.sasiType==='ΔΙΠΛΗ ΘΩΡΑΚΙΣΗ'&&o.status==='STD_SOLD').sort((a,b)=>(b.soldAt||0)-(a.soldAt||0)), [baseCustom, baseSold]);
   const moniTotal = useMemo(() => baseCustom.filter(o=>o.orderType==='ΤΥΠΟΠΟΙΗΜΕΝΗ'&&(o.sasiType==='ΜΟΝΗ ΘΩΡΑΚΙΣΗ'||!o.sasiType)&&(o.status==='STD_PENDING'||o.status==='STD_BUILD'||!o.status)).length, [baseCustom]);
   const dipliTotal = useMemo(() => baseCustom.filter(o=>o.orderType==='ΤΥΠΟΠΟΙΗΜΕΝΗ'&&o.sasiType==='ΔΙΠΛΗ ΘΩΡΑΚΙΣΗ'&&(o.status==='STD_PENDING'||o.status==='STD_BUILD'||!o.status)).length, [baseCustom]);
@@ -7109,6 +7269,7 @@ export default function CustomScreen({ customOrders, setCustomOrders, soldOrders
       {!formOnly && buildFilterOpen && (forcedTab==='ΜΟΝΗ' || forcedTab==='ΔΙΠΛΗ') && showSec('build') && renderBuildFilterPanel()}
       {!formOnly && coatPrintOpen && !isSeller && showSec('orders') && renderCoatPrintPanel()}
       {!formOnly && placePrintOpen && !isSeller && showSec('orders') && renderPlacePrintPanel()}
+      {!formOnly && materialsOpen && !isSeller && !isForeman && !isGuest && renderMaterialsPanel()}
       </View>
       {!formOnly && (forcedTab==='ΜΟΝΗ' || forcedTab==='ΔΙΠΛΗ') && (
         <View style={{width:240, backgroundColor:'#f7f7f7', borderLeftWidth:1, borderLeftColor:'#e0e0e0'}}>
@@ -7145,12 +7306,20 @@ export default function CustomScreen({ customOrders, setCustomOrders, soldOrders
           </View>
           {!isSeller && (
             <View style={{marginTop:12, flexDirection:'row', gap:6}}>
-              <TouchableOpacity style={{flex:1, backgroundColor:'#00838f', borderRadius:8, padding:11, alignItems:'center'}} onPress={()=>openShipModal('ΣΥΣΚΕΥΑΣΙΑ')}>
-                <Text style={{color:'white', fontWeight:'bold', fontSize:12}} numberOfLines={1}>🖨️ ΣΥΣΚΕΥΑΣΙΑ</Text>
+              <TouchableOpacity style={{flex:1, backgroundColor:'#00838f', borderRadius:8, paddingVertical:8, paddingHorizontal:4, minHeight:40, alignItems:'center', justifyContent:'center'}} onPress={()=>openShipModal('ΣΥΣΚΕΥΑΣΙΑ')}>
+                <Text style={{color:'white', fontWeight:'bold', fontSize:11, textAlign:'center'}}>🖨️ ΣΥΣΚΕΥΑΣΙΑ</Text>
               </TouchableOpacity>
-              <TouchableOpacity style={{flex:1, backgroundColor:'#5d4037', borderRadius:8, padding:11, alignItems:'center'}} onPress={()=>openShipModal('ΠΡΑΚΤΟΡΕΙΟ')}>
-                <Text style={{color:'white', fontWeight:'bold', fontSize:12}} numberOfLines={1}>🖨️ ΠΡΑΚΤΟΡΕΙΟ</Text>
+              <TouchableOpacity style={{flex:1, backgroundColor:'#5d4037', borderRadius:8, paddingVertical:8, paddingHorizontal:4, minHeight:40, alignItems:'center', justifyContent:'center'}} onPress={()=>openShipModal('ΠΡΑΚΤΟΡΕΙΟ')}>
+                <Text style={{color:'white', fontWeight:'bold', fontSize:11, textAlign:'center'}}>🖨️ ΠΡΑΚΤΟΡΕΙΟ</Text>
               </TouchableOpacity>
+            </View>
+          )}
+          {!isSeller && !isForeman && !isGuest && (
+            <View style={{marginTop:6, flexDirection:'row', gap:6}}>
+              <TouchableOpacity style={{flex:1, backgroundColor: materialsOpen?'#1b5e20':'#2e7d32', borderRadius:8, paddingVertical:8, paddingHorizontal:4, minHeight:40, alignItems:'center', justifyContent:'center'}} onPress={()=>setMaterialsOpen(v=>!v)}>
+                <Text style={{color:'white', fontWeight:'bold', fontSize:11, textAlign:'center'}}>🧱 ΥΛΙΚΑ</Text>
+              </TouchableOpacity>
+              <View style={{flex:1}} />
             </View>
           )}
           </ScrollView>
