@@ -1,7 +1,7 @@
 import React, { useState, useEffect, useRef, useCallback, useMemo } from 'react';
 import {
   StyleSheet, Text, View, ScrollView, ActivityIndicator, Platform, UIManager,
-  StatusBar, TouchableOpacity, Modal, TextInput,
+  StatusBar, TouchableOpacity, Pressable, Modal, TextInput,
   PanResponder, Alert, BackHandler, Animated,
 } from 'react-native';
 import CustomScreen, { ParadoseisScreen, hasParadoseisReminderOrders } from './CustomScreen';
@@ -504,6 +504,7 @@ export default function App() {
   const [globalSearchHits, setGlobalSearchHits] = useState([]);
   /** Δείκτες γραμμών (index) με ενεργή επιλογή για εκτύπωση πολλαπλών παραγγελιών */
   const [globalSearchPrintSelected, setGlobalSearchPrintSelected] = useState(() => new Set());
+  const [searchViewMode, setSearchViewMode] = useState('all'); // 'all' | 'active'
   const [globalSearchHighlightOrderId, setGlobalSearchHighlightOrderId] = useState(null);
   const [globalSearchStockMeta, setGlobalSearchStockMeta] = useState(null);
 
@@ -518,6 +519,17 @@ export default function App() {
       order: resolveLiveStdOrder(h, customOrders) || h.order,
     }));
   }, [globalSearchModalStaveraMode, globalSearchHits, customOrders]);
+
+  // «Τρέχουσες»: μόνο σε εξέλιξη (χωρίς πουλημένες/έτοιμες)· «Έτοιμες»: μόνο έτοιμες· «Όλα»: όλα.
+  const isReadyHit = (h) => !h.isSold && (h.status === 'STD_READY' || h.status === 'READY');
+  const isActiveHit = (h) => !h.isSold && !isReadyHit(h);
+  const visibleSearchHits = useMemo(
+    () => (searchViewMode === 'active' ? effectiveSearchHits.filter(isActiveHit)
+      : searchViewMode === 'ready' ? effectiveSearchHits.filter(isReadyHit)
+      : searchViewMode === 'sold' ? effectiveSearchHits.filter((h) => h.isSold)
+      : effectiveSearchHits),
+    [searchViewMode, effectiveSearchHits]
+  );
 
   /** Τουλάχιστον μία παραγγελία όπως στην οθόνη ΠΑΡΑΔΟΣΕΙΣ → LED υπενθύμισης. */
   const paradoseisReminderActive = useMemo(
@@ -660,17 +672,36 @@ export default function App() {
   }, [effectiveSearchHits]);
 
   const selectAllPrintableSearchHits = useCallback(() => {
+    setSearchViewMode('all');
     setGlobalSearchPrintSelected(new Set(printableHitIndices));
   }, [printableHitIndices]);
 
-  // Επιλογή για εκτύπωση όλων ΕΚΤΟΣ αρχείου (τι «τρέχει»: έτοιμα + εν εξελίξει).
+  // «Τρέχουσες»: δείχνει/μετράει/τσεκάρει μόνο τις σε εξέλιξη (χωρίς έτοιμες/πουλημένες).
   const selectActiveSearchHits = useCallback(() => {
+    setSearchViewMode('active');
     setGlobalSearchPrintSelected(new Set(
-      effectiveSearchHits.map((h, i) => (h.order && !h.isSold) ? i : -1).filter((i) => i >= 0)
+      effectiveSearchHits.map((h, i) => (h.order && isActiveHit(h)) ? i : -1).filter((i) => i >= 0)
+    ));
+  }, [effectiveSearchHits]);
+
+  // «Αρχείο»: δείχνει/μετράει/τσεκάρει μόνο τις πουλημένες.
+  const selectSoldSearchHits = useCallback(() => {
+    setSearchViewMode('sold');
+    setGlobalSearchPrintSelected(new Set(
+      effectiveSearchHits.map((h, i) => (h.order && h.isSold) ? i : -1).filter((i) => i >= 0)
+    ));
+  }, [effectiveSearchHits]);
+
+  // «Έτοιμες»: δείχνει/μετράει/τσεκάρει μόνο τις έτοιμες.
+  const selectReadySearchHits = useCallback(() => {
+    setSearchViewMode('ready');
+    setGlobalSearchPrintSelected(new Set(
+      effectiveSearchHits.map((h, i) => (h.order && isReadyHit(h)) ? i : -1).filter((i) => i >= 0)
     ));
   }, [effectiveSearchHits]);
 
   const clearGlobalSearchPrintSelection = useCallback(() => {
+    setSearchViewMode('all');
     setGlobalSearchPrintSelected(new Set());
   }, []);
 
@@ -682,6 +713,7 @@ export default function App() {
   // Πλήρες κλείσιμο: καθαρίζει τα πάντα (φεύγει και το μπάνερ).
   const closeGlobalSearchModal = useCallback(() => {
     setGlobalSearchPrintSelected(new Set());
+    setSearchViewMode('all');
     setGlobalSearchModalStaveraMode(false);
     setGlobalSearchModalVisible(false);
     setGlobalSearchHits([]);
@@ -749,6 +781,7 @@ export default function App() {
       setGlobalSearchHits(hits);
       setGlobalSearchModalStaveraMode(true);
       setGlobalSearchPrintSelected(new Set());
+      setSearchViewMode('all');
       setGlobalSearchModalVisible(true);
     } catch (e) {
       console.error(e);
@@ -800,6 +833,7 @@ export default function App() {
       setGlobalSearchHits(hits);
       setGlobalSearchModalStaveraMode(false);
       setGlobalSearchPrintSelected(new Set());
+      setSearchViewMode('all');
       setGlobalSearchModalVisible(true);
     } catch (e) {
       console.error(e);
@@ -2200,8 +2234,8 @@ export default function App() {
               <View style={styles.searchModalHeaderRow}>
                 <Text style={styles.searchModalTitle}>
                   {globalSearchModalStaveraMode
-                    ? `Σταθερά (${effectiveSearchHits.length})`
-                    : `Αποτελέσματα (${effectiveSearchHits.length})`}
+                    ? `Σταθερά (${visibleSearchHits.length})`
+                    : `Αποτελέσματα (${visibleSearchHits.length})`}
                 </Text>
                 {effectiveSearchHits.length > 0 ? (
                   <TouchableOpacity
@@ -2215,15 +2249,21 @@ export default function App() {
               {printableHitIndices.length > 0 ? (
                 <View style={styles.searchModalSelectRow}>
                   <View style={styles.searchModalSelectLeft}>
-                    <TouchableOpacity onPress={selectAllPrintableSearchHits} style={styles.searchModalSelectChip}>
-                      <Text style={styles.searchModalSelectChipText}>Όλα ✓</Text>
+                    <TouchableOpacity onPress={selectAllPrintableSearchHits} style={[styles.searchModalSelectChip, searchViewMode === 'all' && { backgroundColor:'#2e7d32', borderColor:'#2e7d32' }]}>
+                      <Text style={[styles.searchModalSelectChipText, searchViewMode === 'all' && { color:'#fff' }]}>Όλα ✓</Text>
                     </TouchableOpacity>
-                    <TouchableOpacity onPress={selectActiveSearchHits} style={[styles.searchModalSelectChip, { backgroundColor:'#2e7d32' }]}>
-                      <Text style={[styles.searchModalSelectChipText, { color:'#fff' }]}>Τρέχουσες ✓</Text>
+                    <TouchableOpacity onPress={selectActiveSearchHits} style={[styles.searchModalSelectChip, searchViewMode === 'active' && { backgroundColor:'#2e7d32', borderColor:'#2e7d32' }]}>
+                      <Text style={[styles.searchModalSelectChipText, searchViewMode === 'active' && { color:'#fff' }]}>Τρέχουσες ✓</Text>
                     </TouchableOpacity>
-                    <TouchableOpacity onPress={clearGlobalSearchPrintSelection} style={styles.searchModalSelectChip}>
-                      <Text style={styles.searchModalSelectChipText}>Καθάρισμα</Text>
+                    <TouchableOpacity onPress={selectReadySearchHits} style={[styles.searchModalSelectChip, searchViewMode === 'ready' && { backgroundColor:'#2e7d32', borderColor:'#2e7d32' }]}>
+                      <Text style={[styles.searchModalSelectChipText, searchViewMode === 'ready' && { color:'#fff' }]}>Έτοιμες ✓</Text>
                     </TouchableOpacity>
+                    <TouchableOpacity onPress={selectSoldSearchHits} style={[styles.searchModalSelectChip, searchViewMode === 'sold' && { backgroundColor:'#2e7d32', borderColor:'#2e7d32' }]}>
+                      <Text style={[styles.searchModalSelectChipText, searchViewMode === 'sold' && { color:'#fff' }]}>Αρχείο ✓</Text>
+                    </TouchableOpacity>
+                    <Pressable onPress={clearGlobalSearchPrintSelection} style={({ pressed }) => [styles.searchModalSelectChip, pressed && { backgroundColor:'#2e7d32', borderColor:'#2e7d32' }]}>
+                      {({ pressed }) => <Text style={[styles.searchModalSelectChipText, pressed && { color:'#fff' }]}>Καθάρισμα</Text>}
+                    </Pressable>
                   </View>
                   <TouchableOpacity
                     onPress={printSelectedSearchResults}
@@ -2246,8 +2286,8 @@ export default function App() {
                   </TouchableOpacity>
                 </View>
               ) : null}
-              <ScrollView ref={searchListRef} style={{ maxHeight: 420 }} keyboardShouldPersistTaps="handled">
-                {effectiveSearchHits.length === 0 ? (
+              <ScrollView ref={searchListRef} style={{ maxHeight: 710 }} keyboardShouldPersistTaps="handled">
+                {visibleSearchHits.length === 0 ? (
                   <Text style={{ textAlign: 'center', color: '#888', padding: 20 }}>
                     {globalSearchModalStaveraMode
                       ? 'Δεν υπάρχει παραγγελία με τουλάχιστον ένα σταθερό (διάσταση).'
@@ -2255,6 +2295,9 @@ export default function App() {
                   </Text>
                 ) : (
                   effectiveSearchHits.map((hit, i) => {
+                    if (searchViewMode === 'active' && !isActiveHit(hit)) return null;
+                    if (searchViewMode === 'ready' && !isReadyHit(hit)) return null;
+                    if (searchViewMode === 'sold' && !hit.isSold) return null;
                     const canPrint = !!hit.order;
                     const isSel = globalSearchPrintSelected.has(i);
                     const prev = effectiveSearchHits[i - 1];
@@ -2335,7 +2378,7 @@ export default function App() {
         {!globalSearchModalVisible && effectiveSearchHits.length > 0 ? (
           <View style={[{ position:'absolute', bottom:16, right:16, zIndex:1500, flexDirection:'row', alignItems:'center', backgroundColor: bannerBlink ? '#d32f2f' : '#ff8a80', borderRadius:14, paddingLeft:16, paddingRight:8, paddingVertical:14, borderWidth:2, borderColor:'#fff', elevation:10, shadowColor:'#000', shadowOpacity:0.35, shadowRadius:8 }, Platform.OS === 'web' && { position:'fixed' }]}>
             <TouchableOpacity onPress={reopenGlobalSearchModal}>
-              <Text style={{ color:'#fff', fontWeight:'900', fontSize:17 }}>🔍 Αποτελέσματα ({effectiveSearchHits.length})</Text>
+              <Text style={{ color:'#fff', fontWeight:'900', fontSize:17 }}>🔍 Αποτελέσματα ({visibleSearchHits.length})</Text>
             </TouchableOpacity>
             <TouchableOpacity onPress={closeGlobalSearchModal} style={{ marginLeft:12, width:30, height:30, borderRadius:15, backgroundColor:'rgba(255,255,255,0.3)', alignItems:'center', justifyContent:'center' }}>
               <Text style={{ color:'#fff', fontWeight:'900', fontSize:16 }}>✕</Text>
@@ -2538,9 +2581,10 @@ const styles = StyleSheet.create({
     bottom: 0,
     zIndex: 99999,
     elevation: 999,
-    justifyContent: 'center',
+    justifyContent: 'flex-start',
     alignItems: 'center',
     padding: 16,
+    paddingTop: 24,
   },
   searchBackdrop: {
     position: 'absolute',

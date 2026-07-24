@@ -1,6 +1,6 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import { Modal, View, Text, TouchableOpacity, ScrollView, TextInput, Dimensions } from 'react-native';
-import { sortCoatingsGrouped } from './formatHelpers';
+import { sortCoatingsGrouped, getCoatingGroup } from './formatHelpers';
 import { DIPLI_MODELS, DIPLI_DEFAULT } from './utils';
 
 // Θέση dropdown κάτω από το κουμπί, με διόρθωση για το ζουμ (document.body.style.zoom).
@@ -203,29 +203,37 @@ export function LockPickerModal({ visible, onClose, anchor, customForm, setCusto
 export function CoatingsPickerModal({ visible, onClose, anchor, customForm, setCustomForm, coatings }) {
   const W = 340;
   const { left, top } = anchorPos(anchor, W);
+  const scrollRef = useRef(null);
+  const mesaYRef = useRef(0);
+  const sorted = sortCoatingsGrouped(coatings);
+  const firstMesaId = sorted.find(c=>getCoatingGroup(c.name)===1)?.id;
   return (
     <Modal visible={visible} transparent animationType="fade" onRequestClose={onClose}>
       <TouchableOpacity activeOpacity={1} onPress={onClose} style={{flex:1}}>
         <View style={{position:'absolute',left,top,width:W,maxHeight:380,backgroundColor:'#fff',borderRadius:10,borderWidth:1,borderColor:'#007AFF',shadowColor:'#000',shadowOpacity:0.2,shadowRadius:6,elevation:6,overflow:'hidden'}}>
           <Text style={{fontSize:11,fontWeight:'700',color:'#007AFF',paddingVertical:5,paddingHorizontal:9,backgroundColor:'#E8F4FD'}}>ΕΠΕΝΔΥΣΗ ΠΟΡΤΑΣ</Text>
-          <ScrollView style={{maxHeight:300}}>
+          <ScrollView ref={scrollRef} style={{maxHeight:300}}>
             {coatings.length===0 && (
               <Text style={{padding:14,color:'#aaa',textAlign:'center',fontSize:12}}>Δεν υπάρχουν επενδύσεις. Προσθέστε από το μενού ☰.</Text>
             )}
-            {sortCoatingsGrouped(coatings).map(c=>{
+            {sorted.map(c=>{
               const selected = (customForm.coatings||[]).includes(c.name);
+              const grp = getCoatingGroup(c.name);
               const n = c.name?.toLowerCase()||'';
               const bg = n.includes('μέσα')||n.includes('μεσα') ? '#E8F4FD' : n.includes('έξω')||n.includes('εξω') ? '#FFF3E0' : '#fff';
               return (
                 <TouchableOpacity key={c.id}
+                  onLayout={c.id===firstMesaId ? (e=>{mesaYRef.current=e.nativeEvent.layout.y;}) : undefined}
                   style={{paddingVertical:8,paddingHorizontal:10,borderBottomWidth:1,borderBottomColor:'#eee',flexDirection:'row',alignItems:'center',justifyContent:'space-between', backgroundColor: bg}}
                   onPress={()=>{
                     const current = customForm.coatings||[];
-                    const updated = selected ? current.filter(x=>x!==c.name) : [...current,c.name];
+                    let updated;
+                    if (selected) updated = current.filter(x=>x!==c.name);
+                    else if (grp===0||grp===1) updated = [...current.filter(x=>getCoatingGroup(x)!==grp), c.name];
+                    else updated = [...current, c.name];
                     setCustomForm({...customForm,coatings:updated});
-                    if (!selected && updated.length >= 2) {
-                      setTimeout(()=>onClose(), 150);
-                    }
+                    if (!selected && grp===0) setTimeout(()=>scrollRef.current?.scrollTo({y:mesaYRef.current, animated:true}), 60);
+                    else if (!selected && updated.length>=2) setTimeout(()=>onClose(), 150);
                   }}>
                   <Text style={{fontSize:13,color:'#000',flex:1}}>{c.name}</Text>
                   {selected && <Text style={{color:'#007AFF',fontSize:16,fontWeight:'bold'}}>✓</Text>}

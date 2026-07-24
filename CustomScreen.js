@@ -316,34 +316,44 @@ const renderNotesWithWarning = (notes, baseStyle, prefix='Σημ: ') => {
 // ════════════════════════════════════════════════════════════
 const stripAccentsTxt = (s) => String(s||'').normalize('NFD').replace(/[\u0300-\u036f]/g,'');
 
-// ── Σύνολο υλικών (v1: επενδύσεις ανά χρώμα + κάσα/προφίλ/πηχάκι 2,5/πόρτα) ──
-const CASE_PER_DOOR = 2.5;
+// ── Σύνολο υλικών: επενδύσεις σε τεμάχια (φύλλα)· κάσες/περβάζια/πηχάκι = 1 σετ/πόρτα (μόνο αν συμπληρωμένα) ──
 const normalizeCoatName = (name) => stripAccentsTxt(String(name||'').toUpperCase())
   .replace(/ΕΞΩΤΕΡΙΚ[ΑΟΗ]?/g,' ').replace(/ΕΣΩΤΕΡΙΚ[ΑΟΗ]?/g,' ')
   .replace(/ΕΞΩ/g,' ').replace(/ΕΣΩΤ/g,' ').replace(/ΜΕΣΑ/g,' ')
   .replace(/\s+/g,' ').trim();
 const materialTotals = (orders) => {
-  const coatings = {};
-  let caseOpen=0, caseClosed=0, profExo=0, profMesa=0, pihaki=0;
+  const coatings = {}, cases = {}, frameExo = {}, frameMesa = {};
+  let pihaki = 0;
+  const add = (bucket, key, n) => { (bucket[key] = bucket[key] || { label:key, qty:0 }).qty += n; };
   for (const o of (orders||[])) {
     const doors = parseInt(o.qty,10) || 1;
-    let hasExo=false, hasMesa=false, hasPihaki=false;
+    let caseKey=null, exoFrameKey=null, mesaFrameKey=null, hasPihaki=false;
     for (const name of (o.coatings||[])) {
       if (!name || !String(name).trim()) continue;
-      const key = normalizeCoatName(name); if (!key) continue;
-      (coatings[key] = coatings[key] || { label:key, qty:0 }).qty += doors;
+      const base = normalizeCoatName(name); if (!base) continue;
+      const d = o.coatingDetails?.[name] || {};
+      const color = normalizeCoatName(d.color || '');
+      const coatKey = (color && !base.includes(color)) ? `${base} ${color}` : base;
+      add(coatings, coatKey, doors);
       const t = getCoatingType(name);
-      if (t==='EXO') hasExo=true;
-      else if (t==='MESA') { hasMesa=true; if (o.coatingDetails?.[name]?.pihaki) hasPihaki=true; }
+      if (t==='EXO') {
+        const cw=normalizeCoatName(d.caseW||''), cc=normalizeCoatName(d.caseColor||'');
+        if (caseKey==null && (cw||cc)) caseKey = [cw, cc].filter(Boolean).join(' ');
+        const fc=normalizeCoatName(d.frameColor||''), fw=normalizeCoatName(d.frameW||'');
+        if (exoFrameKey==null && (fc||fw)) exoFrameKey = fc || fw;
+      } else if (t==='MESA') {
+        if (d.pihaki) hasPihaki = true;
+        const fc=normalizeCoatName(d.frameColor||''), fw=normalizeCoatName(d.frameW||'');
+        if (mesaFrameKey==null && (fc||fw)) mesaFrameKey = fc || fw;
+      }
     }
-    if (String(o.caseType||'').includes('ΑΝΟΙΧΤΟΥ')) caseOpen += doors*CASE_PER_DOOR;
-    else caseClosed += doors*CASE_PER_DOOR;
-    if (hasExo) profExo += doors*CASE_PER_DOOR;
-    if (hasMesa) profMesa += doors*CASE_PER_DOOR;
-    if (hasPihaki) pihaki += doors*CASE_PER_DOOR;
+    if (caseKey) add(cases, caseKey, doors);
+    if (exoFrameKey) add(frameExo, exoFrameKey, doors);
+    if (mesaFrameKey) add(frameMesa, mesaFrameKey, doors);
+    if (hasPihaki) pihaki += doors;
   }
-  const coatingList = Object.values(coatings).sort((a,b)=>a.label.localeCompare(b.label,'el'));
-  return { coatings: coatingList, caseOpen, caseClosed, profExo, profMesa, pihaki };
+  const sort = (b) => Object.values(b).sort((a,z)=>a.label.localeCompare(z.label,'el'));
+  return { coatings: sort(coatings), cases: sort(cases), frameExo: sort(frameExo), frameMesa: sort(frameMesa), pihaki };
 };
 
 const normalizePhone = (p) => {
@@ -770,6 +780,17 @@ export default function CustomScreen({ customOrders, setCustomOrders, soldOrders
   const [placeSelected, setPlaceSelected] = useState({});
   const [materialsOpen, setMaterialsOpen] = useState(false);
   const [matExcluded, setMatExcluded] = useState({});
+  const [matPos, setMatPos] = useState(null);
+  const onMatDragStart = (e) => {
+    if (Platform.OS!=='web') return;
+    e.preventDefault();
+    const startX=e.clientX, startY=e.clientY;
+    const base = matPos || { left: Math.max(8, (window.innerWidth||1000)-464), top:60 };
+    if (!matPos) setMatPos(base);
+    const move=(ev)=>setMatPos({ left: base.left+(ev.clientX-startX), top: base.top+(ev.clientY-startY) });
+    const up=()=>{ document.removeEventListener('mousemove',move); document.removeEventListener('mouseup',up); };
+    document.addEventListener('mousemove',move); document.addEventListener('mouseup',up);
+  };
   const [buildFilterPos, setBuildFilterPos] = useState({ x:0, y:0 });
   const bfIsDragging = useRef(false);
   const bfDragStart = useRef({});
@@ -3317,9 +3338,14 @@ export default function CustomScreen({ customOrders, setCustomOrders, soldOrders
   const handleMaterialsPrint = (totals, count) => {
     const today = new Date();
     const dateStr = `${String(today.getDate()).padStart(2,'0')}/${String(today.getMonth()+1).padStart(2,'0')}/${today.getFullYear()} ${String(today.getHours()).padStart(2,'0')}:${String(today.getMinutes()).padStart(2,'0')}`;
-    const row = (label, val) => val>0 ? `<tr><td>${label}</td><td style="text-align:right;font-weight:900">${matFmt(val)}</td></tr>` : '';
-    const coatRows = totals.coatings.map(c=>row(c.label, c.qty)).join('');
-    const partRows = row('Κάσα ΚΛΕΙΣΤΗ', totals.caseClosed)+row('Κάσα ΑΝΟΙΧΤΗ', totals.caseOpen)+row('Προφίλ Εξωτερικό', totals.profExo)+row('Προφίλ Εσωτερικό', totals.profMesa)+row('Πηχάκι', totals.pihaki);
+    const row = (label, val, unit='') => val>0 ? `<tr><td>${label}</td><td style="text-align:right;font-weight:900">${matFmt(val)}${unit?' '+unit:''}</td></tr>` : '';
+    const secTable = (title, rows) => rows ? `<h3>${title}</h3><table>${rows}</table>` : '';
+    const setRows = (list)=>list.map(c=>row(c.label, c.qty, 'σετ')).join('');
+    const sections = secTable('ΕΠΕΝΔΥΣΕΙΣ', totals.coatings.map(c=>row(c.label, c.qty)).join(''))
+      + secTable('ΚΑΣΕΣ', setRows(totals.cases))
+      + secTable('ΠΕΡΒΑΖΙΑ ΕΞΩΤΕΡΙΚΑ', setRows(totals.frameExo))
+      + secTable('ΠΕΡΒΑΖΙΑ ΕΣΩΤΕΡΙΚΑ', setRows(totals.frameMesa))
+      + secTable('ΠΗΧΑΚΙΑ', row('Πηχάκι', totals.pihaki, 'σετ'));
     const html = `<!DOCTYPE html><html><head><meta charset="utf-8"><style>
       body{font-family:Arial,sans-serif;margin:0;color:#000;}
       table{width:100%;border-collapse:collapse;font-size:15px;}
@@ -3330,8 +3356,7 @@ export default function CustomScreen({ customOrders, setCustomOrders, soldOrders
     </style></head><body><div style="padding:12px;">
       <h1>VAICON — ΣΥΝΟΛΟ ΥΛΙΚΩΝ</h1>
       <h2 class="sub">📅 ${dateStr} &nbsp;|&nbsp; ${count} παραγγελίες</h2>
-      ${coatRows?`<h3>ΕΠΕΝΔΥΣΕΙΣ</h3><table>${coatRows}</table>`:''}
-      ${partRows?`<h3>ΚΑΣΕΣ / ΠΡΟΦΙΛ</h3><table>${partRows}</table>`:''}
+      ${sections}
     </div></body></html>`;
     if (Platform.OS==='web') {
       const win = window.open('','_blank');
@@ -3343,10 +3368,16 @@ export default function CustomScreen({ customOrders, setCustomOrders, soldOrders
     const selected = materialsPool.filter(o => !matExcluded[o.id]);
     const allSel = materialsPool.length>0 && selected.length===materialsPool.length;
     const totals = materialTotals(selected);
-    const totalRow = (label, val) => val>0 ? (
+    const rowView = (label, str) => str ? (
       <View key={label} style={{flexDirection:'row', justifyContent:'space-between', paddingVertical:2}}>
         <Text style={{fontSize:12, color:'#333'}}>{label}</Text>
-        <Text style={{fontSize:12, fontWeight:'900', color:'#2e7d32'}}>{matFmt(val)} τεμ.</Text>
+        <Text style={{fontSize:12, fontWeight:'900', color:'#2e7d32'}}>{str}</Text>
+      </View>
+    ) : null;
+    const secBlock = (title, list, fmt) => list.length ? (
+      <View key={title}>
+        <Text style={{fontSize:12, fontWeight:'900', color:'#1b5e20', marginTop:6, marginBottom:2}}>{title}</Text>
+        {list.map(c => rowView(c.label, fmt(c.qty)))}
       </View>
     ) : null;
     const cbox = (on) => (
@@ -3354,32 +3385,36 @@ export default function CustomScreen({ customOrders, setCustomOrders, soldOrders
         {on&&<Text style={{color:'white',fontWeight:'bold',fontSize:10}}>✓</Text>}
       </View>
     );
+    const posStyle = matPos ? { top: matPos.top, left: matPos.left } : { top: 60, right: 14 };
+    const bodyMaxH = (Platform.OS==='web' ? (window.innerHeight||800) : 800) - 200;
+    const header = (
+      <View style={{flexDirection:'row', justifyContent:'space-between', alignItems:'center', paddingHorizontal:10, paddingVertical:8, backgroundColor:'#2e7d32', borderTopLeftRadius:8, borderTopRightRadius:8}}>
+        <Text style={{color:'#fff', fontWeight:'bold', fontSize:13}}>🧱 ΣΥΝΟΛΟ ΥΛΙΚΩΝ</Text>
+        <TouchableOpacity onPress={()=>setMaterialsOpen(false)}><Text style={{color:'#fff', fontSize:18, fontWeight:'bold', paddingHorizontal:4}}>✕</Text></TouchableOpacity>
+      </View>
+    );
     return (
-      <View style={{position:'absolute', top:60, right:14, width:360, backgroundColor:'#f1f8f1', borderWidth:1, borderColor:'#2e7d32', borderRadius:8, zIndex:2000, elevation:24, shadowColor:'#000', shadowOffset:{width:0,height:6}, shadowOpacity:0.3, shadowRadius:12}}>
-        <View style={{flexDirection:'row', justifyContent:'space-between', alignItems:'center', paddingHorizontal:10, paddingVertical:8, backgroundColor:'#2e7d32', borderTopLeftRadius:8, borderTopRightRadius:8}}>
-          <Text style={{color:'#fff', fontWeight:'bold', fontSize:13}}>🧱 ΣΥΝΟΛΟ ΥΛΙΚΩΝ</Text>
-          <TouchableOpacity onPress={()=>setMaterialsOpen(false)}><Text style={{color:'#fff', fontSize:18, fontWeight:'bold', paddingHorizontal:4}}>✕</Text></TouchableOpacity>
-        </View>
+      <View style={{position:'absolute', ...posStyle, width:450, backgroundColor:'#f1f8f1', borderWidth:1, borderColor:'#2e7d32', borderRadius:8, zIndex:2000, elevation:24, shadowColor:'#000', shadowOffset:{width:0,height:6}, shadowOpacity:0.3, shadowRadius:12}}>
+        {Platform.OS==='web'
+          ? React.createElement('div', { onMouseDown:onMatDragStart, style:{ cursor:'move' } }, header)
+          : header}
         <View style={{padding:10}}>
           {materialsPool.length===0 ? (
             <Text style={{textAlign:'center', color:'#999', paddingVertical:8}}>Δεν υπάρχουν ενεργές παραγγελίες.</Text>
           ) : (<>
+            <ScrollView style={{maxHeight:bodyMaxH}} contentContainerStyle={{paddingBottom:4}}>
             <View style={{borderWidth:1, borderColor:'#c8e6c9', borderRadius:6, padding:8, backgroundColor:'#fff', marginBottom:8}}>
-              {totals.coatings.length>0 && <Text style={{fontSize:12, fontWeight:'900', color:'#1b5e20', marginBottom:2}}>ΕΠΕΝΔΥΣΕΙΣ</Text>}
-              {totals.coatings.map(c => totalRow(c.label, c.qty))}
-              {totals.coatings.length>0 && <View style={{height:1, backgroundColor:'#e0e0e0', marginVertical:4}} />}
-              {totalRow('Κάσα ΚΛΕΙΣΤΗ', totals.caseClosed)}
-              {totalRow('Κάσα ΑΝΟΙΧΤΗ', totals.caseOpen)}
-              {totalRow('Προφίλ Εξωτερικό', totals.profExo)}
-              {totalRow('Προφίλ Εσωτερικό', totals.profMesa)}
-              {totalRow('Πηχάκι', totals.pihaki)}
+              {secBlock('ΕΠΕΝΔΥΣΕΙΣ', totals.coatings, v=>`${matFmt(v)} τεμ.`)}
+              {secBlock('ΚΑΣΕΣ', totals.cases, v=>`${matFmt(v)} σετ`)}
+              {secBlock('ΠΕΡΒΑΖΙΑ ΕΞΩΤΕΡΙΚΑ', totals.frameExo, v=>`${matFmt(v)} σετ`)}
+              {secBlock('ΠΕΡΒΑΖΙΑ ΕΣΩΤΕΡΙΚΑ', totals.frameMesa, v=>`${matFmt(v)} σετ`)}
+              {secBlock('ΠΗΧΑΚΙΑ', totals.pihaki>0 ? [{label:'Πηχάκι', qty:totals.pihaki}] : [], v=>`${matFmt(v)} σετ`)}
             </View>
             <TouchableOpacity style={{flexDirection:'row', alignItems:'center', gap:6, marginBottom:4}}
               onPress={()=>setMatExcluded(allSel ? Object.fromEntries(materialsPool.map(o=>[o.id,true])) : {})}>
               {cbox(allSel)}
               <Text style={{fontSize:12, fontWeight:'bold', color:'#333'}}>Επιλογή όλων ({selected.length}/{materialsPool.length})</Text>
             </TouchableOpacity>
-            <ScrollView style={{maxHeight:180}}>
               <View style={{flexDirection:'row', flexWrap:'wrap'}}>
                 {materialsPool.map(o=>{
                   const sel=!matExcluded[o.id];
