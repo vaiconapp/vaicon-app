@@ -61,8 +61,6 @@ const BF_STAGES = [
   ['montage','🪛 Μοντάρισμα','ΜΟΝΤΑΡΙΣΜΑ'],
   ['stavera','📐 Σταθερό','ΣΤΑΘΕΡΟ'],
   ['oversize','📦 223/83','223/83'],
-  ['ependExo','🎨 Επένδυση ΕΞΩ','ΕΠΕΝΔΥΣΗ ΕΞΩ'],
-  ['ependMesa','🎨 Επένδυση ΜΕΣΑ','ΕΠΕΝΔΥΣΗ ΜΕΣΑ'],
 ];
 const bfEpendKeys = (o, type) => Object.keys(o.buildTasks||{}).filter(k => k.startsWith('epend') &&
   (type==='MESA' ? getCoatingType(stdCoatNames(o)[parseInt(k.slice(5))||0])==='MESA'
@@ -207,7 +205,7 @@ const recomputeCoatingDetails = (form) => {
 };
 
 // Εκτύπωση «ΠΡΟΣ ΠΑΡΑΓΩΓΗ» επενδύσεων — Α4 ανά δύο, αναλυτικά (ίδια μορφή με vaicon-eidikes).
-const buildEpendStdHtml = (orders) => {
+const buildEpendStdHtml = (orders, summaryOrders) => {
   const SLASH = '<b style="color:#d32f2f">&nbsp;&nbsp;/&nbsp;&nbsp;</b>';
   const escapeHtml = s => String(s||'').replace(/[&<>"']/g, c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
   const buildRow = (d, keys) => keys.map(k=>d[k]&&String(d[k]).trim()?escapeHtml(d[k]).trim():null).filter(Boolean).join(SLASH);
@@ -222,23 +220,23 @@ const buildEpendStdHtml = (orders) => {
       if (!fyllo && !perv && !kasa) return;
       const type = getCoatingType(name);
       const color = type==='EXO'?'#e65100':type==='MESA'?'#1565c0':'#444';
-      const parts = [`<div style="font-weight:900;color:${color};font-size:44px;letter-spacing:0.5px;margin-bottom:6px;line-height:1.15">${escapeHtml(name)}</div>`];
-      if (fyllo) parts.push(`<div style="margin-left:20px;font-size:36px;line-height:1.3;margin-bottom:3px"><b>Φύλλο:</b> ${fyllo}</div>`);
-      if (perv)  parts.push(`<div style="margin-left:20px;font-size:36px;line-height:1.3;margin-bottom:3px"><b>Περβάζι:</b> ${perv}</div>`);
-      if (type==='EXO' && kasa) parts.push(`<div style="margin-left:20px;font-size:36px;line-height:1.3;margin-bottom:3px"><b>Κάσα:</b> ${kasa}</div>`);
-      if (type==='MESA' && d.pihaki) parts.push(`<div style="margin-left:20px;font-size:32px;line-height:1.3;color:#1565C0;font-weight:900;margin-top:4px">✓ Πηχάκι (ξυλογωνιά)</div>`);
+      const parts = [`<div style="font-weight:900;color:${color};font-size:30px;letter-spacing:0.5px;margin-bottom:4px;line-height:1.15">${escapeHtml(name)}</div>`];
+      if (fyllo) parts.push(`<div style="margin-left:16px;font-size:25px;line-height:1.25;margin-bottom:2px"><b>Φύλλο:</b> ${fyllo}</div>`);
+      if (perv)  parts.push(`<div style="margin-left:16px;font-size:25px;line-height:1.25;margin-bottom:2px"><b>Περβάζι:</b> ${perv}</div>`);
+      if (type==='EXO' && kasa) parts.push(`<div style="margin-left:16px;font-size:25px;line-height:1.25;margin-bottom:2px"><b>Κάσα:</b> ${kasa}</div>`);
+      if (type==='MESA' && d.pihaki) parts.push(`<div style="margin-left:16px;font-size:22px;line-height:1.25;color:#1565C0;font-weight:900;margin-top:3px">✓ Πηχάκι (ξυλογωνιά)</div>`);
       sections.push(parts.join(''));
     });
-    const sectionsHtml = sections.join('<div style="border-top:2px dashed #999;margin:10px 0"></div>') || '<div style="font-size:30px;color:#777;font-style:italic">(χωρίς στοιχεία επένδυσης)</div>';
+    const sectionsHtml = sections.join('<div style="border-top:2px dashed #999;margin:7px 0"></div>') || '<div style="font-size:22px;color:#777;font-style:italic">(χωρίς στοιχεία επένδυσης)</div>';
     const fora = o.side==='ΑΡΙΣΤΕΡΗ'?'ΑΡΙΣΤΕΡΗ':'ΔΕΞΙΑ';
     const installBadge = o.installation==='ΝΑΙ'
-      ? `<span style="background:#1565C0;color:white;font-weight:900;font-size:34px;padding:6px 18px;border-radius:8px;margin-left:14px">ΜΟΝΤΑΡΙΣΜΑ</span>` : '';
+      ? `<span style="background:#1565C0;color:white;font-weight:900;font-size:24px;padding:4px 14px;border-radius:8px;margin-left:12px">ΜΟΝΤΑΡΙΣΜΑ</span>` : '';
     return `<div class="ord">
       <div class="ordno">${escapeHtml(o.orderNo||'—')}</div>
       <div class="ordbody">
-        <div style="display:flex;align-items:center;gap:18px;border-bottom:3px solid #1a1a1a;padding-bottom:12px;margin-bottom:16px;flex-wrap:wrap">
-          <div style="font-size:52px;font-weight:900;color:#1565C0">${escapeHtml(o.h||'—')} × ${escapeHtml(o.w||'—')}</div>
-          <div style="font-size:40px;font-weight:900;color:#8B0000">${fora}</div>
+        <div style="display:flex;align-items:center;gap:14px;border-bottom:3px solid #1a1a1a;padding-bottom:8px;margin-bottom:10px;flex-wrap:wrap">
+          <div style="font-size:38px;font-weight:900;color:#1565C0">${escapeHtml(o.h||'—')} × ${escapeHtml(o.w||'—')}</div>
+          <div style="font-size:28px;font-weight:900;color:#8B0000">${fora}</div>
           ${installBadge}
         </div>
         ${sectionsHtml}
@@ -255,6 +253,8 @@ const buildEpendStdHtml = (orders) => {
       <tr><td class="slot">${bottom}</td></tr>
     </tbody></table>`;
   }
+  const summaryList = (summaryOrders||[]).filter(orderHasMaterials);
+  const summaryPage = summaryList.length ? `<div style="page-break-before:always">${buildMatSummaryBody(summaryList)}</div>` : '';
   return `<html><head><meta charset="utf-8"><style>
     @page { size: A4 portrait; margin: 8mm; }
     html, body { margin:0; padding:0; height:100%; }
@@ -265,12 +265,13 @@ const buildEpendStdHtml = (orders) => {
     table.page td.cut { height:8mm; vertical-align:middle; text-align:center; color:#999; font-size:18px; letter-spacing:1px; white-space:nowrap; }
     .ord { width:100%; height:100%; box-sizing:border-box; padding:3mm 5mm 3mm 2mm; border:2px solid #1a1a1a; border-radius:8px; display:flex; overflow:hidden; }
     .ord.empty { border-style:dashed; border-color:#bbb; }
-    .ordno { width: 22mm; margin-right:4mm; display:flex; align-items:center; justify-content:center;
-             font-size:80px; font-weight:900; color:#1a1a1a; letter-spacing:2px;
+    .ordno { width: 18mm; margin-right:3mm; display:flex; align-items:center; justify-content:center;
+             font-size:56px; font-weight:900; color:#1a1a1a; letter-spacing:2px;
              writing-mode: vertical-rl; transform: rotate(180deg); white-space:nowrap; }
     .ordbody { flex:1; min-width:0; }
+    ${MAT_SUMMARY_CSS}
     * { -webkit-print-color-adjust:exact; print-color-adjust:exact; }
-  </style></head><body>${pages}</body></html>`;
+  </style></head><body>${pages}${summaryPage}</body></html>`;
 };
 
 // ── Προειδοποίηση ματιού: αλουμίνιο/κυπρί → όχι τρύπημα επένδυσης για μάτι ──
@@ -325,12 +326,13 @@ const materialTotals = (orders) => {
   const coatings = {}, cases = {}, frameExo = {}, frameMesa = {};
   let pihaki = 0;
   const add = (bucket, key, n) => { (bucket[key] = bucket[key] || { label:key, qty:0 }).qty += n; };
+  const coatDone = (o, i) => !!(o.buildTasks && o.buildTasks['epend'+i]===true);
   for (const o of (orders||[])) {
     const doors = parseInt(o.qty,10) || 1;
     let caseKey=null, exoFrameKey=null, mesaFrameKey=null, hasPihaki=false;
-    for (const name of (o.coatings||[])) {
-      if (!name || !String(name).trim()) continue;
-      const base = normalizeCoatName(name); if (!base) continue;
+    (o.coatings||[]).filter(c=>c&&String(c).trim()).forEach((name, i) => {
+      if (coatDone(o, i)) return;
+      const base = normalizeCoatName(name); if (!base) return;
       const d = o.coatingDetails?.[name] || {};
       const color = normalizeCoatName(d.color || '');
       const coatKey = (color && !base.includes(color)) ? `${base} ${color}` : base;
@@ -346,7 +348,7 @@ const materialTotals = (orders) => {
         const fc=normalizeCoatName(d.frameColor||''), fw=normalizeCoatName(d.frameW||'');
         if (mesaFrameKey==null && (fc||fw)) mesaFrameKey = fc || fw;
       }
-    }
+    });
     if (caseKey) add(cases, caseKey, doors);
     if (exoFrameKey) add(frameExo, exoFrameKey, doors);
     if (mesaFrameKey) add(frameMesa, mesaFrameKey, doors);
@@ -354,6 +356,43 @@ const materialTotals = (orders) => {
   }
   const sort = (b) => Object.values(b).sort((a,z)=>a.label.localeCompare(z.label,'el'));
   return { coatings: sort(coatings), cases: sort(cases), frameExo: sort(frameExo), frameMesa: sort(frameMesa), pihaki };
+};
+
+const orderHasMaterials = (o) => { const t = materialTotals([o]); return t.coatings.length>0 || t.cases.length>0 || t.frameExo.length>0 || t.frameMesa.length>0 || t.pihaki>0; };
+
+// ── Σύνολο υλικών: κοινό HTML (χρησιμοποιείται σε αυτόνομη εκτύπωση & ως τελευταία σελίδα στην εκτύπωση επενδύσεων) ──
+const MAT_SUMMARY_CSS = `
+  .matsum{font-family:Arial,sans-serif;color:#000;}
+  .matsum .cols{column-count:2;column-gap:16px;}
+  .matsum .sec{break-inside:avoid;-webkit-column-break-inside:avoid;margin-bottom:6px;}
+  .matsum table{width:100%;border-collapse:collapse;font-size:11px;}
+  .matsum td{padding:2px 5px;border-bottom:1px solid #bbb;}
+  .matsum h1{font-size:14px;margin-bottom:2px;} .matsum h2.sub{font-size:10px;color:#555;margin:0 0 6px;}
+  .matsum h3{font-size:11px;margin:6px 0 2px;border-bottom:1.5px solid #000;padding-bottom:1px;}
+  .matsum .orders{margin-top:10px;padding-top:6px;border-top:1.5px solid #000;}
+  .matsum .chips{display:flex;flex-wrap:wrap;gap:2px;margin-top:4px;}
+  .matsum .chip{border:1px solid #333;border-radius:3px;padding:0 3px;font-size:10px;font-weight:bold;white-space:nowrap;}`;
+const buildMatSummaryBody = (orders) => {
+  const totals = materialTotals(orders);
+  const count = orders.length;
+  const t = new Date();
+  const dateStr = `${String(t.getDate()).padStart(2,'0')}/${String(t.getMonth()+1).padStart(2,'0')}/${t.getFullYear()} ${String(t.getHours()).padStart(2,'0')}:${String(t.getMinutes()).padStart(2,'0')}`;
+  const fmt = (n) => String(Math.round(n*10)/10).replace('.', ',');
+  const chips = orders.map(o=>`<span class="chip">${o.orderNo}</span>`).join('');
+  const row = (label, val, unit='') => val>0 ? `<tr><td>${label}</td><td style="text-align:right;font-weight:900">${fmt(val)}${unit?' '+unit:''}</td></tr>` : '';
+  const secTable = (title, rows) => rows ? `<div class="sec"><h3>${title}</h3><table>${rows}</table></div>` : '';
+  const setRows = (list)=>list.map(c=>row(c.label, c.qty, 'σετ')).join('');
+  const sections = secTable('ΕΠΕΝΔΥΣΕΙΣ', totals.coatings.map(c=>row(c.label, c.qty)).join(''))
+    + secTable('ΚΑΣΕΣ', setRows(totals.cases))
+    + secTable('ΠΕΡΒΑΖΙΑ ΕΞΩΤΕΡΙΚΑ', setRows(totals.frameExo))
+    + secTable('ΠΕΡΒΑΖΙΑ ΕΣΩΤΕΡΙΚΑ', setRows(totals.frameMesa))
+    + secTable('ΠΗΧΑΚΙΑ', row('Πηχάκι', totals.pihaki, 'σετ'));
+  return `<div class="matsum" style="padding:10px;">
+    <h1>VAICON — ΣΥΝΟΛΟ ΥΛΙΚΩΝ</h1>
+    <h2 class="sub">📅 ${dateStr} &nbsp;|&nbsp; ${count} παραγγελίες</h2>
+    <div class="cols">${sections}</div>
+    <div class="orders"><h3>ΠΑΡΑΓΓΕΛΙΕΣ (${count})</h3><div class="chips">${chips}</div></div>
+  </div>`;
 };
 
 const normalizePhone = (p) => {
@@ -784,7 +823,7 @@ export default function CustomScreen({ customOrders, setCustomOrders, soldOrders
   const matZoom = () => { try { return parseFloat(document.body.style.zoom)||1; } catch { return 1; } };
   const onMatDragStart = (e) => {
     if (Platform.OS!=='web') return;
-    e.preventDefault();
+    e.preventDefault(); e.stopPropagation();
     const Z = matZoom();
     const startX=e.clientX, startY=e.clientY;
     const base = matPos || { left: Math.max(8, (window.innerWidth||1000)/Z-464), top:60 };
@@ -3212,9 +3251,14 @@ export default function CustomScreen({ customOrders, setCustomOrders, soldOrders
     );
   };
 
-  // Πίνακας εκτύπωσης μόνο των παραγγελιών με επενδύσεις (ενότητα ΠΑΡΑΓΓΕΛΙΕΣ)
+  // Πίνακας εκτύπωσης επενδύσεων — ενότητες ΠΑΡΑΓΓΕΛΙΕΣ + ΠΡΟΣ ΚΑΤΑΣΚΕΥΗ (μονή)· μόνο ΠΡΟΣ ΚΑΤΑΣΚΕΥΗ (διπλή)
   const renderCoatPrintPanel = () => {
-    const coatOrders = moniOrders.filter(o => stdCoatNames(o).length>0);
+    const isDipli = forcedTab==='ΔΙΠΛΗ';
+    const withCoats = (list) => list.filter(o => stdCoatNames(o).length>0);
+    const groups = isDipli
+      ? [{title:'ΠΡΟΣ ΚΑΤΑΣΚΕΥΗ', orders: withCoats(stdBuildDipliOrders)}]
+      : [{title:'ΠΑΡΑΓΓΕΛΙΕΣ', orders: withCoats(moniOrders)}, {title:'ΠΡΟΣ ΚΑΤΑΣΚΕΥΗ', orders: withCoats(stdBuildMoniOrders)}];
+    const coatOrders = groups.flatMap(g=>g.orders);
     const ependDone = (o) => { const ks=Object.keys(o.buildTasks||{}).filter(k=>k.startsWith('epend')); return ks.length>0 && ks.every(k=>o.buildTasks[k]===true); };
     const selected = coatOrders.filter(o => printSelected[o.id]);
     const allSelected = coatOrders.length>0 && coatOrders.every(o => printSelected[o.id]);
@@ -3225,6 +3269,17 @@ export default function CustomScreen({ customOrders, setCustomOrders, soldOrders
         <Text style={{fontSize:12, fontWeight:'bold', color}}>{label}</Text>
       </TouchableOpacity>
     );
+    const orderRow = (o) => {
+      const sel = !!printSelected[o.id];
+      return (
+        <TouchableOpacity key={o.id} style={{flexDirection:'row', alignItems:'center', gap:6, paddingVertical:4}} onPress={()=>setPrintSelected(p=>({...p,[o.id]:!p[o.id]}))}>
+          <View style={{width:18,height:18,borderRadius:4,borderWidth:2,borderColor:sel?'#00C851':'#bbb',backgroundColor:sel?'#00C851':'white',alignItems:'center',justifyContent:'center'}}>
+            {sel&&<Text style={{color:'white',fontWeight:'bold',fontSize:11}}>✓</Text>}
+          </View>
+          <Text style={{fontSize:12, color:'#444', flex:1}}>#{o.orderNo} — {o.customer||'—'} — {o.h}x{o.w}  🎨 {stdCoatNames(o).join(', ')}</Text>
+        </TouchableOpacity>
+      );
+    };
     return (
       <View style={{position:'absolute', top:60, right:14, width:340, backgroundColor:'#f3f4ff', borderWidth:1, borderColor:'#5c6bc0', borderRadius:8, zIndex:2000, elevation:24, shadowColor:'#000', shadowOffset:{width:0,height:6}, shadowOpacity:0.3, shadowRadius:12}}>
         <View style={{flexDirection:'row', justifyContent:'space-between', alignItems:'center', paddingHorizontal:10, paddingVertical:8, backgroundColor:'#5c6bc0', borderTopLeftRadius:8, borderTopRightRadius:8}}>
@@ -3248,23 +3303,18 @@ export default function CustomScreen({ customOrders, setCustomOrders, soldOrders
               {filterChip('⏳ Όχι έτοιμα', '#721c24', o=>!ependDone(o))}
             </View>
             <ScrollView style={{maxHeight:280}}>
-              {coatOrders.map(o=>{
-                const sel = !!printSelected[o.id];
-                return (
-                  <TouchableOpacity key={o.id} style={{flexDirection:'row', alignItems:'center', gap:6, paddingVertical:4}} onPress={()=>setPrintSelected(p=>({...p,[o.id]:!p[o.id]}))}>
-                    <View style={{width:18,height:18,borderRadius:4,borderWidth:2,borderColor:sel?'#00C851':'#bbb',backgroundColor:sel?'#00C851':'white',alignItems:'center',justifyContent:'center'}}>
-                      {sel&&<Text style={{color:'white',fontWeight:'bold',fontSize:11}}>✓</Text>}
-                    </View>
-                    <Text style={{fontSize:12, color:'#444', flex:1}}>#{o.orderNo} — {o.customer||'—'} — {o.h}x{o.w}  🎨 {stdCoatNames(o).join(', ')}</Text>
-                  </TouchableOpacity>
-                );
-              })}
+              {groups.map(g => g.orders.length>0 && (
+                <View key={g.title} style={{marginBottom:6}}>
+                  <Text style={{fontSize:12, fontWeight:'900', color:'#3949ab', backgroundColor:'#e8eaf6', paddingHorizontal:6, paddingVertical:3, borderRadius:4, marginBottom:2}}>{g.title} ({g.orders.length})</Text>
+                  {g.orders.map(orderRow)}
+                </View>
+              ))}
             </ScrollView>
             <View style={{flexDirection:'row', alignItems:'center', justifyContent:'space-between', marginTop:8, borderTopWidth:1, borderTopColor:'#d7d9ef', paddingTop:8}}>
               <Text style={{fontWeight:'bold', color:'#5c6bc0', fontSize:13}}>Επιλεγμένες: {selected.length}</Text>
               <TouchableOpacity disabled={!selected.length}
                 style={{backgroundColor: selected.length?'#1a1a2e':'#ccc', paddingHorizontal:12, paddingVertical:6, borderRadius:6}}
-                onPress={async()=>{ const list=[...selected].sort((a,b)=>(parseInt(a.orderNo)||0)-(parseInt(b.orderNo)||0)); await printHTML(buildEpendStdHtml(list), 'VAICON — ΕΚΤΥΠΩΣΗ ΠΡΟΣ ΠΑΡΑΓΩΓΗ'); }}>
+                onPress={async()=>{ const list=[...selected].sort((a,b)=>(parseInt(a.orderNo)||0)-(parseInt(b.orderNo)||0)); await printHTML(buildEpendStdHtml(list, list), 'VAICON — ΕΚΤΥΠΩΣΗ ΠΡΟΣ ΠΑΡΑΓΩΓΗ'); }}>
                 <Text style={{color:'#FFD600', fontWeight:'bold', fontSize:12}}>🖨️ ΠΡΟΣ ΠΑΡΑΓΩΓΗ</Text>
               </TouchableOpacity>
             </View>
@@ -3337,37 +3387,11 @@ export default function CustomScreen({ customOrders, setCustomOrders, soldOrders
 
   // ── Σύνολο Υλικών: εκτύπωση + πινακάκι ──
   const matFmt = (n) => String(Math.round(n*10)/10).replace('.', ',');
-  const handleMaterialsPrint = (totals, orders) => {
-    const count = orders.length;
-    const today = new Date();
-    const dateStr = `${String(today.getDate()).padStart(2,'0')}/${String(today.getMonth()+1).padStart(2,'0')}/${today.getFullYear()} ${String(today.getHours()).padStart(2,'0')}:${String(today.getMinutes()).padStart(2,'0')}`;
-    const chips = orders.map(o=>`<span class="chip">${o.orderNo}</span>`).join('');
-    const row = (label, val, unit='') => val>0 ? `<tr><td>${label}</td><td style="text-align:right;font-weight:900">${matFmt(val)}${unit?' '+unit:''}</td></tr>` : '';
-    const secTable = (title, rows) => rows ? `<div class="sec"><h3>${title}</h3><table>${rows}</table></div>` : '';
-    const setRows = (list)=>list.map(c=>row(c.label, c.qty, 'σετ')).join('');
-    const sections = secTable('ΕΠΕΝΔΥΣΕΙΣ', totals.coatings.map(c=>row(c.label, c.qty)).join(''))
-      + secTable('ΚΑΣΕΣ', setRows(totals.cases))
-      + secTable('ΠΕΡΒΑΖΙΑ ΕΞΩΤΕΡΙΚΑ', setRows(totals.frameExo))
-      + secTable('ΠΕΡΒΑΖΙΑ ΕΣΩΤΕΡΙΚΑ', setRows(totals.frameMesa))
-      + secTable('ΠΗΧΑΚΙΑ', row('Πηχάκι', totals.pihaki, 'σετ'));
+  const handleMaterialsPrint = (orders) => {
     const html = `<!DOCTYPE html><html><head><meta charset="utf-8"><style>
-      body{font-family:Arial,sans-serif;margin:0;color:#000;}
-      .cols{column-count:2;column-gap:16px;}
-      .sec{break-inside:avoid;-webkit-column-break-inside:avoid;margin-bottom:6px;}
-      table{width:100%;border-collapse:collapse;font-size:11px;}
-      td{padding:2px 5px;border-bottom:1px solid #bbb;}
-      h1{font-size:14px;margin-bottom:2px;} h2.sub{font-size:10px;color:#555;margin:0 0 6px;}
-      h3{font-size:11px;margin:6px 0 2px;border-bottom:1.5px solid #000;padding-bottom:1px;}
-      .orders{margin-top:10px;padding-top:6px;border-top:1.5px solid #000;}
-      .chips{display:flex;flex-wrap:wrap;gap:2px;margin-top:4px;}
-      .chip{border:1px solid #333;border-radius:3px;padding:0 3px;font-size:10px;font-weight:bold;white-space:nowrap;}
+      body{margin:0;} ${MAT_SUMMARY_CSS}
       @media print{@page{size:A4 portrait;margin:10mm;}*{-webkit-print-color-adjust:exact;print-color-adjust:exact;}}
-    </style></head><body><div style="padding:10px;">
-      <h1>VAICON — ΣΥΝΟΛΟ ΥΛΙΚΩΝ</h1>
-      <h2 class="sub">📅 ${dateStr} &nbsp;|&nbsp; ${count} παραγγελίες</h2>
-      <div class="cols">${sections}</div>
-      <div class="orders"><h3>ΠΑΡΑΓΓΕΛΙΕΣ (${count})</h3><div class="chips">${chips}</div></div>
-    </div></body></html>`;
+    </style></head><body>${buildMatSummaryBody(orders)}</body></html>`;
     if (Platform.OS==='web') {
       const win = window.open('','_blank');
       if (!win) return Alert.alert('Σφάλμα','Επιτρέψτε τα pop-ups.');
@@ -3397,15 +3421,15 @@ export default function CustomScreen({ customOrders, setCustomOrders, soldOrders
       </View>
     );
     const posStyle = matPos ? { top: matPos.top, left: matPos.left } : { top: 60, right: 14 };
-    const bodyMaxH = (Platform.OS==='web' ? (window.innerHeight||800)/matZoom() : 800) - 200;
+    const bodyMaxH = Math.min((Platform.OS==='web' ? (window.innerHeight||800)/matZoom() : 800) - 240, 400);
     const header = (
       <View style={{flexDirection:'row', justifyContent:'space-between', alignItems:'center', paddingHorizontal:10, paddingVertical:8, backgroundColor:'#2e7d32', borderTopLeftRadius:8, borderTopRightRadius:8}}>
         <Text style={{color:'#fff', fontWeight:'bold', fontSize:13}}>🧱 ΣΥΝΟΛΟ ΥΛΙΚΩΝ</Text>
         <TouchableOpacity onPress={()=>setMaterialsOpen(false)}><Text style={{color:'#fff', fontSize:18, fontWeight:'bold', paddingHorizontal:4}}>✕</Text></TouchableOpacity>
       </View>
     );
-    return (
-      <View style={{position:'absolute', ...posStyle, width:450, backgroundColor:'#f1f8f1', borderWidth:1, borderColor:'#2e7d32', borderRadius:8, zIndex:2000, elevation:24, shadowColor:'#000', shadowOffset:{width:0,height:6}, shadowOpacity:0.3, shadowRadius:12}}>
+    const panel = (
+      <View style={[{position:'absolute', ...posStyle, width:420, backgroundColor:'#f1f8f1', borderWidth:1, borderColor:'#2e7d32', borderRadius:8, zIndex:99999, elevation:24, shadowColor:'#000', shadowOffset:{width:0,height:6}, shadowOpacity:0.3, shadowRadius:12}, Platform.OS==='web'?{position:'fixed'}:{}]}>
         {Platform.OS==='web'
           ? React.createElement('div', { onMouseDown:onMatDragStart, style:{ cursor:'move' } }, header)
           : header}
@@ -3450,7 +3474,7 @@ export default function CustomScreen({ customOrders, setCustomOrders, soldOrders
             <View style={{flexDirection:'row', alignItems:'center', justifyContent:'flex-end', marginTop:8, borderTopWidth:1, borderTopColor:'#c8e6c9', paddingTop:8}}>
               <TouchableOpacity disabled={!selected.length}
                 style={{backgroundColor: selected.length?'#2e7d32':'#ccc', paddingHorizontal:12, paddingVertical:6, borderRadius:6}}
-                onPress={()=>handleMaterialsPrint(totals, selected)}>
+                onPress={()=>handleMaterialsPrint(selected)}>
                 <Text style={{color:'white', fontWeight:'bold', fontSize:12}}>🖨️ ΕΚΤΥΠΩΣΗ</Text>
               </TouchableOpacity>
             </View>
@@ -3458,6 +3482,8 @@ export default function CustomScreen({ customOrders, setCustomOrders, soldOrders
         </View>
       </View>
     );
+    if (Platform.OS==='web') { try { return require('react-dom').createPortal(panel, document.body); } catch { return panel; } }
+    return panel;
   };
 
   // Πατώντας ένα κουτάκι, η αλλαγή μπαίνει σε «καλάθι» (draft) ανά παραγγελία — δεν εφαρμόζεται αμέσως.
@@ -4658,7 +4684,7 @@ export default function CustomScreen({ customOrders, setCustomOrders, soldOrders
   const moniSoldOrders = useMemo(() => [...baseCustom, ...baseSold].filter(o=>o.orderType==='ΤΥΠΟΠΟΙΗΜΕΝΗ'&&(o.sasiType==='ΜΟΝΗ ΘΩΡΑΚΙΣΗ'||!o.sasiType)&&o.status==='STD_SOLD').sort((a,b)=>(b.soldAt||0)-(a.soldAt||0)), [baseCustom, baseSold]);
   const dipliReadyOrders = useMemo(() => baseCustom.filter(o=>o.orderType==='ΤΥΠΟΠΟΙΗΜΕΝΗ'&&o.sasiType==='ΔΙΠΛΗ ΘΩΡΑΚΙΣΗ'&&o.status==='STD_READY').sort((a,b)=>(parseInt(a.orderNo)||0)-(parseInt(b.orderNo)||0)), [baseCustom]);
   // Ενεργές παραγγελίες για «Σύνολο Υλικών» (όλες ΜΟΝΗ+ΔΙΠΛΗ, όχι έτοιμες/πουλημένες/αναμονή/προσφορές)
-  const materialsPool = useMemo(() => baseCustom.filter(o=>o.orderType==='ΤΥΠΟΠΟΙΗΜΕΝΗ'&&o.status!=='STD_READY'&&o.status!=='STD_SOLD'&&o.status!=='QUOTE'&&!o.isQuote).sort((a,b)=>(parseInt(a.orderNo)||0)-(parseInt(b.orderNo)||0)), [baseCustom]);
+  const materialsPool = useMemo(() => baseCustom.filter(o=>o.orderType==='ΤΥΠΟΠΟΙΗΜΕΝΗ'&&o.status!=='STD_READY'&&o.status!=='STD_SOLD'&&o.status!=='QUOTE'&&!o.isQuote&&orderHasMaterials(o)).sort((a,b)=>(parseInt(a.orderNo)||0)-(parseInt(b.orderNo)||0)), [baseCustom]);
   const dipliSoldOrders = useMemo(() => [...baseCustom, ...baseSold].filter(o=>o.orderType==='ΤΥΠΟΠΟΙΗΜΕΝΗ'&&o.sasiType==='ΔΙΠΛΗ ΘΩΡΑΚΙΣΗ'&&o.status==='STD_SOLD').sort((a,b)=>(b.soldAt||0)-(a.soldAt||0)), [baseCustom, baseSold]);
   const moniTotal = useMemo(() => baseCustom.filter(o=>o.orderType==='ΤΥΠΟΠΟΙΗΜΕΝΗ'&&(o.sasiType==='ΜΟΝΗ ΘΩΡΑΚΙΣΗ'||!o.sasiType)&&(o.status==='STD_PENDING'||o.status==='STD_BUILD'||!o.status)).length, [baseCustom]);
   const dipliTotal = useMemo(() => baseCustom.filter(o=>o.orderType==='ΤΥΠΟΠΟΙΗΜΕΝΗ'&&o.sasiType==='ΔΙΠΛΗ ΘΩΡΑΚΙΣΗ'&&(o.status==='STD_PENDING'||o.status==='STD_BUILD'||!o.status)).length, [baseCustom]);
@@ -7105,6 +7131,11 @@ export default function CustomScreen({ customOrders, setCustomOrders, soldOrders
                           </TouchableOpacity>
                           <TouchableOpacity
                             style={{backgroundColor:'white', paddingHorizontal:8, paddingVertical:4, borderRadius:6}}
+                            onPress={e=>{e.stopPropagation?.(); setBuildFilterOpen(false); setCoatPrintOpen(v=>!v);}}>
+                            <Text style={{color:'#5c6bc0', fontSize:10, fontWeight:'bold'}}>🎨 ΕΠΕΝΔΥΣΕΙΣ</Text>
+                          </TouchableOpacity>
+                          <TouchableOpacity
+                            style={{backgroundColor:'white', paddingHorizontal:8, paddingVertical:4, borderRadius:6}}
                             onPress={e=>{e.stopPropagation?.(); handleBuildPrint(stdBuildDipliOrders,'ΔΙΠΛΗ ΘΩΡΑΚΙΣΗ','status');}}>
                             <Text style={{color:'#e65100', fontSize:10, fontWeight:'bold'}}>🖨️ ΚΑΤΑΣΤΑΣΗ</Text>
                           </TouchableOpacity>
@@ -7344,7 +7375,7 @@ export default function CustomScreen({ customOrders, setCustomOrders, soldOrders
         </View>
       </ScrollView>
       {!formOnly && buildFilterOpen && (forcedTab==='ΜΟΝΗ' || forcedTab==='ΔΙΠΛΗ') && showSec('build') && renderBuildFilterPanel()}
-      {!formOnly && coatPrintOpen && !isSeller && showSec('orders') && renderCoatPrintPanel()}
+      {!formOnly && coatPrintOpen && !isSeller && (showSec('orders') || (forcedTab==='ΔΙΠΛΗ' && showSec('build'))) && renderCoatPrintPanel()}
       {!formOnly && placePrintOpen && !isSeller && showSec('orders') && renderPlacePrintPanel()}
       {!formOnly && materialsOpen && !isSeller && !isForeman && !isGuest && renderMaterialsPanel()}
       </View>

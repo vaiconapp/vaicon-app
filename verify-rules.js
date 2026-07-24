@@ -28,12 +28,13 @@ const materialTotals = (orders) => {
   const coatings = {}, cases = {}, frameExo = {}, frameMesa = {};
   let pihaki = 0;
   const add = (bucket, key, n) => { (bucket[key] = bucket[key] || { label:key, qty:0 }).qty += n; };
+  const coatDone = (o, i) => !!(o.buildTasks && o.buildTasks['epend'+i]===true);
   for (const o of (orders||[])) {
     const doors = parseInt(o.qty,10) || 1;
     let caseKey=null, exoFrameKey=null, mesaFrameKey=null, hasPihaki=false;
-    for (const name of (o.coatings||[])) {
-      if (!name || !String(name).trim()) continue;
-      const base = normalizeCoatName(name); if (!base) continue;
+    (o.coatings||[]).filter(c=>c&&String(c).trim()).forEach((name, i) => {
+      if (coatDone(o, i)) return;
+      const base = normalizeCoatName(name); if (!base) return;
       const d = o.coatingDetails?.[name] || {};
       const color = normalizeCoatName(d.color || '');
       const coatKey = (color && !base.includes(color)) ? `${base} ${color}` : base;
@@ -49,7 +50,7 @@ const materialTotals = (orders) => {
         const fc=normalizeCoatName(d.frameColor||''), fw=normalizeCoatName(d.frameW||'');
         if (mesaFrameKey==null && (fc||fw)) mesaFrameKey = fc || fw;
       }
-    }
+    });
     if (caseKey) add(cases, caseKey, doors);
     if (exoFrameKey) add(frameExo, exoFrameKey, doors);
     if (mesaFrameKey) add(frameMesa, mesaFrameKey, doors);
@@ -968,6 +969,26 @@ group('materialTotals — 1 σετ/πόρτα (ακέραια)', () => {
   ]);
   test('6 πόρτες ίδια κάσα → 6 σετ', t.cases, [{ label:'15 ΛΕΥΚΗ', qty:6 }]);
   test('6 πόρτες περβάζι εξωτ → 6 σετ', t.frameExo, [{ label:'ΛΕΥΚΟ', qty:6 }]);
+});
+
+group('materialTotals — αφαίρεση έτοιμων επενδύσεων', () => {
+  const cd = { 'ΛΑΜΙΝΕΪΤ ΚΑΡΥΔΙΑ ΕΞΩ':{ caseW:'15', caseColor:'ΛΕΥΚΗ', frameColor:'ΛΕΥΚΟ' }, 'RAL ΜΕΣΑ':{ pihaki:true, frameColor:'ΛΕΥΚΟ' } };
+  const mk = (bt) => [{ qty:'1', coatings:['ΛΑΜΙΝΕΪΤ ΚΑΡΥΔΙΑ ΕΞΩ','RAL ΜΕΣΑ'], coatingDetails:cd, buildTasks:bt }];
+  const none = materialTotals(mk({ epend0:false, epend1:false }));
+  test('καμία έτοιμη → 2 επενδύσεις', none.coatings.length, 2);
+  test('καμία έτοιμη → κάσα', none.cases, [{ label:'15 ΛΕΥΚΗ', qty:1 }]);
+  test('καμία έτοιμη → πηχάκι', none.pihaki, 1);
+  const exoDone = materialTotals(mk({ epend0:true, epend1:false }));
+  test('έτοιμη ΕΞΩ → μόνο ΜΕΣΑ επένδυση', exoDone.coatings.length, 1);
+  test('έτοιμη ΕΞΩ → χωρίς κάσα', exoDone.cases, []);
+  test('έτοιμη ΕΞΩ → χωρίς περβάζι εξωτ', exoDone.frameExo, []);
+  test('έτοιμη ΕΞΩ → κρατά πηχάκι', exoDone.pihaki, 1);
+  const mesaDone = materialTotals(mk({ epend0:false, epend1:true }));
+  test('έτοιμη ΜΕΣΑ → χωρίς πηχάκι', mesaDone.pihaki, 0);
+  test('έτοιμη ΜΕΣΑ → χωρίς περβάζι εσωτ', mesaDone.frameMesa, []);
+  test('έτοιμη ΜΕΣΑ → κρατά κάσα', mesaDone.cases, [{ label:'15 ΛΕΥΚΗ', qty:1 }]);
+  const bothDone = materialTotals(mk({ epend0:true, epend1:true }));
+  test('και οι δύο έτοιμες → τίποτα', bothDone.coatings.length+bothDone.cases.length+bothDone.frameExo.length+bothDone.frameMesa.length+bothDone.pihaki, 0);
 });
 
 // ---------- ΑΠΟΤΕΛΕΣΜΑ ----------
