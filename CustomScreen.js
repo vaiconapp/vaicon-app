@@ -781,13 +781,15 @@ export default function CustomScreen({ customOrders, setCustomOrders, soldOrders
   const [materialsOpen, setMaterialsOpen] = useState(false);
   const [matExcluded, setMatExcluded] = useState({});
   const [matPos, setMatPos] = useState(null);
+  const matZoom = () => { try { return parseFloat(document.body.style.zoom)||1; } catch { return 1; } };
   const onMatDragStart = (e) => {
     if (Platform.OS!=='web') return;
     e.preventDefault();
+    const Z = matZoom();
     const startX=e.clientX, startY=e.clientY;
-    const base = matPos || { left: Math.max(8, (window.innerWidth||1000)-464), top:60 };
+    const base = matPos || { left: Math.max(8, (window.innerWidth||1000)/Z-464), top:60 };
     if (!matPos) setMatPos(base);
-    const move=(ev)=>setMatPos({ left: base.left+(ev.clientX-startX), top: base.top+(ev.clientY-startY) });
+    const move=(ev)=>setMatPos({ left: base.left+(ev.clientX-startX)/Z, top: base.top+(ev.clientY-startY)/Z });
     const up=()=>{ document.removeEventListener('mousemove',move); document.removeEventListener('mouseup',up); };
     document.addEventListener('mousemove',move); document.addEventListener('mouseup',up);
   };
@@ -3335,11 +3337,13 @@ export default function CustomScreen({ customOrders, setCustomOrders, soldOrders
 
   // ── Σύνολο Υλικών: εκτύπωση + πινακάκι ──
   const matFmt = (n) => String(Math.round(n*10)/10).replace('.', ',');
-  const handleMaterialsPrint = (totals, count) => {
+  const handleMaterialsPrint = (totals, orders) => {
+    const count = orders.length;
     const today = new Date();
     const dateStr = `${String(today.getDate()).padStart(2,'0')}/${String(today.getMonth()+1).padStart(2,'0')}/${today.getFullYear()} ${String(today.getHours()).padStart(2,'0')}:${String(today.getMinutes()).padStart(2,'0')}`;
+    const chips = orders.map(o=>`<span class="chip">${o.orderNo}</span>`).join('');
     const row = (label, val, unit='') => val>0 ? `<tr><td>${label}</td><td style="text-align:right;font-weight:900">${matFmt(val)}${unit?' '+unit:''}</td></tr>` : '';
-    const secTable = (title, rows) => rows ? `<h3>${title}</h3><table>${rows}</table>` : '';
+    const secTable = (title, rows) => rows ? `<div class="sec"><h3>${title}</h3><table>${rows}</table></div>` : '';
     const setRows = (list)=>list.map(c=>row(c.label, c.qty, 'σετ')).join('');
     const sections = secTable('ΕΠΕΝΔΥΣΕΙΣ', totals.coatings.map(c=>row(c.label, c.qty)).join(''))
       + secTable('ΚΑΣΕΣ', setRows(totals.cases))
@@ -3348,15 +3352,21 @@ export default function CustomScreen({ customOrders, setCustomOrders, soldOrders
       + secTable('ΠΗΧΑΚΙΑ', row('Πηχάκι', totals.pihaki, 'σετ'));
     const html = `<!DOCTYPE html><html><head><meta charset="utf-8"><style>
       body{font-family:Arial,sans-serif;margin:0;color:#000;}
-      table{width:100%;border-collapse:collapse;font-size:15px;}
-      td{padding:6px 8px;border-bottom:1px solid #000;}
-      h1{font-size:16px;margin-bottom:2px;} h2.sub{font-size:11px;color:#555;margin:0 0 8px;}
-      h3{font-size:14px;margin:14px 0 4px;border-bottom:2px solid #000;padding-bottom:2px;}
-      @media print{@page{size:A4 portrait;margin:12mm;}*{-webkit-print-color-adjust:exact;print-color-adjust:exact;}}
-    </style></head><body><div style="padding:12px;">
+      .cols{column-count:2;column-gap:16px;}
+      .sec{break-inside:avoid;-webkit-column-break-inside:avoid;margin-bottom:6px;}
+      table{width:100%;border-collapse:collapse;font-size:11px;}
+      td{padding:2px 5px;border-bottom:1px solid #bbb;}
+      h1{font-size:14px;margin-bottom:2px;} h2.sub{font-size:10px;color:#555;margin:0 0 6px;}
+      h3{font-size:11px;margin:6px 0 2px;border-bottom:1.5px solid #000;padding-bottom:1px;}
+      .orders{margin-top:10px;padding-top:6px;border-top:1.5px solid #000;}
+      .chips{display:flex;flex-wrap:wrap;gap:2px;margin-top:4px;}
+      .chip{border:1px solid #333;border-radius:3px;padding:0 3px;font-size:10px;font-weight:bold;white-space:nowrap;}
+      @media print{@page{size:A4 portrait;margin:10mm;}*{-webkit-print-color-adjust:exact;print-color-adjust:exact;}}
+    </style></head><body><div style="padding:10px;">
       <h1>VAICON — ΣΥΝΟΛΟ ΥΛΙΚΩΝ</h1>
       <h2 class="sub">📅 ${dateStr} &nbsp;|&nbsp; ${count} παραγγελίες</h2>
-      ${sections}
+      <div class="cols">${sections}</div>
+      <div class="orders"><h3>ΠΑΡΑΓΓΕΛΙΕΣ (${count})</h3><div class="chips">${chips}</div></div>
     </div></body></html>`;
     if (Platform.OS==='web') {
       const win = window.open('','_blank');
@@ -3369,8 +3379,9 @@ export default function CustomScreen({ customOrders, setCustomOrders, soldOrders
     const allSel = materialsPool.length>0 && selected.length===materialsPool.length;
     const totals = materialTotals(selected);
     const rowView = (label, str) => str ? (
-      <View key={label} style={{flexDirection:'row', justifyContent:'space-between', paddingVertical:2}}>
+      <View key={label} style={{flexDirection:'row', alignItems:'flex-end', paddingVertical:2}}>
         <Text style={{fontSize:12, color:'#333'}}>{label}</Text>
+        <View style={{flex:1, borderBottomWidth:1, borderStyle:'dotted', borderColor:'#c8c8c8', marginHorizontal:5, marginBottom:3}} />
         <Text style={{fontSize:12, fontWeight:'900', color:'#2e7d32'}}>{str}</Text>
       </View>
     ) : null;
@@ -3386,7 +3397,7 @@ export default function CustomScreen({ customOrders, setCustomOrders, soldOrders
       </View>
     );
     const posStyle = matPos ? { top: matPos.top, left: matPos.left } : { top: 60, right: 14 };
-    const bodyMaxH = (Platform.OS==='web' ? (window.innerHeight||800) : 800) - 200;
+    const bodyMaxH = (Platform.OS==='web' ? (window.innerHeight||800)/matZoom() : 800) - 200;
     const header = (
       <View style={{flexDirection:'row', justifyContent:'space-between', alignItems:'center', paddingHorizontal:10, paddingVertical:8, backgroundColor:'#2e7d32', borderTopLeftRadius:8, borderTopRightRadius:8}}>
         <Text style={{color:'#fff', fontWeight:'bold', fontSize:13}}>🧱 ΣΥΝΟΛΟ ΥΛΙΚΩΝ</Text>
@@ -3439,7 +3450,7 @@ export default function CustomScreen({ customOrders, setCustomOrders, soldOrders
             <View style={{flexDirection:'row', alignItems:'center', justifyContent:'flex-end', marginTop:8, borderTopWidth:1, borderTopColor:'#c8e6c9', paddingTop:8}}>
               <TouchableOpacity disabled={!selected.length}
                 style={{backgroundColor: selected.length?'#2e7d32':'#ccc', paddingHorizontal:12, paddingVertical:6, borderRadius:6}}
-                onPress={()=>handleMaterialsPrint(totals, selected.length)}>
+                onPress={()=>handleMaterialsPrint(totals, selected)}>
                 <Text style={{color:'white', fontWeight:'bold', fontSize:12}}>🖨️ ΕΚΤΥΠΩΣΗ</Text>
               </TouchableOpacity>
             </View>
